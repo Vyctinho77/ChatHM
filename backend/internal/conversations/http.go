@@ -1,12 +1,21 @@
 package conversations
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"math"
+	"mime"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/vyctinho77/chathm/backend/internal/auth"
+	"github.com/vyctinho77/chathm/backend/internal/media"
 	"github.com/vyctinho77/chathm/backend/internal/platform/httpx"
 )
 
@@ -26,6 +35,7 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Get("/conversations/{id}/messages", h.messages)
 	r.Post("/conversations/{id}/messages", h.send)
 	r.Post("/conversations/{id}/read", h.read)
+	r.Get("/attachments/{id}", h.attachment)
 	r.Post("/conversations/{id}/close", h.close)
 	r.Post("/conversations/{id}/transfer", h.transfer)
 	r.Put("/conversations/{id}/tags/{tagId}", h.addTag)
@@ -63,15 +73,38 @@ func (h *Handler) messages(w http.ResponseWriter, r *http.Request) {
 // send: 201 mensagem nova; 200 repetição de um envio já feito (idempotente).
 // A mensagem devolvida pode estar com status "failed" se o WhatsApp recusou o envio:
 // reenviar com o mesmo id tenta de novo sem duplicar.
+//
+// JSON: texto ({id, text}) ou localização ({id, kind:"location", lat, lng, name?, address?}).
+// multipart/form-data: anexo — campos id, kind (image|audio|document), text (legenda), hd,
+// waveform (JSON, 0–1) e o arquivo em "file".
 func (h *Handler) send(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		ID   string `json:"id"`
-		Text string `json:"text"`
+	mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	var in SendInput
+	if mt == "multipart/form-data" {
+		var ok bool
+		if in, ok = h.readUpload(w, r); !ok {
+			return
+		}
+	} else {
+		var body struct {
+			ID      string  `json:"id"`
+			Kind    string  `json:"kind"`
+			Text    string  `json:"text"`
+			Lat     float64 `json:"lat"`
+			Lng     float64 `json:"lng"`
+			Name    string  `json:"name"`
+			Address string  `json:"address"`
+		}
+		if !httpx.Decode(w, r, &body) {
+			return
+		}
+		if body.Kind != "" && body.Kind != "text" && body.Kind != "location" {
+			httpx.Validation(w, httpx.FieldErrors{"kind": "Anexos são enviados como multipart/form-data."})
+			return
+		}
+		in = SendInput{ID: body.ID, Kind: body.Kind, Text: body.Text, Lat: body.Lat, Lng: body.Lng, Name: body.Name, Address: body.Address}
 	}
-	if !httpx.Decode(w, r, &in) {
-		return
-	}
-	m, created, err := h.svc.SendText(r.Context(), viewer(r), chi.URLParam(r, "id"), SendInput{ID: in.ID, Text: in.Text})
+	m, created, err := h.svc.Send(r.Context(), viewer(r), chi.URLParam(r, "id"), in)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -81,6 +114,123 @@ func (h *Handler) send(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusCreated
 	}
 	httpx.JSON(w, status, m)
+}
+
+func (h *Handler) readUpload(w http.ResponseWriter, r *http.Request) (SendInput, bool) {
+	if h.svc.media == nil {
+		httpx.Error(w, http.StatusServiceUnavailable, "media_unavailable", "O envio de anexos não está disponível.")
+		return SendInput{}, false
+	}
+	limit := h.svc.media.Max
+	r.Body = http.MaxBytesReader(w, r.Body, limit+(1<<20))
+	mr, err := r.MultipartReader()
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "invalid_multipart", "Envio inválido.")
+		return SendInput{}, false
+	}
+	var (
+		in       SendInput
+		data     []byte
+		fileName string
+		hasFile  bool
+		hdFlag   bool
+	)
+	fail := func(err error) (SendInput, bool) {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			httpx.Error(w, http.StatusRequestEntityTooLarge, "attachment_too_large",
+				fmt.Sprintf("O arquivo passa do limite de %d MB.", limit>>20))
+		} else {
+			httpx.Error(w, http.StatusBadRequest, "invalid_multipart", "Envio inválido.")
+		}
+		return SendInput{}, false
+	}
+	for {
+		part, err := mr.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return fail(err)
+		}
+		name := part.FormName()
+		if name == "file" {
+			fileName = part.FileName()
+			data, err = io.ReadAll(io.LimitReader(part, limit+1))
+			if err != nil {
+				return fail(err)
+			}
+			hasFile = true
+			continue
+		}
+		val, err := io.ReadAll(io.LimitReader(part, 64<<10))
+		if err != nil {
+			return fail(err)
+		}
+		switch name {
+		case "id":
+			in.ID = string(val)
+		case "kind":
+			in.Kind = string(val)
+		case "text":
+			in.Text = string(val)
+		case "hd":
+			hdFlag = string(val) == "true" || string(val) == "1"
+		case "waveform":
+			var wf []float64
+			if json.Unmarshal(val, &wf) == nil && len(wf) <= 128 {
+				for _, f := range wf {
+					in.Waveform = append(in.Waveform, math.Max(0, math.Min(1, f)))
+				}
+			}
+		}
+	}
+	kind := media.Kind(in.Kind)
+	if !hasFile || (kind != media.Image && kind != media.Audio && kind != media.Document) {
+		httpx.Validation(w, httpx.FieldErrors{"file": "Escolha um arquivo e o tipo de anexo."})
+		return SendInput{}, false
+	}
+	p, err := h.svc.media.Process(r.Context(), kind, data, fileName, hdFlag)
+	if err != nil {
+		var rej *media.RejectError
+		switch {
+		case errors.As(err, &rej):
+			httpx.Validation(w, httpx.FieldErrors{"file": rej.Msg})
+		case errors.Is(err, media.ErrUnavailable):
+			httpx.Error(w, http.StatusServiceUnavailable, "media_unavailable", "Não foi possível processar o anexo agora. Tente novamente em instantes.")
+		default:
+			httpx.Internal(w, r, err)
+		}
+		return SendInput{}, false
+	}
+	in.Att, in.HD = &p, hdFlag
+	return in, true
+}
+
+// attachment entrega o arquivo de um anexo depois de checar a visibilidade da conversa.
+// Sem URL pública nem assinada: a autorização é refeita a cada requisição (cookie de sessão).
+func (h *Handler) attachment(w http.ResponseWriter, r *http.Request) {
+	a, err := h.svc.Attachment(r.Context(), viewer(r), chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	hd := w.Header()
+	hd.Set("Cache-Control", "private, no-store")
+	hd.Set("X-Content-Type-Options", "nosniff")
+	hd.Set("Content-Security-Policy", "sandbox; default-src 'none'")
+	ct := a.MimeType
+	inline := strings.HasPrefix(ct, "image/") || strings.HasPrefix(ct, "audio/")
+	if !inline {
+		ct = "application/octet-stream"
+	}
+	hd.Set("Content-Type", ct)
+	disp := "attachment"
+	if inline {
+		disp = "inline"
+	}
+	hd.Set("Content-Disposition", mime.FormatMediaType(disp, map[string]string{"filename": a.FileName}))
+	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(a.Data))
 }
 
 func (h *Handler) read(w http.ResponseWriter, r *http.Request) {

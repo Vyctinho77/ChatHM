@@ -45,6 +45,12 @@ type Config struct {
 	S3AccessKey string
 	S3SecretKey string
 	S3UseSSL    bool
+
+	// Anexos: "fs" (disco local, cifrado) ou "s3". Limite por arquivo e antivírus opcional (clamd).
+	StorageDriver string
+	StorageDir    string
+	MaxAttachment int64 // bytes
+	ClamAVAddr    string
 }
 
 func (c Config) IsDevelopment() bool { return c.Env == "development" }
@@ -68,6 +74,20 @@ func Load() (Config, error) {
 		S3AccessKey:       os.Getenv("S3_ACCESS_KEY"),
 		S3SecretKey:       os.Getenv("S3_SECRET_KEY"),
 		S3UseSSL:          getbool("S3_USE_SSL", true),
+		StorageDriver:     getenv("STORAGE_DRIVER", "fs"),
+		StorageDir:        getenv("STORAGE_DIR", "./data/attachments"),
+		ClamAVAddr:        os.Getenv("CLAMAV_ADDR"),
+	}
+	cfg.MaxAttachment = 25 << 20
+	if v := os.Getenv("MAX_ATTACHMENT_MB"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 100 {
+			return cfg, errors.New("MAX_ATTACHMENT_MB deve estar entre 1 e 100")
+		}
+		cfg.MaxAttachment = int64(n) << 20
+	}
+	if cfg.StorageDriver != "fs" && cfg.StorageDriver != "s3" {
+		return cfg, errors.New("STORAGE_DRIVER deve ser fs ou s3")
 	}
 
 	var errs []error

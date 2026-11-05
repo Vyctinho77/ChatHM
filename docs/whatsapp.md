@@ -74,3 +74,16 @@ Os testes em `wameow/store_test.go` verificam que nenhum segredo aparece em clar
 `WHATSAPP_PROVIDER=fake` (somente com `APP_ENV=development`) simula o pareamento (conecta sozinho ~5 s após gerar
 o QR) e libera, para admin, `POST /api/v1/dev/whatsapp/inbound` e o formulário "Simular mensagem recebida" na
 tela Conexão WhatsApp.
+
+## Mídia (Fase 4)
+
+- **Armazenamento** (`internal/storage`): `fs` (disco, cada arquivo cifrado com AES-256-GCM e a chave do objeto como dado associado) ou `s3`
+  (MinIO/AWS, bucket privado; habilite a criptografia do lado do servidor no bucket). Nunca há URL pública.
+- **Processamento** (`internal/media`): tipo pelo conteúdo, limite de tamanho, extensões executáveis recusadas, nomes saneados, imagens
+  decodificadas (corrompida/gigante é recusada), áudio convertido por **ffmpeg** (precisa estar instalado no servidor), antivírus
+  **clamd** opcional (`CLAMAV_ADDR`; falha fechada).
+- **Recebimento**: a mensagem é gravada na hora; o arquivo é baixado, verificado e guardado em segundo plano (no máx. 4 por vez).
+- **HD**: sem HD a imagem vai reduzida (1600 px, como o WhatsApp comum); "Foto em HD (original)" envia o arquivo original.
+  Para preservar 100% (ex.: scans) use **Documento**.
+- **Limitações**: vídeo, figurinhas, contatos e localização em tempo real aparecem como "não exibido"; o adaptador S3 e o envio/recebimento de
+  mídia por um celular real ainda não foram validados em campo.

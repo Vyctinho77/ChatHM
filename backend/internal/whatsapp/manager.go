@@ -261,6 +261,14 @@ func (m *Manager) SendText(ctx context.Context, chatJID, messageID, text string)
 	return m.p.SendText(ctx, chatJID, messageID, text)
 }
 
+func (m *Manager) SendMedia(ctx context.Context, chatJID, messageID string, md MediaSend) error {
+	return m.p.SendMedia(ctx, chatJID, messageID, md)
+}
+
+func (m *Manager) SendLocation(ctx context.Context, chatJID, messageID string, l Location) error {
+	return m.p.SendLocation(ctx, chatJID, messageID, l)
+}
+
 func (m *Manager) OnMessage(msg InboundMessage) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

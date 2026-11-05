@@ -18,6 +18,8 @@ package conversations
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,10 +32,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/vyctinho77/chathm/backend/internal/audit"
+	"github.com/vyctinho77/chathm/backend/internal/media"
 	"github.com/vyctinho77/chathm/backend/internal/platform/database"
 	"github.com/vyctinho77/chathm/backend/internal/platform/httpx"
 	"github.com/vyctinho77/chathm/backend/internal/realtime"
 	"github.com/vyctinho77/chathm/backend/internal/segments"
+	"github.com/vyctinho77/chathm/backend/internal/storage"
 	"github.com/vyctinho77/chathm/backend/internal/whatsapp"
 )
 
@@ -63,6 +67,8 @@ type Sender interface {
 	Connected() bool
 	NewMessageID() string
 	SendText(ctx context.Context, chatJID, messageID, text string) error
+	SendMedia(ctx context.Context, chatJID, messageID string, m whatsapp.MediaSend) error
+	SendLocation(ctx context.Context, chatJID, messageID string, l whatsapp.Location) error
 }
 
 // Viewer é quem faz a requisição; toda consulta filtra pela visibilidade dele.
@@ -73,15 +79,23 @@ type Viewer struct {
 }
 
 type Service struct {
-	db     *pgxpool.Pool
-	pub    Publisher
-	sender Sender
+	store      storage.Store
+	media      *media.Service
+	mediaSlots chan struct{}
+	db         *pgxpool.Pool
+	pub        Publisher
+	sender     Sender
 }
 
-func NewService(db *pgxpool.Pool, pub Publisher) *Service { return &Service{db: db, pub: pub} }
+func NewService(db *pgxpool.Pool, pub Publisher) *Service {
+	return &Service{db: db, pub: pub, mediaSlots: make(chan struct{}, 4)}
+}
 
 // SetSender liga o envio (depois da criação, pois o Manager também depende deste serviço).
 func (s *Service) SetSender(sd Sender) { s.sender = sd }
+
+// SetMedia liga o armazenamento privado e o processamento de anexos.
+func (s *Service) SetMedia(st storage.Store, m *media.Service) { s.store, s.media = st, m }
 
 // Eventos em tempo real. Só chegam a quem pode ver a conversa.
 const (
@@ -312,6 +326,13 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 
 	after := s.publishState(ctx, convID, before)
 	s.publishMessage(ctx, EventMessageCreated, msgID, after)
+	if m.Download != nil && s.store != nil && s.media != nil {
+		go func() {
+			s.mediaSlots <- struct{}{} // no máximo alguns downloads simultâneos
+			defer func() { <-s.mediaSlots }()
+			s.fetchMedia(msgID, convID, m)
+		}()
+	}
 	return true, nil
 }
 
@@ -358,7 +379,8 @@ type Conversation struct {
 }
 
 const messageCols = `m.id, m.conversation_id, m.direction, m.kind, m.body, m.payload, m.status,
-	m.sent_at, m.sender_name, m.delivered_at, m.read_at`
+	m.sent_at, m.sender_name, m.delivered_at, m.read_at,
+	(SELECT a.id::text FROM attachments a WHERE a.message_id = m.id)`
 
 type msgRow struct {
 	id, convID, dir, kind, body, sender string
@@ -366,10 +388,11 @@ type msgRow struct {
 	status                              *string
 	sentAt                              time.Time
 	deliveredAt, readAt                 *time.Time
+	attachmentID                        *string
 }
 
 func (r *msgRow) dest() []any {
-	return []any{&r.id, &r.convID, &r.dir, &r.kind, &r.body, &r.payload, &r.status, &r.sentAt, &r.sender, &r.deliveredAt, &r.readAt}
+	return []any{&r.id, &r.convID, &r.dir, &r.kind, &r.body, &r.payload, &r.status, &r.sentAt, &r.sender, &r.deliveredAt, &r.readAt, &r.attachmentID}
 }
 
 func (r msgRow) message() Message {
@@ -385,6 +408,9 @@ func (r msgRow) message() Message {
 	}
 	if r.readAt != nil {
 		m["readAt"] = r.readAt.UTC().Format(time.RFC3339Nano)
+	}
+	if r.attachmentID != nil {
+		m["url"] = "/api/v1/attachments/" + *r.attachmentID
 	}
 	if r.dir == "out" && r.sender != "" {
 		m["authorName"] = r.sender
@@ -623,10 +649,21 @@ func (s *Service) UpdateContact(ctx context.Context, v Viewer, contactID string,
 
 type SendInput struct {
 	ID   string // opcional; torna o envio idempotente (reenvio com o mesmo ID não duplica)
-	Text string
+	Kind string // text (padrão) | image | audio | document | location
+	Text string // texto, ou legenda quando há anexo
+
+	Att      *media.Processed // image | audio | document (já validado)
+	HD       bool
+	Waveform []float64 // áudio: barras de 0 a 1
+
+	Lat, Lng      float64 // location
+	Name, Address string
 }
 
-const maxTextRunes = 4000
+const (
+	maxTextRunes    = 4000
+	maxCaptionRunes = 1024
+)
 
 // SendText envia uma resposta de texto. Responder uma conversa sem responsável a
 // assume: o SELECT ... FOR UPDATE na conversa serializa respostas simultâneas, então
@@ -634,10 +671,48 @@ const maxTextRunes = 4000
 // conversation_assignments é uma segunda barreira, no próprio banco.)
 //
 // Retorna a mensagem e created=false quando a requisição repete um envio anterior.
-func (s *Service) SendText(ctx context.Context, v Viewer, convID string, in SendInput) (Message, bool, error) {
+func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInput) (Message, bool, error) {
 	text := strings.TrimSpace(in.Text)
-	if text == "" || utf8.RuneCountInString(text) > maxTextRunes {
-		return nil, false, httpx.FieldErrors{"text": fmt.Sprintf("Digite uma mensagem de até %d caracteres.", maxTextRunes)}
+	kind := in.Kind
+	if kind == "" {
+		kind = "text"
+	}
+	payload := map[string]any{}
+	switch kind {
+	case "text":
+		if text == "" || utf8.RuneCountInString(text) > maxTextRunes {
+			return nil, false, httpx.FieldErrors{"text": fmt.Sprintf("Digite uma mensagem de até %d caracteres.", maxTextRunes)}
+		}
+	case "image", "audio", "document":
+		if in.Att == nil || s.store == nil {
+			return nil, false, ErrUnavailable
+		}
+		if utf8.RuneCountInString(text) > maxCaptionRunes || (kind == "audio" && text != "") {
+			return nil, false, httpx.FieldErrors{"text": fmt.Sprintf("A legenda pode ter até %d caracteres.", maxCaptionRunes)}
+		}
+		payload["mimeType"], payload["sizeBytes"] = in.Att.MimeType, len(in.Att.Data)
+		switch kind {
+		case "image":
+			payload["width"], payload["height"], payload["hd"] = in.Att.Width, in.Att.Height, in.HD
+		case "audio":
+			payload["durationSec"], payload["voiceNote"] = in.Att.DurationSec, true
+			if len(in.Waveform) > 0 {
+				payload["waveform"] = in.Waveform
+			}
+		case "document":
+			payload["fileName"] = in.Att.FileName
+		}
+	case "location":
+		if in.Lat < -90 || in.Lat > 90 || in.Lng < -180 || in.Lng > 180 || (in.Lat == 0 && in.Lng == 0) {
+			return nil, false, httpx.FieldErrors{"lat": "Localização inválida."}
+		}
+		if utf8.RuneCountInString(in.Name) > 200 || utf8.RuneCountInString(in.Address) > 400 {
+			return nil, false, httpx.FieldErrors{"name": "Nome ou endereço longo demais."}
+		}
+		payload["lat"], payload["lng"], payload["name"], payload["address"] = in.Lat, in.Lng, in.Name, in.Address
+		text = ""
+	default:
+		return nil, false, httpx.FieldErrors{"kind": "Tipo de mensagem inválido."}
 	}
 	msgID := in.ID
 	if msgID == "" {
@@ -657,7 +732,23 @@ func (s *Service) SendText(ctx context.Context, v Viewer, convID string, in Send
 		created, resend     bool
 		claimed             bool
 		before              userSet
+		attKey              string // objeto a enviar (novo ou, no reenvio, o já guardado)
+		storedNew           bool   // objeto gravado nesta chamada (apagar se a mensagem não for criada)
 	)
+	attID := uuid.NewString()
+	if in.Att != nil && kind != "text" && kind != "location" {
+		// Grava o binário antes da transação; se a mensagem não nascer, é apagado abaixo.
+		key := "attachments/" + attID
+		if err := s.store.Put(ctx, key, in.Att.Data); err != nil {
+			return nil, false, err
+		}
+		attKey, storedNew = key, true
+		defer func() {
+			if storedNew {
+				_ = s.store.Delete(context.WithoutCancel(ctx), key)
+			}
+		}()
+	}
 	err := database.InTx(ctx, s.db, func(tx pgx.Tx) error {
 		var (
 			status, assigneeName string
@@ -704,6 +795,17 @@ func (s *Service) SendText(ctx context.Context, v Viewer, convID string, in Send
 				return err
 			}
 			externalID, resend = ex.ext, true
+			var raw []byte
+			if err := tx.QueryRow(ctx, `SELECT kind, body, payload FROM messages WHERE id = $1`, msgID).Scan(&kind, &text, &raw); err != nil {
+				return err
+			}
+			payload = map[string]any{}
+			_ = json.Unmarshal(raw, &payload)
+			var key *string
+			_ = tx.QueryRow(ctx, `SELECT storage_key FROM attachments WHERE message_id = $1`, msgID).Scan(&key)
+			if key != nil {
+				attKey = *key
+			}
 		case errors.Is(err, pgx.ErrNoRows):
 			if status == "closed" {
 				return ErrClosed
@@ -739,11 +841,24 @@ func (s *Service) SendText(ctx context.Context, v Viewer, convID string, in Send
 				}
 			}
 			externalID = s.sender.NewMessageID()
-			if _, err := tx.Exec(ctx, `
-				INSERT INTO messages (id, conversation_id, chat_jid, external_id, direction, kind, body, sender_name, sender_user_id, status, sent_at)
-				VALUES ($1, $2, $3, $4, 'out', 'text', $5, $6, $7, 'pending', now())`,
-				msgID, convID, chatJID, externalID, text, v.Name, v.ID); err != nil {
+			pj, err := json.Marshal(payload)
+			if err != nil {
 				return err
+			}
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO messages (id, conversation_id, chat_jid, external_id, direction, kind, body, payload, sender_name, sender_user_id, status, sent_at)
+				VALUES ($1, $2, $3, $4, 'out', $8, $5, $9, $6, $7, 'pending', now())`,
+				msgID, convID, chatJID, externalID, text, v.Name, v.ID, kind, pj); err != nil {
+				return err
+			}
+			if storedNew {
+				sum := sha256.Sum256(in.Att.Data)
+				if _, err := tx.Exec(ctx, `
+					INSERT INTO attachments (id, message_id, storage_key, mime_type, size_bytes, sha256, file_name, scan_status)
+					VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+					attID, msgID, attKey, in.Att.MimeType, len(in.Att.Data), hex.EncodeToString(sum[:]), in.Att.FileName, in.Att.ScanStatus); err != nil {
+					return err
+				}
 			}
 			if _, err := tx.Exec(ctx, `UPDATE conversations SET last_message_at = now(), unread_count = 0 WHERE id = $1`, convID); err != nil {
 				return err
@@ -764,6 +879,9 @@ func (s *Service) SendText(ctx context.Context, v Viewer, convID string, in Send
 	if err != nil {
 		return nil, false, err
 	}
+	if created {
+		storedNew = false // a mensagem existe: o objeto é dela
+	}
 	if !created && !resend {
 		m, err := s.message(ctx, msgID)
 		return m, false, err
@@ -780,7 +898,7 @@ func (s *Service) SendText(ctx context.Context, v Viewer, convID string, in Send
 	// Envio fora da transação (rede). Concluir o registro mesmo se o cliente desistir da requisição.
 	sendCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 45*time.Second)
 	defer cancel()
-	sendErr := s.sender.SendText(sendCtx, chatJID, externalID, text)
+	sendErr := s.dispatch(sendCtx, kind, chatJID, externalID, text, payload, attKey, in.Att)
 	if sendErr != nil {
 		if _, err := s.db.Exec(sendCtx, `UPDATE messages SET status = 'failed', error = $2 WHERE id = $1 AND status = 'pending'`,
 			msgID, "Não foi possível enviar pelo WhatsApp."); err != nil {
@@ -793,6 +911,54 @@ func (s *Service) SendText(ctx context.Context, v Viewer, convID string, in Send
 	s.publishMessage(sendCtx, EventMessageUpdated, msgID, after)
 	m, err := s.message(sendCtx, msgID)
 	return m, created, err
+}
+
+// dispatch entrega a mensagem ao WhatsApp. No reenvio de uma mídia, o arquivo é relido do armazenamento.
+func (s *Service) dispatch(ctx context.Context, kind, chatJID, externalID, text string, payload map[string]any, attKey string, att *media.Processed) error {
+	switch kind {
+	case "text":
+		return s.sender.SendText(ctx, chatJID, externalID, text)
+	case "location":
+		f := func(k string) float64 { v, _ := payload[k].(float64); return v }
+		str := func(k string) string { v, _ := payload[k].(string); return v }
+		return s.sender.SendLocation(ctx, chatJID, externalID, whatsapp.Location{
+			Lat: f("lat"), Lng: f("lng"), Name: str("name"), Address: str("address")})
+	}
+	var data []byte
+	if att != nil {
+		data = att.Data
+	} else {
+		b, err := s.store.Get(ctx, attKey)
+		if err != nil {
+			return err
+		}
+		data = b
+	}
+	str := func(k string) string { v, _ := payload[k].(string); return v }
+	num := func(k string) int {
+		switch v := payload[k].(type) { // int ao enviar agora; float64 ao reler do banco (reenvio)
+		case int:
+			return v
+		case float64:
+			return int(v)
+		}
+		return 0
+	}
+	md := whatsapp.MediaSend{
+		Kind: whatsapp.Kind(kind), Data: data, MimeType: str("mimeType"), FileName: str("fileName"), Caption: text,
+		DurationSec: num("durationSec"), Width: num("width"), Height: num("height"),
+	}
+	if wf, ok := payload["waveform"].([]any); ok {
+		for _, v := range wf {
+			f, _ := v.(float64)
+			md.Waveform = append(md.Waveform, byte(max(0, min(100, int(f*100+0.5)))))
+		}
+	} else if wf, ok := payload["waveform"].([]float64); ok {
+		for _, f := range wf {
+			md.Waveform = append(md.Waveform, byte(max(0, min(100, int(f*100+0.5)))))
+		}
+	}
+	return s.sender.SendMedia(ctx, chatJID, externalID, md)
 }
 
 func (s *Service) currentAssignee(ctx context.Context, convID string) string {
@@ -1018,4 +1184,82 @@ func FormatPhone(e164 string) string {
 		return "+55 " + ddd + " " + rest[:cut] + "-" + rest[cut:]
 	}
 	return e164
+}
+
+// ---------------------------------------------------------------------------
+// Anexos
+
+// AttachmentFile é o arquivo de um anexo.
+type AttachmentFile struct {
+	Data               []byte
+	MimeType, FileName string
+}
+
+// Attachment devolve o arquivo se o viewer pode ver a conversa da mensagem.
+func (s *Service) Attachment(ctx context.Context, v Viewer, id string) (AttachmentFile, error) {
+	if !httpx.ValidUUID(id) || s.store == nil {
+		return AttachmentFile{}, ErrNotFound
+	}
+	var key, mimeType, name string
+	err := s.db.QueryRow(ctx, `
+		SELECT a.storage_key, a.mime_type, a.file_name
+		  FROM attachments a
+		  JOIN messages m ON m.id = a.message_id
+		  JOIN conversations c ON c.id = m.conversation_id
+		  LEFT JOIN segments s ON s.id = c.segment_id
+		 WHERE a.id = $3 AND `+forViewer, v.ID, v.Admin, id).Scan(&key, &mimeType, &name)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return AttachmentFile{}, ErrNotFound
+	}
+	if err != nil {
+		return AttachmentFile{}, err
+	}
+	data, err := s.store.Get(ctx, key)
+	if errors.Is(err, storage.ErrNotFound) {
+		return AttachmentFile{}, ErrNotFound
+	}
+	return AttachmentFile{Data: data, MimeType: mimeType, FileName: name}, err
+}
+
+// fetchMedia baixa a mídia recebida, valida, guarda e avisa a interface. Roda em segundo
+// plano: a mensagem já apareceu (sem arquivo) e ganha o anexo quando ele fica pronto.
+func (s *Service) fetchMedia(msgID, convID string, m whatsapp.InboundMessage) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	state := "failed"
+	defer func() {
+		if state != "" {
+			_, _ = s.db.Exec(ctx, `UPDATE messages SET payload = payload || jsonb_build_object('mediaState', $2::text) WHERE id = $1`, msgID, state)
+		}
+		if to, err := s.visibleUsers(ctx, s.db, convID); err == nil {
+			s.publishMessage(ctx, EventMessageUpdated, msgID, to)
+		}
+	}()
+	data, err := m.Download(ctx)
+	if err != nil {
+		return
+	}
+	name, _ := m.Payload["fileName"].(string)
+	declared, _ := m.Payload["mimeType"].(string)
+	p, err := s.media.ProcessInbound(ctx, media.Kind(m.Kind), data, name, declared)
+	if err != nil {
+		var rej *media.RejectError
+		if errors.As(err, &rej) {
+			state = "blocked"
+		}
+		return
+	}
+	key := "attachments/" + uuid.NewString()
+	if err := s.store.Put(ctx, key, p.Data); err != nil {
+		return
+	}
+	sum := sha256.Sum256(p.Data)
+	if _, err := s.db.Exec(ctx, `
+		INSERT INTO attachments (message_id, storage_key, mime_type, size_bytes, sha256, file_name, scan_status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (message_id) DO NOTHING`,
+		msgID, key, p.MimeType, len(p.Data), hex.EncodeToString(sum[:]), p.FileName, p.ScanStatus); err != nil {
+		_ = s.store.Delete(ctx, key)
+		return
+	}
+	state = ""
 }

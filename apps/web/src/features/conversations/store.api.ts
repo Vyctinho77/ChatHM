@@ -3,7 +3,7 @@ import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { del, get, isRejection, post, put, patch } from "@/lib/api";
 import { useMe } from "@/features/auth/api";
-import type { Capabilities } from "./store.types";
+import { pendingFiles, type Capabilities } from "./store.types";
 import { tagsKey } from "@/features/tags/api";
 import type { Conversation, Message, TagInfo } from "./types";
 
@@ -11,8 +11,7 @@ export const capabilities: Capabilities = {
   send: true,
   tags: true,
   close: true,
-  media: false,
-  mediaUnavailableReason: "O envio de áudio, imagens e documentos chega na próxima etapa.",
+  media: true,
 };
 
 export const conversationKeys = {
@@ -113,8 +112,30 @@ export function useSendMessage(conversationId: string) {
 
   return useMutation({
     mutationFn: async ({ msg }: { msg: Message }) => {
-      if (msg.kind !== "text") throw new Error(capabilities.mediaUnavailableReason);
-      return post<Message>(`/conversations/${conversationId}/messages`, { id: msg.id, text: msg.text });
+      const path = `/conversations/${conversationId}/messages`;
+      switch (msg.kind) {
+        case "text":
+          return post<Message>(path, { id: msg.id, text: msg.text });
+        case "location":
+          return post<Message>(path, { id: msg.id, kind: "location", lat: msg.lat, lng: msg.lng, name: msg.name ?? "", address: msg.address ?? "" });
+        case "image":
+        case "audio":
+        case "document": {
+          // Reenvio depois de recarregar a página: o arquivo volta do armazenamento do servidor.
+          const blob = pendingFiles.get(msg.id) ?? (msg.url ? await (await fetch(msg.url, { credentials: "include" })).blob() : undefined);
+          if (!blob) throw new Error("Arquivo indisponível para reenviar.");
+          const fd = new FormData();
+          fd.set("id", msg.id);
+          fd.set("kind", msg.kind);
+          if (msg.kind !== "audio" && msg.caption) fd.set("text", msg.caption);
+          if (msg.kind === "image" && msg.hd) fd.set("hd", "true");
+          if (msg.kind === "audio" && msg.waveform) fd.set("waveform", JSON.stringify(msg.waveform));
+          fd.set("file", blob, msg.kind === "document" ? msg.fileName : msg.kind === "audio" ? "audio" : "imagem");
+          return post<Message>(path, fd);
+        }
+        default:
+          throw new Error("Tipo de mensagem não suportado.");
+      }
     },
     onMutate: ({ msg }) => {
       qc.setQueryData<Message[]>(key, (old = []) =>
@@ -124,11 +145,13 @@ export function useSendMessage(conversationId: string) {
       );
     },
     onSuccess: (server) => {
+      pendingFiles.delete(server.id);
       replace(server.id, () => server);
       void qc.invalidateQueries({ queryKey: conversationKeys.list });
     },
     onError: (err, { msg }) => {
       if (isRejection(err) && msg.status !== "failed") {
+        pendingFiles.delete(msg.id);
         replace(msg.id, () => null); // nunca chegou a existir: remove a bolha
       } else {
         replace(msg.id, (m) => ({ ...m, status: "failed" }) as Message);

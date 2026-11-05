@@ -160,6 +160,86 @@ func (p *Provider) SendText(ctx context.Context, chatJID, messageID, text string
 	return err
 }
 
+func (p *Provider) client() (*whatsmeow.Client, error) {
+	p.mu.Lock()
+	cli := p.cli
+	p.mu.Unlock()
+	if cli == nil || !cli.IsConnected() || cli.Store.ID == nil {
+		return nil, whatsapp.ErrNotConnected
+	}
+	return cli, nil
+}
+
+func (p *Provider) SendMedia(ctx context.Context, chatJID, messageID string, m whatsapp.MediaSend) error {
+	cli, err := p.client()
+	if err != nil {
+		return err
+	}
+	to, err := types.ParseJID(chatJID)
+	if err != nil {
+		return fmt.Errorf("conversa inválida: %w", err)
+	}
+	var msg *waE2E.Message
+	switch m.Kind {
+	case whatsapp.KindImage:
+		up, err := cli.Upload(ctx, m.Data, whatsmeow.MediaImage)
+		if err != nil {
+			return err
+		}
+		msg = &waE2E.Message{ImageMessage: &waE2E.ImageMessage{
+			URL: &up.URL, DirectPath: &up.DirectPath, MediaKey: up.MediaKey,
+			FileEncSHA256: up.FileEncSHA256, FileSHA256: up.FileSHA256, FileLength: &up.FileLength,
+			Mimetype: proto.String(m.MimeType), Caption: proto.String(m.Caption),
+			Width: proto.Uint32(uint32(m.Width)), Height: proto.Uint32(uint32(m.Height)),
+		}}
+	case whatsapp.KindAudio:
+		up, err := cli.Upload(ctx, m.Data, whatsmeow.MediaAudio)
+		if err != nil {
+			return err
+		}
+		a := &waE2E.AudioMessage{
+			URL: &up.URL, DirectPath: &up.DirectPath, MediaKey: up.MediaKey,
+			FileEncSHA256: up.FileEncSHA256, FileSHA256: up.FileSHA256, FileLength: &up.FileLength,
+			Mimetype: proto.String(m.MimeType), Seconds: proto.Uint32(uint32(m.DurationSec)), PTT: proto.Bool(true),
+		}
+		if len(m.Waveform) > 0 {
+			a.Waveform = m.Waveform
+		}
+		msg = &waE2E.Message{AudioMessage: a}
+	case whatsapp.KindDocument:
+		up, err := cli.Upload(ctx, m.Data, whatsmeow.MediaDocument)
+		if err != nil {
+			return err
+		}
+		msg = &waE2E.Message{DocumentMessage: &waE2E.DocumentMessage{
+			URL: &up.URL, DirectPath: &up.DirectPath, MediaKey: up.MediaKey,
+			FileEncSHA256: up.FileEncSHA256, FileSHA256: up.FileSHA256, FileLength: &up.FileLength,
+			Mimetype: proto.String(m.MimeType), FileName: proto.String(m.FileName), Title: proto.String(m.FileName),
+			Caption: proto.String(m.Caption),
+		}}
+	default:
+		return fmt.Errorf("tipo de mídia não suportado: %s", m.Kind)
+	}
+	_, err = cli.SendMessage(ctx, to, msg, whatsmeow.SendRequestExtra{ID: types.MessageID(messageID)})
+	return err
+}
+
+func (p *Provider) SendLocation(ctx context.Context, chatJID, messageID string, l whatsapp.Location) error {
+	cli, err := p.client()
+	if err != nil {
+		return err
+	}
+	to, err := types.ParseJID(chatJID)
+	if err != nil {
+		return fmt.Errorf("conversa inválida: %w", err)
+	}
+	_, err = cli.SendMessage(ctx, to, &waE2E.Message{LocationMessage: &waE2E.LocationMessage{
+		DegreesLatitude: proto.Float64(l.Lat), DegreesLongitude: proto.Float64(l.Lng),
+		Name: proto.String(l.Name), Address: proto.String(l.Address),
+	}}, whatsmeow.SendRequestExtra{ID: types.MessageID(messageID)})
+	return err
+}
+
 func (p *Provider) swap(cli *whatsmeow.Client) {
 	p.mu.Lock()
 	old := p.cli

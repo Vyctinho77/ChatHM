@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { FileText, Image, Mic, Paperclip, SendHorizontal, Smile, Square, Trash2 } from "lucide-react";
+import { FileText, Image, MapPin, Mic, Paperclip, SendHorizontal, Smile, Sparkles, Square, Trash2 } from "lucide-react";
 import { Menu, MenuItem } from "@/components/Menu";
 import { IconButton } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -10,7 +10,27 @@ import type { OutgoingDraft } from "./store";
 
 const quickEmojis = ["😀", "😉", "🙏", "👍", "👏", "✅", "📄", "📎", "⏰", "💰", "🎉", "❤️"];
 
-const MAX_FILE = 100 * 1024 * 1024; // limite provisório; validação real fica no backend
+const MAX_FILE = 25 * 1024 * 1024; // padrão do servidor (MAX_ATTACHMENT_MB); a validação real é do backend
+
+/** Forma de onda real (40 barras de 0 a 1) a partir do áudio gravado; aleatória se o navegador não decodificar. */
+async function waveformOf(blob: Blob, bars = 40): Promise<number[]> {
+  try {
+    const ctx = new AudioContext();
+    const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
+    void ctx.close();
+    const data = buf.getChannelData(0);
+    const step = Math.max(1, Math.floor(data.length / bars));
+    const out = Array.from({ length: bars }, (_, i) => {
+      let peak = 0;
+      for (let j = i * step; j < Math.min(data.length, (i + 1) * step); j++) peak = Math.max(peak, Math.abs(data[j]!));
+      return peak;
+    });
+    const max = Math.max(...out, 0.01);
+    return out.map((v) => 0.15 + (v / max) * 0.85);
+  } catch {
+    return Array.from({ length: bars }, () => 0.25 + Math.random() * 0.75);
+  }
+}
 
 function useRecorder(onDone: (blob: Blob, durationSec: number) => void) {
   const rec = useRef<MediaRecorder | null>(null);
@@ -73,10 +93,12 @@ export function Composer({
   const ta = useRef<HTMLTextAreaElement>(null);
   const docInput = useRef<HTMLInputElement>(null);
   const imgInput = useRef<HTMLInputElement>(null);
+  const hdInput = useRef<HTMLInputElement>(null);
 
   const recorder = useRecorder((blob, durationSec) => {
-    const waveform = Array.from({ length: 40 }, () => 0.25 + Math.random() * 0.75);
-    onSend({ kind: "audio", url: URL.createObjectURL(blob), durationSec, waveform });
+    void waveformOf(blob).then((waveform) =>
+      onSend({ kind: "audio", url: URL.createObjectURL(blob), durationSec, waveform, file: blob }),
+    );
   });
 
   // Auto-altura do campo.
@@ -106,21 +128,31 @@ export function Composer({
     }
   }
 
-  function onFile(kind: "document" | "image") {
+  function sendLocation() {
+    if (!("geolocation" in navigator)) return setError("Localização indisponível neste navegador.");
+    setError("");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => onSend({ kind: "location", lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => setError("Não foi possível obter a localização (permissão negada?)."),
+      { enableHighAccuracy: true, timeout: 10_000 },
+    );
+  }
+
+  function onFile(kind: "document" | "image", hd = false) {
     return (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       e.target.value = "";
       if (!file) return;
-      if (file.size > MAX_FILE) return setError("Arquivo acima de 100 MB.");
+      if (file.size > MAX_FILE) return setError("Arquivo acima de 25 MB.");
       setError("");
       const url = URL.createObjectURL(file);
       if (kind === "image" && file.type.startsWith("image/")) {
         const img = new window.Image();
         img.onload = () =>
-          onSend({ kind: "image", url, width: img.naturalWidth, height: img.naturalHeight, hd: img.naturalWidth > 1600 });
+          onSend({ kind: "image", url, width: img.naturalWidth, height: img.naturalHeight, hd, file });
         img.src = url;
       } else {
-        onSend({ kind: "document", url, fileName: file.name, mimeType: file.type || "application/octet-stream", sizeBytes: file.size });
+        onSend({ kind: "document", url, fileName: file.name, mimeType: file.type || "application/octet-stream", sizeBytes: file.size, file });
       }
     };
   }
@@ -202,11 +234,18 @@ export function Composer({
                 <MenuItem icon={<Image />} onClick={() => (imgInput.current?.click(), close())}>
                   Fotos
                 </MenuItem>
+                <MenuItem icon={<Sparkles />} onClick={() => (hdInput.current?.click(), close())}>
+                  Foto em HD (original)
+                </MenuItem>
+                <MenuItem icon={<MapPin />} onClick={() => (sendLocation(), close())}>
+                  Localização atual
+                </MenuItem>
               </>
             )}
           </Menu>
           <input ref={docInput} type="file" hidden onChange={onFile("document")} />
-          <input ref={imgInput} type="file" accept="image/*" hidden onChange={onFile("image")} />
+          <input ref={imgInput} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={onFile("image")} />
+          <input ref={hdInput} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={onFile("image", true)} />
 
           <textarea
             ref={ta}

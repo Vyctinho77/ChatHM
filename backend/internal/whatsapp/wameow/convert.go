@@ -66,6 +66,7 @@ func convertMessage(ctx context.Context, cli *whatsmeow.Client, e *events.Messag
 		out.Payload["sizeBytes"] = img.GetFileLength()
 		out.Payload["width"] = img.GetWidth()
 		out.Payload["height"] = img.GetHeight()
+		out.Download = func(ctx context.Context) ([]byte, error) { return cli.Download(ctx, img) }
 	case m.GetAudioMessage() != nil:
 		a := m.GetAudioMessage()
 		out.Kind = whatsapp.KindAudio
@@ -73,6 +74,7 @@ func convertMessage(ctx context.Context, cli *whatsmeow.Client, e *events.Messag
 		out.Payload["mimeType"] = a.GetMimetype()
 		out.Payload["sizeBytes"] = a.GetFileLength()
 		out.Payload["voiceNote"] = a.GetPTT()
+		out.Download = func(ctx context.Context) ([]byte, error) { return cli.Download(ctx, a) }
 		if wf := a.GetWaveform(); len(wf) > 0 {
 			bars := make([]float64, len(wf))
 			for i, v := range wf {
@@ -90,6 +92,7 @@ func convertMessage(ctx context.Context, cli *whatsmeow.Client, e *events.Messag
 		out.Payload["fileName"] = name
 		out.Payload["mimeType"] = d.GetMimetype()
 		out.Payload["sizeBytes"] = d.GetFileLength()
+		out.Download = func(ctx context.Context) ([]byte, error) { return cli.Download(ctx, d) }
 	case m.GetLocationMessage() != nil:
 		l := m.GetLocationMessage()
 		out.Kind = whatsapp.KindLocation

@@ -45,14 +45,15 @@ export async function api<T>(method: Method, path: string, body?: unknown): Prom
   // Condição inline para o bundler remover a demo do build normal.
   if (import.meta.env.VITE_DEMO === "1") return demoCall<T>(method, path, body);
   const headers: Record<string, string> = {};
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const isForm = typeof FormData !== "undefined" && body instanceof FormData;
+  if (body !== undefined && !isForm) headers["Content-Type"] = "application/json"; // multipart: o navegador define
   if (method !== "GET" && csrfToken) headers["X-CSRF-Token"] = csrfToken;
 
   const res = await fetch(`/api/v1${path}`, {
     method,
     headers,
     credentials: "include",
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body),
   });
 
   if (res.status === 204) return undefined as T;
@@ -83,7 +84,7 @@ export const del = <T>(path: string) => api<T>("DELETE", path);
 
 /** O servidor recusou a ação (permissão, conflito, validação ou indisponibilidade): nada foi feito. */
 export function isRejection(err: unknown) {
-  return err instanceof ApiError && [403, 404, 409, 422, 503].includes(err.status);
+  return err instanceof ApiError && [403, 404, 409, 413, 422, 503].includes(err.status);
 }
 
 /** Erros de validação por campo (vazio quando o erro não é de validação). */
@@ -92,6 +93,7 @@ export function fieldErrors(err: unknown): FieldErrors {
 }
 
 export function errorMessage(err: unknown): string {
-  if (err instanceof ApiError) return err.message;
+  // Erro de validação de um anexo: a mensagem útil está no campo "file".
+  if (err instanceof ApiError) return err.fields.file ?? err.message;
   return "Não foi possível conectar ao servidor.";
 }

@@ -62,6 +62,9 @@ func setup(t *testing.T, o ...opts) *env {
 		SessionTTL:        time.Hour,
 		SessionIdle:       30 * time.Minute,
 		EncryptionKey:     base64.StdEncoding.EncodeToString(key),
+		StorageDriver:     "fs",
+		StorageDir:        t.TempDir(),
+		MaxAttachment:     5 << 20,
 	}
 	var op opts
 	if len(o) > 0 {

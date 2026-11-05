@@ -1,4 +1,4 @@
-# API (Fases 1 a 3)
+# API (Fases 1 a 4)
 
 Base: `/api/v1`. Todas as respostas são JSON. Erros seguem o formato:
 
@@ -142,6 +142,25 @@ publica `conversation.removed`. Quando o cliente volta, abre-se um novo atendime
 devolve o histórico de todos os atendimentos do mesmo contato que o usuário pode ver; cada mensagem traz seu
 `conversationId` (a interface mostra "Novo atendimento" na troca). Transferir encerra a atribuição atual com motivo
 `transferred`, atribui à pessoa escolhida (status `in_progress`) e registra auditoria `conversation.transfer`.
+
+### Anexos e localização (Fase 4)
+
+`POST /conversations/{id}/messages` aceita, além de JSON de texto:
+
+- **Localização** (JSON): `{id?, kind: "location", lat, lng, name?, address?}`.
+- **Anexo** (`multipart/form-data`): campos `id?`, `kind` (`image` \| `audio` \| `document`), `text` (legenda; não vale para áudio),
+  `hd` (`true`: imagem original), `waveform` (JSON, 0–1) e o arquivo em `file`. `422` com `fields.file` (tipo/conteúdo
+  inválido, vazio, executável, antivírus), `413` acima do limite (`MAX_ATTACHMENT_MB`, padrão 25), `503` se o WhatsApp está desconectado.
+
+O tipo vem do **conteúdo**, não do nome. Imagens (JPEG, PNG, WebP) sem `hd` são reduzidas a 1600 px; com `hd` seguem
+originais. Áudio de qualquer formato que o ffmpeg leia é convertido para Ogg/Opus (mensagem de voz). Reenviar com o mesmo `id`
+(mensagem `failed`) tenta de novo **relendo o arquivo guardado** — não duplica.
+
+`GET /attachments/{id}`: entrega o arquivo só se o usuário pode ver a conversa (`404` caso contrário; `401` sem sessão),
+com `Cache-Control: private, no-store`, `nosniff` e CSP `sandbox`. Imagens e áudios são `inline`; o resto vai como
+download (`application/octet-stream`). Não há URL pública nem assinada: a autorização é refeita a cada requisição.
+A mensagem traz `url` quando tem arquivo. Mídia **recebida** é baixada em segundo plano: enquanto isso a mensagem
+vem sem `url`; se falhar, `mediaState: "failed"` (ou `"blocked"` se não passou na verificação), e o WebSocket envia `message.updated`.
 
 `POST .../messages` **assume o atendimento** quando a conversa não tem responsável. Envie o `id` (UUID gerado no
 cliente): repetir a requisição não duplica. A resposta pode trazer `status: "failed"` se o WhatsApp recusou; reenviar

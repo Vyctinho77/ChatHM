@@ -53,6 +53,27 @@ type InboundMessage struct {
 	Kind         Kind
 	Body         string         // texto ou legenda
 	Payload      map[string]any // metadados (mídia, localização); nunca o binário
+	// Download baixa o arquivo da mídia (nil quando a mensagem não tem arquivo).
+	Download func(ctx context.Context) ([]byte, error) `json:"-"`
+}
+
+// MediaSend é um anexo a enviar (já validado e normalizado).
+type MediaSend struct {
+	Kind        Kind // image | audio | document
+	Data        []byte
+	MimeType    string
+	FileName    string
+	Caption     string
+	DurationSec int
+	Waveform    []byte // 0–100 por barra (opcional)
+	Width       int
+	Height      int
+}
+
+// Location é uma localização estática.
+type Location struct {
+	Lat, Lng      float64
+	Name, Address string
 }
 
 // ReceiptStatus é o avanço de uma mensagem enviada, informado pelo WhatsApp.
@@ -108,6 +129,10 @@ type Provider interface {
 	NewMessageID() string
 	// SendText envia texto para uma conversa 1:1 usando o ID informado.
 	SendText(ctx context.Context, chatJID, messageID, text string) error
+	// SendMedia envia áudio (mensagem de voz), imagem ou documento.
+	SendMedia(ctx context.Context, chatJID, messageID string, m MediaSend) error
+	// SendLocation envia uma localização estática.
+	SendLocation(ctx context.Context, chatJID, messageID string, l Location) error
 }
 
 // Factory cria o provedor ligado ao handler de eventos.

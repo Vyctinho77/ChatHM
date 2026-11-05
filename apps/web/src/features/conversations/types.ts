@@ -32,6 +32,8 @@ type Base = {
   deliveredAt?: string; // recibo de entrega (mensagens enviadas)
   readAt?: string; // recibo de leitura (mensagens enviadas)
   authorName?: string; // atendente que enviou
+  /** Mídia recebida sem arquivo: o download falhou ou foi bloqueado pela verificação de segurança. */
+  mediaState?: "failed" | "blocked";
 };
 
 // `url` ausente = mídia recebida cujo arquivo ainda não é baixado (download chega na Fase 4).

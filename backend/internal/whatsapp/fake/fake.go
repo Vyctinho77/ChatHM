@@ -32,6 +32,8 @@ type Provider struct {
 // Sent é uma mensagem de texto enviada pelo sistema (para asserções em testes).
 type Sent struct {
 	ChatJID, MessageID, Text string
+	Media                    *whatsapp.MediaSend
+	Location                 *whatsapp.Location
 }
 
 func New(h whatsapp.Handler) *Provider {
@@ -157,6 +159,18 @@ func (p *Provider) NewMessageID() string {
 }
 
 func (p *Provider) SendText(_ context.Context, chatJID, messageID, text string) error {
+	return p.record(Sent{ChatJID: chatJID, MessageID: messageID, Text: text})
+}
+
+func (p *Provider) SendMedia(_ context.Context, chatJID, messageID string, m whatsapp.MediaSend) error {
+	return p.record(Sent{ChatJID: chatJID, MessageID: messageID, Text: m.Caption, Media: &m})
+}
+
+func (p *Provider) SendLocation(_ context.Context, chatJID, messageID string, l whatsapp.Location) error {
+	return p.record(Sent{ChatJID: chatJID, MessageID: messageID, Location: &l})
+}
+
+func (p *Provider) record(s Sent) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if !p.connected {
@@ -166,12 +180,12 @@ func (p *Provider) SendText(_ context.Context, chatJID, messageID, text string) 
 		return p.sendErr
 	}
 	// Reenvio com o mesmo ID não duplica (como no WhatsApp).
-	for _, s := range p.sent {
-		if s.MessageID == messageID {
+	for _, x := range p.sent {
+		if x.MessageID == s.MessageID {
 			return nil
 		}
 	}
-	p.sent = append(p.sent, Sent{ChatJID: chatJID, MessageID: messageID, Text: text})
+	p.sent = append(p.sent, s)
 	return nil
 }
 

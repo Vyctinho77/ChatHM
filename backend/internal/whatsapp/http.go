@@ -1,6 +1,8 @@
 package whatsapp
 
 import (
+	"context"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"strings"
@@ -78,6 +80,10 @@ func (h *HTTPHandler) simulate(w http.ResponseWriter, r *http.Request) {
 		Phone string `json:"phone"`
 		Name  string `json:"name"`
 		Text  string `json:"text"`
+		// Mídia simulada (somente desenvolvimento): kind image|audio|document + arquivo em base64.
+		Kind     string `json:"kind"`
+		File     string `json:"fileBase64"`
+		FileName string `json:"fileName"`
 	}
 	if !httpx.Decode(w, r, &in) {
 		return
@@ -88,6 +94,22 @@ func (h *HTTPHandler) simulate(w http.ResponseWriter, r *http.Request) {
 		}
 		return -1
 	}, in.Phone)
+	if in.Kind != "" && in.Kind != "text" {
+		data, err := base64.StdEncoding.DecodeString(in.File)
+		if err != nil || len(digits) < 10 || (in.Kind != "image" && in.Kind != "audio" && in.Kind != "document") {
+			httpx.Validation(w, httpx.FieldErrors{"kind": "Informe kind (image|audio|document), telefone e fileBase64."})
+			return
+		}
+		h.sim(InboundMessage{
+			ExternalID: "sim-" + time.Now().Format("20060102150405.000000000"),
+			ChatJID:    digits + "@s.whatsapp.net", ContactWAID: digits, ContactPhone: "+" + digits,
+			PushName: in.Name, Timestamp: time.Now(), Kind: Kind(in.Kind), Body: in.Text,
+			Payload:  map[string]any{"fileName": in.FileName, "sizeBytes": len(data)},
+			Download: func(context.Context) ([]byte, error) { return data, nil },
+		})
+		httpx.NoContent(w)
+		return
+	}
 	if len(digits) < 10 || strings.TrimSpace(in.Text) == "" {
 		httpx.Validation(w, httpx.FieldErrors{"phone": "Informe telefone e texto."})
 		return

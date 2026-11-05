@@ -32,6 +32,13 @@ function MetaOverlay({ m }: { m: Message }) {
   );
 }
 
+/** Texto do espaço de uma mídia cujo arquivo ainda não chegou ou não pode ser exibido. */
+function mediaStateLabel(m: Message, what: string) {
+  if (m.mediaState === "blocked") return `${what} bloqueada por segurança`;
+  if (m.mediaState === "failed") return `Não foi possível baixar ${what.toLowerCase() === "imagem" ? "a imagem" : "o arquivo"}`;
+  return `${what} recebida · baixando…`;
+}
+
 function ImageBody({ m, showAuthor }: { m: Extract<Message, { kind: "image" }>; showAuthor: boolean }) {
   const author = m.direction === "out" && showAuthor && m.authorName ? m.authorName : "";
   const hasText = !!m.caption || !!author;
@@ -52,10 +59,9 @@ function ImageBody({ m, showAuthor }: { m: Extract<Message, { kind: "image" }>; 
         ) : (
           <div
             className="flex h-40 w-full flex-col items-center justify-center gap-1.5 bg-black/10 text-[11.5px] opacity-80 dark:bg-black/25"
-            title="O download de mídias chega na Fase 4"
           >
             <ImageIcon className="size-6" />
-            Imagem recebida
+            {mediaStateLabel(m, "Imagem")}
           </div>
         )}
         {m.hd && (
@@ -94,6 +100,7 @@ function DocumentCard({ m }: { m: Extract<Message, { kind: "document" }> }) {
         <p className="break-all text-[13px] font-medium leading-snug">{m.fileName}</p>
         <p className="text-[11px] opacity-70">
           {isPdf ? "PDF" : ext} • {formatBytes(m.sizeBytes)}
+          {!m.url && ` • ${m.mediaState === "blocked" ? "bloqueado por segurança" : m.mediaState === "failed" ? "download falhou" : "baixando…"}`}
         </p>
       </div>
       {m.url && (

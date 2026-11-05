@@ -12,9 +12,11 @@ import (
 	"github.com/vyctinho77/chathm/backend/internal/auth"
 	"github.com/vyctinho77/chathm/backend/internal/config"
 	"github.com/vyctinho77/chathm/backend/internal/conversations"
+	"github.com/vyctinho77/chathm/backend/internal/media"
 	"github.com/vyctinho77/chathm/backend/internal/platform/secretbox"
 	"github.com/vyctinho77/chathm/backend/internal/realtime"
 	"github.com/vyctinho77/chathm/backend/internal/segments"
+	"github.com/vyctinho77/chathm/backend/internal/storage"
 	"github.com/vyctinho77/chathm/backend/internal/tags"
 	"github.com/vyctinho77/chathm/backend/internal/teams"
 	"github.com/vyctinho77/chathm/backend/internal/users"
@@ -66,8 +68,25 @@ func NewServices(ctx context.Context, cfg config.Config, db *pgxpool.Pool, opt O
 		return nil, err
 	}
 
+	var store storage.Store
+	switch cfg.StorageDriver {
+	case "s3":
+		store, err = storage.NewS3(ctx, storage.S3Config{Endpoint: cfg.S3Endpoint, Region: cfg.S3Region, Bucket: cfg.S3Bucket,
+			AccessKey: cfg.S3AccessKey, SecretKey: cfg.S3SecretKey, UseSSL: cfg.S3UseSSL})
+	default:
+		store, err = storage.NewFS(cfg.StorageDir, box)
+	}
+	if err != nil {
+		return nil, err
+	}
+	var scanner *media.Scanner
+	if cfg.ClamAVAddr != "" {
+		scanner = media.NewScanner(cfg.ClamAVAddr)
+	}
+
 	hub := realtime.NewHub(cfg.AllowedOrigins)
 	convs := conversations.NewService(db, hub)
+	convs.SetMedia(store, media.NewService(cfg.MaxAttachment, scanner))
 	s := &Services{
 		Auth:          authSvc,
 		Users:         users.NewService(db, opt.Hasher),
