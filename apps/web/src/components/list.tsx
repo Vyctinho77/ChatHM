@@ -16,7 +16,7 @@ export function Page({ children }: { children: ReactNode }) {
 export function PageHeader({ title, onBack, actions }: { title: string; onBack?: () => void; actions?: ReactNode }) {
   return (
     <header className="sticky top-0 z-10 border-b border-line bg-panel/95 backdrop-blur">
-      <div className="mx-auto flex h-14 max-w-2xl items-center gap-1 px-2">
+      <div className="flex h-14 items-center gap-1 px-2 sm:px-3">
         {onBack && (
           <IconButton label="Voltar" onClick={onBack}>
             <ArrowLeft className="size-5" />
