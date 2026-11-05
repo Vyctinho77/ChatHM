@@ -22,7 +22,8 @@ src/
 ## Layout
 
 - Menu lateral único à esquerda → lista de conversas → chat, separados por divisórias arrastáveis
-  (tamanhos salvos no navegador).
+  (tamanhos salvos no navegador). O perfil do usuário (com "Sair") fica no rodapé do menu lateral, abaixo de
+  Configurações; o cabeçalho tem apenas o logo e o seletor de tema.
 - Painel do contato fechado por padrão; abre ao clicar no nome/foto no cabeçalho do chat.
   Em telas ≥1280px vira uma coluna; em telas menores sobrepõe o chat sem desmontá-lo.
 - Rascunhos ficam por conversa (sessionStorage): sobrevivem à troca de conversa e ao abrir/fechar o painel.

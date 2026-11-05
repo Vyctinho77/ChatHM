@@ -153,7 +153,8 @@ export function Composer({
         <div className="flex items-end gap-1">
           <Menu
             align="left"
-            className="bottom-full top-auto mb-2 grid w-64 grid-cols-6 gap-1 p-2"
+            placement="top"
+            className="grid w-64 grid-cols-6 gap-1 p-2"
             trigger={({ toggle }) => (
               <IconButton label="Emojis" onClick={toggle}>
                 <Smile className="size-5" />
@@ -179,7 +180,7 @@ export function Composer({
           </Menu>
           <Menu
             align="left"
-            className="bottom-full top-auto mb-2"
+            placement="top"
             trigger={({ toggle }) => (
               <IconButton label="Anexar" onClick={toggle}>
                 <Paperclip className="size-5" />

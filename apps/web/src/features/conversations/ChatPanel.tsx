@@ -205,10 +205,10 @@ export function ChatPanel({
       )}
 
       <div className="relative min-h-0 flex-1">
-      <div ref={scroller} onScroll={onScroll} className="chat-wallpaper h-full overflow-y-auto px-3 py-4 sm:px-8">
+      <div ref={scroller} onScroll={onScroll} className="chat-wallpaper h-full overflow-y-auto px-3 py-3 sm:px-4">
         {isPending && <Spinner className="mx-auto mt-10" />}
         <motion.div
-          className="mx-auto flex max-w-4xl flex-col gap-1"
+          className="flex flex-col gap-1"
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: messages ? 1 : 0, y: messages ? 0 : 8 }}
           transition={{ duration: 0.25, ease: "easeOut" }}

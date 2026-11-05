@@ -6,12 +6,17 @@ export function Menu({
   trigger,
   children,
   align = "right",
+  placement = "bottom",
   className,
+  rootClassName,
 }: {
   trigger: (props: { open: boolean; toggle: () => void }) => ReactNode;
   children: (close: () => void) => ReactNode;
   align?: "left" | "right";
+  /** "top" abre o menu para cima (ex.: itens no rodapé da tela). */
+  placement?: "bottom" | "top";
   className?: string;
+  rootClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -29,13 +34,14 @@ export function Menu({
   }, [open]);
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className={cn("relative", rootClassName)}>
       {trigger({ open, toggle: () => setOpen((o) => !o) })}
       {open && (
         <div
           role="menu"
           className={cn(
-            "absolute top-full z-30 mt-1 min-w-48 overflow-hidden rounded-xl border border-line bg-panel py-1 shadow-xl",
+            "absolute z-30 min-w-48 overflow-hidden rounded-xl border border-line bg-panel py-1 shadow-xl",
+            placement === "bottom" ? "top-full mt-1" : "bottom-full mb-1",
             align === "right" ? "right-0" : "left-0",
             className,
           )}

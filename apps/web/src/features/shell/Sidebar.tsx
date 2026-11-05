@@ -1,10 +1,11 @@
 import { NavLink } from "react-router";
 import { Badge } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import type { Role } from "@/features/auth/api";
+import type { Me } from "@/features/auth/api";
 import { useConversations } from "@/features/conversations/store";
 import { stateDot, stateLabel, useConnection } from "@/features/whatsapp/api";
 import { mainNav, secondaryNav, settingsNav, type NavItem } from "./nav";
+import { UserMenu } from "./UserMenu";
 
 function Item({ item, extra, onNavigate }: { item: NavItem; extra?: React.ReactNode; onNavigate?: () => void }) {
   const Icon = item.icon;
@@ -30,7 +31,8 @@ function Item({ item, extra, onNavigate }: { item: NavItem; extra?: React.ReactN
   );
 }
 
-export function Sidebar({ role, onNavigate }: { role: Role; onNavigate?: () => void }) {
+export function Sidebar({ me, onNavigate }: { me: Me; onNavigate?: () => void }) {
+  const role = me.user.role;
   const { data } = useConversations();
   const { data: wa } = useConnection();
   const unread = data?.filter((c) => c.unreadCount > 0).length ?? 0;
@@ -70,8 +72,9 @@ export function Sidebar({ role, onNavigate }: { role: Role; onNavigate?: () => v
           />
         ))}
       </div>
-      <div className="mt-auto border-t border-line pt-3">
+      <div className="mt-auto flex flex-col gap-1 border-t border-line pt-3">
         <Item item={settingsNav} onNavigate={onNavigate} />
+        <UserMenu me={me} />
       </div>
     </nav>
   );

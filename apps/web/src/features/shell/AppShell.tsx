@@ -27,7 +27,7 @@ export function AppShell({ me }: { me: Me }) {
 
   return (
     <div className="flex h-full flex-col bg-app">
-      <TopBar me={me} onOpenMenu={desktop ? undefined : () => setDrawer(true)} />
+      <TopBar onOpenMenu={desktop ? undefined : () => setDrawer(true)} />
 
       <div className="min-h-0 flex-1">
         {desktop ? (
@@ -37,7 +37,7 @@ export function AppShell({ me }: { me: Me }) {
             onLayoutChanged={layout.onLayoutChanged}
           >
             <Panel id="sidebar" defaultSize={220} minSize={180} maxSize={300} groupResizeBehavior="preserve-pixel-size">
-              <Sidebar role={me.user.role} />
+              <Sidebar me={me} />
             </Panel>
             <ResizeHandle />
             <Panel id="main" minSize={480}>
@@ -56,7 +56,7 @@ export function AppShell({ me }: { me: Me }) {
                   onClick={() => setDrawer(false)}
                 />
                 <div className="absolute inset-y-0 left-0 w-72 max-w-[85%] shadow-2xl">
-                  <Sidebar role={me.user.role} onNavigate={() => setDrawer(false)} />
+                  <Sidebar me={me} onNavigate={() => setDrawer(false)} />
                 </div>
               </div>
             )}
