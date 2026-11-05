@@ -1,0 +1,21 @@
+# deps / build
+node_modules/
+dist/
+*.tsbuildinfo
+backend/bin/
+*.test
+coverage/
+
+# env / segredos
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# editor / SO
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.log
