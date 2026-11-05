@@ -1,14 +1,16 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, CircleCheck, EllipsisVertical, PanelRight, Search, X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { ArrowDown, ArrowLeft, CheckCheck, CircleCheck, EllipsisVertical, PanelRight, Search, X } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { Menu, MenuItem } from "@/components/Menu";
 import { IconButton, Spinner } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { formatDayDivider, sameDay } from "@/lib/format";
+import { formatDayDivider, formatTime, sameDay } from "@/lib/format";
 import { Composer } from "./Composer";
 import { MessageBubble } from "./MessageBubble";
 import { buildOutgoing, useConversationActions, useMessages, useSendMessage } from "./store";
-import { segments, type Conversation } from "./types";
+import { statusLabel } from "./receipts";
+import { segments, type Conversation, type Message } from "./types";
 
 const normalize = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
@@ -28,14 +30,46 @@ export function ChatPanel({
   const send = useSendMessage(c.id);
   const scroller = useRef<HTMLDivElement>(null);
   const [search, setSearch] = useState<string | null>(null);
+  // Mensagens com horário posterior à abertura da conversa entram animadas.
+  // (O componente é remontado a cada conversa: ver key no ConversationsPage.)
+  const [openedAt] = useState(() => Date.now());
+  const atBottom = useRef(true);
+  const scrolledOnce = useRef(false);
+  const [showJump, setShowJump] = useState(false);
 
   useEffect(() => actions.markRead(c.id), [c.id, c.unreadCount, actions]);
 
-  // Rola para o fim ao abrir a conversa e quando chega/sai mensagem.
+  // Ao abrir: vai direto ao fim. Depois: rolagem suave quando chega mensagem,
+  // desde que a pessoa esteja perto do fim (ou tenha acabado de enviar).
   useLayoutEffect(() => {
     const el = scroller.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [c.id, messages?.length]);
+    if (!el || !messages?.length) return;
+    if (!scrolledOnce.current) {
+      el.scrollTop = el.scrollHeight;
+      scrolledOnce.current = true;
+      return;
+    }
+    const last = messages[messages.length - 1];
+    if (atBottom.current || last?.direction === "out") {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    }
+  }, [messages]);
+
+  function onScroll() {
+    const el = scroller.current;
+    if (!el) return;
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    atBottom.current = near;
+    setShowJump(!near);
+  }
+
+  const lastOutId = useMemo(() => {
+    for (let i = (messages?.length ?? 0) - 1; i >= 0; i--) {
+      const m = messages![i]!;
+      if (m.direction === "out") return m.id;
+    }
+    return undefined;
+  }, [messages]);
 
   const shown = useMemo(() => {
     if (!messages || !search?.trim()) return messages ?? [];
@@ -158,9 +192,15 @@ export function ChatPanel({
         </div>
       )}
 
-      <div ref={scroller} className="chat-wallpaper min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-8">
+      <div className="relative min-h-0 flex-1">
+      <div ref={scroller} onScroll={onScroll} className="chat-wallpaper h-full overflow-y-auto px-3 py-4 sm:px-8">
         {isPending && <Spinner className="mx-auto mt-10" />}
-        <div className="mx-auto flex max-w-5xl flex-col gap-1.5">
+        <motion.div
+          className="mx-auto flex max-w-5xl flex-col gap-1.5"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: messages ? 1 : 0, y: messages ? 0 : 8 }}
+          transition={{ duration: 0.25, ease: "easeOut" }}
+        >
           {shown.map((m, i) => {
             const prev = shown[i - 1];
             const newDay = !prev || !sameDay(prev.sentAt, m.sentAt);
@@ -175,12 +215,34 @@ export function ChatPanel({
                   </div>
                 )}
                 <div className={cn(showAuthor || (prev && prev.direction !== m.direction) ? "mt-1.5" : "")}>
-                  <MessageBubble m={m} showAuthor={showAuthor} />
+                  <MessageBubble m={m} showAuthor={showAuthor} animateIn={new Date(m.sentAt).getTime() > openedAt} />
                 </div>
+                {m.id === lastOutId && !search && (
+                  <ReceiptLine
+                    m={m}
+                    onRetry={() => send.mutate({ msg: m })}
+                  />
+                )}
               </Fragment>
             );
           })}
-        </div>
+        </motion.div>
+      </div>
+      <AnimatePresence>
+        {showJump && (
+          <motion.button
+            type="button"
+            aria-label="Ir para a mensagem mais recente"
+            onClick={() => scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" })}
+            initial={{ opacity: 0, scale: 0.8, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.8, y: 8 }}
+            className="absolute bottom-4 right-5 inline-flex size-10 items-center justify-center rounded-full border border-line bg-elevated text-muted shadow-lg hover:text-fg"
+          >
+            <ArrowDown className="size-5" />
+          </motion.button>
+        )}
+      </AnimatePresence>
       </div>
 
       {!lockedByOther && <div className="border-t border-line bg-panel px-4 py-1.5 text-xs text-muted">{banner}</div>}
@@ -192,5 +254,48 @@ export function ChatPanel({
         onSend={(d) => send.mutate({ msg: buildOutgoing(c.id, actions.me.name, d) })}
       />
     </section>
+  );
+}
+
+/** Recibo sob a última mensagem enviada: "Lida às 08:53", "Entregue às 08:51"… */
+function ReceiptLine({ m, onRetry }: { m: Message; onRetry: () => void }) {
+  const status = m.status ?? "sent";
+  let content: React.ReactNode;
+  if (status === "failed") {
+    content = (
+      <span className="text-danger">
+        Não enviada ·{" "}
+        <button type="button" onClick={onRetry} className="font-medium underline-offset-2 hover:underline">
+          Tentar de novo
+        </button>
+      </span>
+    );
+  } else if (status === "read" && m.readAt) {
+    content = (
+      <span className="inline-flex items-center gap-1 text-read">
+        <CheckCheck className="size-3.5" /> Lida às {formatTime(m.readAt)}
+      </span>
+    );
+  } else if (status === "delivered" && m.deliveredAt) {
+    content = <>Entregue às {formatTime(m.deliveredAt)}</>;
+  } else {
+    content = <>{statusLabel[status]}{status === "pending" ? "…" : ""}</>;
+  }
+
+  return (
+    <div className="flex justify-end pr-1" aria-live="polite">
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.span
+          key={status}
+          className="text-xs text-muted"
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 4 }}
+          transition={{ duration: 0.18 }}
+        >
+          {content}
+        </motion.span>
+      </AnimatePresence>
+    </div>
   );
 }

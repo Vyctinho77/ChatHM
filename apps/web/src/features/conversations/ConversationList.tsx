@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import { CheckCheck, EllipsisVertical, ListFilter, Search, SquarePen } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { Menu, MenuItem } from "@/components/Menu";
@@ -157,22 +158,19 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+      <motion.div layoutScroll className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         {isPending && <Spinner className="mx-auto mt-8" />}
         {!isPending && visible.length === 0 && (
           <p className="px-4 py-10 text-center text-sm text-muted">Nenhuma conversa encontrada.</p>
         )}
         <ul className="flex flex-col">
-          {visible.map((c) => (
-            <ConversationRow
-              key={c.id}
-              c={c}
-              selected={c.id === selectedId}
-              onClick={() => onSelect(c.id)}
-            />
-          ))}
+          <AnimatePresence initial={false}>
+            {visible.map((c) => (
+              <ConversationRow key={c.id} c={c} selected={c.id === selectedId} onClick={() => onSelect(c.id)} />
+            ))}
+          </AnimatePresence>
         </ul>
-      </div>
+      </motion.div>
     </section>
   );
 }
@@ -181,18 +179,35 @@ function ConversationRow({ c, selected, onClick }: { c: Conversation; selected: 
   const unread = c.unreadCount > 0;
   const last = c.lastMessage;
   return (
-    <li>
+    <motion.li
+      layout="position"
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: "auto" }}
+      exit={{ opacity: 0, height: 0 }}
+      transition={{ type: "spring", stiffness: 500, damping: 40 }}
+      className="overflow-hidden"
+    >
       <button
         type="button"
         onClick={onClick}
         aria-current={selected ? "true" : undefined}
         className={cn(
-          "flex w-full gap-3 rounded-xl px-3 py-3 text-left transition-colors",
-          selected ? "bg-selected" : "hover:bg-hover",
+          "relative flex w-full gap-3 rounded-xl px-3 py-3 text-left transition-colors",
+          !selected && "hover:bg-hover",
         )}
       >
+        {selected && (
+          <motion.span
+            layoutId="conversation-selected"
+            className="absolute inset-0 rounded-xl bg-selected"
+            transition={{ type: "spring", stiffness: 500, damping: 40 }}
+            aria-hidden
+          />
+        )}
+        <span className="relative">
         <Avatar name={c.contact.name} src={c.contact.avatarUrl} ring={c.status === "new"} />
-        <div className="min-w-0 flex-1 border-b border-line/60 pb-1 [li:last-child_&]:border-0">
+        </span>
+        <div className="relative min-w-0 flex-1 border-b border-line/60 pb-1 [li:last-child_&]:border-0">
           <div className="flex items-baseline gap-2">
             <span className="truncate font-semibold">{c.contact.name}</span>
             <span className={cn("ml-auto shrink-0 text-xs", unread ? "font-semibold text-unread" : "text-muted")}>
@@ -204,7 +219,20 @@ function ConversationRow({ c, selected, onClick }: { c: Conversation; selected: 
             <span className="flex min-w-0 items-center gap-1">
               <MessagePreview m={last} />
             </span>
-            {unread && <Badge className="ml-auto bg-unread text-white">{c.unreadCount}</Badge>}
+            <AnimatePresence initial={false}>
+              {unread && (
+                <motion.span
+                  key="badge"
+                  className="ml-auto"
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  exit={{ scale: 0 }}
+                  transition={{ type: "spring", stiffness: 600, damping: 22 }}
+                >
+                  <Badge className="bg-unread text-white">{c.unreadCount}</Badge>
+                </motion.span>
+              )}
+            </AnimatePresence>
           </div>
           {(c.tags.length > 0 || c.status === "closed") && (
             <div className="mt-1.5 flex flex-wrap gap-1">
@@ -225,6 +253,6 @@ function ConversationRow({ c, selected, onClick }: { c: Conversation; selected: 
           )}
         </div>
       </button>
-    </li>
+    </motion.li>
   );
 }

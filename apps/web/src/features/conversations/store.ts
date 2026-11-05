@@ -94,6 +94,30 @@ export type OutgoingDraft =
   | { kind: "document"; fileName: string; mimeType: string; sizeBytes: number; url: string }
   | { kind: "image"; url: string; width: number; height: number; caption?: string; hd?: boolean };
 
+function patchMessage(
+  qc: ReturnType<typeof useQueryClient>,
+  conversationId: string,
+  messageId: string,
+  patch: Partial<Message>,
+) {
+  const apply = (m: Message) => (m.id === messageId ? ({ ...m, ...patch } as Message) : m);
+  if (db) {
+    db.messages[conversationId] = (db.messages[conversationId] ?? []).map(apply);
+    patchConversation(conversationId, (c) => (c.lastMessage.id === messageId ? { ...c, lastMessage: apply(c.lastMessage) } : c));
+  }
+  qc.setQueryData<Message[]>(keys.messages(conversationId), (old = []) => old.map(apply));
+  void qc.invalidateQueries({ queryKey: keys.list });
+}
+
+/**
+ * Simula os recibos que o WhatsApp enviará (Fase 2): entregue e depois lida.
+ * Na integração real esses eventos chegam pelo WebSocket.
+ */
+function simulateReceipts(qc: ReturnType<typeof useQueryClient>, conversationId: string, messageId: string) {
+  setTimeout(() => patchMessage(qc, conversationId, messageId, { status: "delivered", deliveredAt: new Date().toISOString() }), 1200);
+  setTimeout(() => patchMessage(qc, conversationId, messageId, { status: "read", readAt: new Date().toISOString() }), 3600);
+}
+
 /**
  * Envio com atualização otimista: a mensagem aparece como "pendente" e muda para
  * "enviada" após confirmação. Responder uma conversa sem responsável a assume.
@@ -107,7 +131,12 @@ export function useSendMessage(conversationId: string) {
       return msg;
     },
     onMutate: ({ msg }) => {
-      qc.setQueryData<Message[]>(keys.messages(conversationId), (old = []) => [...old, msg]);
+      // Reenvio de uma mensagem que falhou reaproveita a mesma bolha (sem duplicar).
+      qc.setQueryData<Message[]>(keys.messages(conversationId), (old = []) =>
+        old.some((m) => m.id === msg.id)
+          ? old.map((m) => (m.id === msg.id ? ({ ...m, status: "pending" } as Message) : m))
+          : [...old, msg],
+      );
     },
     onSuccess: (msg) => {
       const sent = { ...msg, status: "sent" } as Message;
@@ -115,6 +144,7 @@ export function useSendMessage(conversationId: string) {
       qc.setQueryData<Message[]>(keys.messages(conversationId), (old = []) =>
         old.map((m) => (m.id === msg.id ? sent : m)),
       );
+      simulateReceipts(qc, conversationId, msg.id);
       patchConversation(conversationId, (c) => ({
         ...c,
         lastMessage: sent,

@@ -19,6 +19,8 @@ type Base = {
   direction: "in" | "out";
   sentAt: string;
   status?: DeliveryStatus; // apenas mensagens enviadas
+  deliveredAt?: string; // recibo de entrega (mensagens enviadas)
+  readAt?: string; // recibo de leitura (mensagens enviadas)
   authorName?: string; // atendente que enviou
 };
 

@@ -1,6 +1,7 @@
 import { safeStorage } from "@/lib/storage";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router";
+import { AnimatePresence, motion } from "motion/react";
 import { MessageSquareText } from "lucide-react";
 import { Group, Panel, useDefaultLayout } from "react-resizable-panels";
 import { useMediaQuery } from "@/lib/theme";
@@ -9,6 +10,14 @@ import { ChatPanel } from "./ChatPanel";
 import { ContactPanel } from "./ContactPanel";
 import { ConversationList } from "./ConversationList";
 import { useConversations } from "./store";
+
+// Painel sobreposto desliza a partir da direita.
+const slideIn = {
+  initial: { x: "100%" },
+  animate: { x: 0 },
+  exit: { x: "100%" },
+  transition: { type: "spring", stiffness: 420, damping: 40 },
+} as const;
 
 function EmptyChat() {
   return (
@@ -40,24 +49,42 @@ export function ConversationsPage() {
   if (!wide) {
     if (!conversation) return <ConversationList selectedId={id} onSelect={select} />;
     return (
-      <div className="relative h-full">
-        <ChatPanel
-          conversation={conversation}
-          contactOpen={contactOpen}
-          onToggleContact={toggleContact}
-          onBack={() => navigate("/conversas")}
-        />
-        {contactOpen && (
-          <div className="absolute inset-0 z-20">
-            <ContactPanel key={conversation.id} conversation={conversation} onClose={() => setContactOpen(false)} />
-          </div>
-        )}
+      <div className="relative h-full overflow-hidden">
+        <motion.div
+          key={conversation.id}
+          className="h-full"
+          initial={{ opacity: 0, x: 24 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ type: "spring", stiffness: 420, damping: 38 }}
+        >
+          <ChatPanel
+            conversation={conversation}
+            contactOpen={contactOpen}
+            onToggleContact={toggleContact}
+            onBack={() => navigate("/conversas")}
+          />
+        </motion.div>
+        <AnimatePresence>
+          {contactOpen && (
+            <motion.div key="contact" className="absolute inset-0 z-20" {...slideIn}>
+              <ContactPanel key={conversation.id} conversation={conversation} onClose={() => setContactOpen(false)} />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     );
   }
 
   const chat = conversation ? (
-    <ChatPanel conversation={conversation} contactOpen={contactOpen} onToggleContact={toggleContact} />
+    <motion.div
+      key={conversation.id}
+      className="h-full"
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2, ease: "easeOut" }}
+    >
+      <ChatPanel conversation={conversation} contactOpen={contactOpen} onToggleContact={toggleContact} />
+    </motion.div>
   ) : (
     <EmptyChat />
   );
@@ -70,20 +97,33 @@ export function ConversationsPage() {
       <ResizeHandle />
       <Panel id="chat" minSize={360}>
         {/* Em telas médias o painel de contato sobrepõe o chat sem desmontá-lo (rascunho preservado). */}
-        <div className="relative h-full">
+        <div className="relative h-full overflow-hidden">
           {chat}
-          {conversation && contactOpen && !roomy && (
-            <div className="absolute inset-y-0 right-0 z-20 w-80 border-l border-line shadow-2xl">
-              <ContactPanel key={conversation.id} conversation={conversation} onClose={() => setContactOpen(false)} />
-            </div>
-          )}
+          <AnimatePresence>
+            {conversation && contactOpen && !roomy && (
+              <motion.div
+                key="contact"
+                className="absolute inset-y-0 right-0 z-20 w-80 border-l border-line shadow-2xl"
+                {...slideIn}
+              >
+                <ContactPanel key={conversation.id} conversation={conversation} onClose={() => setContactOpen(false)} />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </Panel>
       {conversation && contactOpen && roomy && (
         <>
           <ResizeHandle />
           <Panel id="contact" defaultSize={340} minSize={280} maxSize={480} groupResizeBehavior="preserve-pixel-size">
-            <ContactPanel key={conversation.id} conversation={conversation} onClose={() => setContactOpen(false)} />
+            <motion.div
+              className="h-full"
+              initial={{ opacity: 0, x: 24 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ type: "spring", stiffness: 420, damping: 38 }}
+            >
+              <ContactPanel key={conversation.id} conversation={conversation} onClose={() => setContactOpen(false)} />
+            </motion.div>
           </Panel>
         </>
       )}

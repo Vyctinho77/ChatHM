@@ -141,12 +141,19 @@ export function buildMock(myId: string, myName: string) {
     a && a.id === ME ? { id: myId, name: myName } : a;
   const messages: Record<string, Message[]> = {};
   const conversations: Conversation[] = seeds.map(({ messages: ms, ...c }) => {
-    const full = ms.map((m) => ({
-      ...m,
-      id: id(),
-      conversationId: c.id,
-      authorName: m.authorName === ME ? myName : m.authorName,
-    })) as Message[];
+    const full = ms.map((m) => {
+      const t = new Date(m.sentAt).getTime();
+      return {
+        ...m,
+        id: id(),
+        conversationId: c.id,
+        authorName: m.authorName === ME ? myName : m.authorName,
+        // Recibos fictícios: entregue em segundos, lida alguns minutos depois.
+        deliveredAt:
+          m.status === "delivered" || m.status === "read" ? new Date(t + 15_000).toISOString() : undefined,
+        readAt: m.status === "read" ? new Date(t + 60_000 * (1 + (t / 60_000) % 4)).toISOString() : undefined,
+      };
+    }) as Message[];
     messages[c.id] = full;
     return { ...c, assignee: fix(c.assignee), lastMessage: full[full.length - 1]! };
   });

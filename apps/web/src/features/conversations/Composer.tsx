@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import { FileText, Image, Mic, Paperclip, SendHorizontal, Smile, Square, Trash2 } from "lucide-react";
 import { Menu, MenuItem } from "@/components/Menu";
 import { IconButton } from "@/components/ui";
@@ -210,20 +211,31 @@ export function Composer({
             className="mx-1 max-h-40 min-h-10 flex-1 resize-none rounded-xl border border-line bg-elevated px-4 py-2.5 text-sm outline-none placeholder:text-muted focus:border-accent"
           />
 
-          {text.trim() ? (
-            <IconButton label="Enviar" onClick={sendText} className="text-brand hover:text-brand">
-              <SendHorizontal className="size-5" />
-            </IconButton>
-          ) : (
-            <IconButton
-              label={recorder.supported ? "Gravar áudio" : "Gravação de áudio indisponível neste navegador"}
-              disabled={!recorder.supported}
-              onClick={() => recorder.start().catch(() => setError("Permissão de microfone negada."))}
-              className={cn(recorder.recording && "text-danger")}
+          <AnimatePresence mode="popLayout" initial={false}>
+            <motion.span
+              key={text.trim() ? "send" : "mic"}
+              initial={{ scale: 0.4, opacity: 0, rotate: -30 }}
+              animate={{ scale: 1, opacity: 1, rotate: 0 }}
+              exit={{ scale: 0.4, opacity: 0, rotate: 30 }}
+              transition={{ type: "spring", stiffness: 600, damping: 30 }}
+              className="inline-flex"
             >
-              {recorder.recording ? <Square className="size-5" /> : <Mic className="size-5" />}
-            </IconButton>
-          )}
+              {text.trim() ? (
+                <IconButton label="Enviar" onClick={sendText} className="text-brand hover:text-brand">
+                  <SendHorizontal className="size-5" />
+                </IconButton>
+              ) : (
+                <IconButton
+                  label={recorder.supported ? "Gravar áudio" : "Gravação de áudio indisponível neste navegador"}
+                  disabled={!recorder.supported}
+                  onClick={() => recorder.start().catch(() => setError("Permissão de microfone negada."))}
+                  className={cn(recorder.recording && "text-danger")}
+                >
+                  {recorder.recording ? <Square className="size-5" /> : <Mic className="size-5" />}
+                </IconButton>
+              )}
+            </motion.span>
+          </AnimatePresence>
         </div>
       )}
     </div>

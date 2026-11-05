@@ -1,13 +1,18 @@
+import { motion } from "motion/react";
 import { Download, ExternalLink, FileText, MapPin } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { formatBytes, formatTime } from "@/lib/format";
 import { AudioPlayer } from "./AudioPlayer";
+import { receiptDetails } from "./receipts";
 import { Ticks } from "./Ticks";
 import type { Message } from "./types";
 
 function Meta({ m }: { m: Message }) {
   return (
-    <span className="ml-auto flex shrink-0 items-center gap-1 self-end pl-3 text-[11px] tabular-nums opacity-70">
+    <span
+      className="ml-auto flex shrink-0 items-center gap-1 self-end pl-3 text-[11px] tabular-nums opacity-75"
+      title={m.direction === "out" ? receiptDetails(m) : undefined}
+    >
       {formatTime(m.sentAt)}
       {m.direction === "out" && <Ticks status={m.status} />}
     </span>
@@ -70,11 +75,16 @@ function LocationCard({ m }: { m: Extract<Message, { kind: "location" }> }) {
   );
 }
 
-export function MessageBubble({ m, showAuthor }: { m: Message; showAuthor: boolean }) {
+export function MessageBubble({ m, showAuthor, animateIn }: { m: Message; showAuthor: boolean; animateIn?: boolean }) {
   const out = m.direction === "out";
   return (
     <div className={cn("flex", out ? "justify-end" : "justify-start")}>
-      <div
+      <motion.div
+        // Mensagens novas "brotam" do lado de quem enviou; o histórico aparece sem animação individual.
+        initial={animateIn ? { opacity: 0, y: 14, scale: 0.94 } : false}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ type: "spring", stiffness: 480, damping: 32, mass: 0.8 }}
+        style={{ transformOrigin: out ? "100% 100%" : "0% 100%" }}
         className={cn(
           "relative max-w-[min(34rem,85%)] rounded-xl px-2.5 py-1.5 text-[14.5px] shadow-sm",
           out ? "rounded-tr-sm bg-out text-out-fg" : "rounded-tl-sm bg-in text-fg",
@@ -129,7 +139,7 @@ export function MessageBubble({ m, showAuthor }: { m: Message; showAuthor: boole
             <Meta m={m} />
           </div>
         )}
-      </div>
+      </motion.div>
     </div>
   );
 }
