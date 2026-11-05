@@ -273,6 +273,13 @@ export async function demoApi(method: string, path: string, body: Body = {}): Pr
       return undefined;
     }
 
+    case "GET /people":
+      return {
+        people: users
+          .filter((u) => u.isActive)
+          .map((u) => ({ id: u.id, name: u.name, role: u.role, teams: teamsOf(u).map((t) => t.name) }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      };
     case "GET /users":
       requireAdmin();
       return { users: users.map(userView).sort((a, b) => a.name.localeCompare(b.name)) };

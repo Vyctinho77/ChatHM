@@ -65,6 +65,10 @@ export function useConversationActions() {
         patchConv(id, (x) => ({ ...x, status: "closed" }));
         post(`/conversations/${id}/close`).catch(resync);
       },
+      transfer(id: string, person: { id: string; name: string }) {
+        patchConv(id, (x) => ({ ...x, status: "in_progress", assignee: { id: person.id, name: person.name } }));
+        post(`/conversations/${id}/transfer`, { userId: person.id }).then(resync, resync);
+      },
       /** Aplica a diferença entre as etiquetas atuais e as desejadas. */
       setTags(id: string, names: string[]) {
         const c = list().find((x) => x.id === id);

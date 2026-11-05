@@ -105,3 +105,13 @@ que veja a conversa aplica e remove. Etiquetas nunca alteram o segmento.
 - Conversas atribuídas a um usuário desativado continuam com ele; um administrador pode encerrá-las.
 - Não há transferência manual entre equipes (por decisão do blueprint: sem triagem manual).
 - Visualização "Não lidas" é global por conversa, não por usuário.
+
+## Transferência e encerramento
+
+- **Transferir** (clique direito na conversa ou botão no chat): lista todo o escritório (`GET /people`). Pode transferir o
+  responsável, um administrador ou qualquer pessoa se a conversa ainda não tem responsável. A conversa passa a ser só do
+  destinatário (e de administradores), como ao assumir.
+- **Encerrar**: o atendimento sai da lista de todos. Se o cliente voltar, abre-se um novo atendimento, classificado de novo:
+  assuntos da minha equipe caem na fila da equipe (qualquer integrante assume ao responder); outros assuntos aparecem só
+  para as outras equipes. O histórico anterior só é visível a quem podia ver aquele atendimento.
+- Filtros da lista: **Minhas** (atribuídas a mim), **Geral** (fila geral) e **Todas**.

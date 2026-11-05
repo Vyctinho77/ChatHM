@@ -50,6 +50,7 @@ const (
 	TagDelete            = "tag.delete"
 	ConversationClaim    = "conversation.claim"
 	ConversationClose    = "conversation.close"
+	ConversationTransfer = "conversation.transfer"
 )
 
 func Record(ctx context.Context, db database.DBTX, e Entry) error {

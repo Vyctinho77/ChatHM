@@ -1,5 +1,5 @@
 import { safeStorage } from "@/lib/storage";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import { AnimatePresence, motion } from "motion/react";
 import { MessageSquareText } from "lucide-react";
@@ -41,10 +41,15 @@ export function ConversationsPage() {
   const panelIds = contactOpen && roomy ? ["list", "chat", "contact"] : ["list", "chat"];
   const layout = useDefaultLayout({ id: "chathm-conversations", storage: safeStorage, panelIds });
 
-  const conversation = data?.find((c) => c.id === id);
+  // Atendimento encerrado deixa de existir para a lista: volta para a tela de conversas.
+  const conversation = data?.find((c) => c.id === id && c.status !== "closed");
   // Mantém o filtro de fila (?fila=) ao abrir e fechar conversas.
   const { search } = useLocation();
   const select = (cid: string) => navigate({ pathname: `/conversas/${cid}`, search });
+  const stale = !!id && !!data && !conversation;
+  useEffect(() => {
+    if (stale) navigate({ pathname: "/conversas", search }, { replace: true });
+  }, [stale, navigate, search]);
   const toggleContact = () => setContactOpen((o) => !o);
 
   // Telas pequenas: uma coluna por vez (lista → chat → contato).

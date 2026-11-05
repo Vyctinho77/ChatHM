@@ -5,14 +5,16 @@ import { CheckCheck, EllipsisVertical, ListFilter, Search, SquarePen } from "luc
 import { Avatar } from "@/components/Avatar";
 import { Menu, MenuItem } from "@/components/Menu";
 import { Badge, IconButton, Spinner } from "@/components/ui";
+import { useMe } from "@/features/auth/api";
 import { cn } from "@/lib/cn";
 import { formatListTime } from "@/lib/format";
 import { MessagePreview } from "./preview";
 import { useConversationActions, useConversations, useSegmentOptions } from "./store";
 import { Ticks } from "./Ticks";
+import { TransferMenu } from "./TransferMenu";
 import type { Conversation, SegmentKey, SegmentOption } from "./types";
 
-type Filter = "all" | "unread" | "mine" | "general";
+type Filter = "mine" | "general" | "all";
 
 const normalize = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
@@ -20,6 +22,9 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
   const { data, isPending } = useConversations();
   const actions = useConversationActions();
   const [filter, setFilter] = useState<Filter>("all");
+  const { data: meData } = useMe();
+  const isAdmin = meData?.user.role === "admin";
+  const [ctx, setCtx] = useState<{ id: string; x: number; y: number } | null>(null);
   // O filtro de fila fica na URL (?fila=folha): a tela Filas / Segmentos abre a lista já filtrada.
   const [params, setParams] = useSearchParams();
   const segment: SegmentKey | null = params.get("fila");
@@ -49,16 +54,12 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const all = useMemo(() => data ?? [], [data]);
-  const counts = {
-    all: all.length,
-    unread: all.filter((c) => c.unreadCount > 0).length,
-  };
+  // Atendimentos encerrados saem da lista; um novo contato do cliente abre outro.
+  const all = useMemo(() => (data ?? []).filter((c) => c.status !== "closed"), [data]);
 
   const visible = useMemo(() => {
     const q = normalize(query.trim());
     return all.filter((c) => {
-      if (filter === "unread" && c.unreadCount === 0) return false;
       if (filter === "mine" && c.assignee?.id !== actions.me.id) return false;
       if (filter === "general" && c.segment !== "geral") return false;
       if (segment && c.segment !== segment) return false;
@@ -71,12 +72,12 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
     });
   }, [all, filter, segment, query, actions.me.id]);
 
-  const chips: { key: Filter; label: string; count?: number }[] = [
-    { key: "all", label: "Todas", count: counts.all },
-    { key: "unread", label: "Não lidas", count: counts.unread },
+  const chips: { key: Filter; label: string }[] = [
     { key: "mine", label: "Minhas" },
-    { key: "general", label: "Gerais" },
+    { key: "general", label: "Geral" },
+    { key: "all", label: "Todas" },
   ];
+  const ctxConv = ctx ? all.find((c) => c.id === ctx.id) : undefined;
 
   return (
     <section aria-label="Conversas" className="flex h-full min-w-0 flex-col bg-panel">
@@ -153,13 +154,6 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
             )}
           >
             {c.label}
-            {c.count !== undefined && c.count > 0 && (
-              <Badge
-                className={cn(filter === c.key ? "bg-white/25 text-white" : "bg-hover text-muted")}
-              >
-                {c.count}
-              </Badge>
-            )}
           </button>
         ))}
       </div>
@@ -181,16 +175,49 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
         <ul className="flex flex-col">
           <AnimatePresence initial={false}>
             {visible.map((c) => (
-              <ConversationRow key={c.id} c={c} selected={c.id === selectedId} onClick={() => onSelect(c.id)} />
+              <ConversationRow
+                key={c.id}
+                c={c}
+                myId={actions.me.id}
+                selected={c.id === selectedId}
+                onClick={() => onSelect(c.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setCtx({ id: c.id, x: e.clientX, y: e.clientY });
+                }}
+              />
             ))}
           </AnimatePresence>
         </ul>
       </motion.div>
+      {ctx && ctxConv && (
+        <TransferMenu
+          conversation={ctxConv}
+          x={ctx.x}
+          y={ctx.y}
+          myId={actions.me.id}
+          canTransfer={!ctxConv.assignee || ctxConv.assignee.id === actions.me.id || isAdmin}
+          onPick={(p) => actions.transfer(ctxConv.id, p)}
+          onClose={() => setCtx(null)}
+        />
+      )}
     </section>
   );
 }
 
-function ConversationRow({ c, selected, onClick }: { c: Conversation; selected: boolean; onClick: () => void }) {
+function ConversationRow({
+  c,
+  myId,
+  selected,
+  onClick,
+  onContextMenu,
+}: {
+  c: Conversation;
+  myId: string;
+  selected: boolean;
+  onClick: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
+}) {
   const unread = c.unreadCount > 0;
   const last = c.lastMessage;
   return (
@@ -205,6 +232,7 @@ function ConversationRow({ c, selected, onClick }: { c: Conversation; selected: 
       <button
         type="button"
         onClick={onClick}
+        onContextMenu={onContextMenu}
         aria-current={selected ? "true" : undefined}
         className={cn(
           "relative flex w-full gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors",
@@ -235,6 +263,11 @@ function ConversationRow({ c, selected, onClick }: { c: Conversation; selected: 
               <MessagePreview m={last} />
             </span>
             <AnimatePresence initial={false}>
+              {!unread && c.assignee && c.assignee.id !== myId && (
+                <span key="assignee" className="ml-auto max-w-[40%] shrink-0 truncate text-[11px]" title={`Atendendo: ${c.assignee.name}`}>
+                  {c.assignee.name.split(" ")[0]}
+                </span>
+              )}
               {unread && (
                 <motion.span
                   key="badge"

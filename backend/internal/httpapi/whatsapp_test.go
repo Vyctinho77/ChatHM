@@ -265,11 +265,15 @@ func TestIngestDedupAndRealtime(t *testing.T) {
 		t.Fatal("observação não salva")
 	}
 
-	// Após encerramento, nova mensagem abre nova conversa (pode ser reclassificada na Fase 3).
+	// Após encerramento, a conversa sai da lista; nova mensagem abre uma nova conversa.
 	_, _ = e.pool.Exec(context.Background(), `UPDATE conversations SET status = 'closed', closed_at = now()`)
+	if n := len(agent.do("GET", "/api/v1/conversations", nil).body["conversations"].([]any)); n != 0 {
+		t.Fatalf("encerrada deveria sair da lista, mas há %d conversas", n)
+	}
 	e.wa.Receive(inbound("ABC126", "5592998112040", "Rafael", "outra demanda"))
-	if n := len(agent.do("GET", "/api/v1/conversations", nil).body["conversations"].([]any)); n != 2 {
-		t.Fatalf("conversas após encerrar = %d, esperado 2", n)
+	after := agent.do("GET", "/api/v1/conversations", nil).body["conversations"].([]any)
+	if len(after) != 1 || after[0].(map[string]any)["id"] == id {
+		t.Fatalf("nova demanda deveria abrir outra conversa: %v", after)
 	}
 
 	expect(t, agent.do("GET", "/api/v1/conversations/nao-existe/messages", nil), 404)

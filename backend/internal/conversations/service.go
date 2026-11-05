@@ -146,7 +146,12 @@ func (s *Service) publishState(ctx context.Context, convID string, before userSe
 		return nil
 	}
 	if c, err := s.fetch(ctx, s.db, convID); err == nil {
-		s.pub.Publish(EventConversationUpdated, c, after.filter())
+		if c.Status == "closed" {
+			// Encerrada sai da lista de todos que a viam.
+			s.pub.Publish(EventConversationRemoved, map[string]string{"id": convID}, after.filter())
+		} else {
+			s.pub.Publish(EventConversationUpdated, c, after.filter())
+		}
 	}
 	if len(before) > 0 {
 		lost := userSet{}
@@ -475,9 +480,11 @@ func (s *Service) fetch(ctx context.Context, db database.DBTX, id string) (Conve
 	return c, err
 }
 
-// List devolve as conversas que o viewer pode ver (até 300, mais recentes primeiro).
+// List devolve as conversas abertas que o viewer pode ver (até 300, mais recentes primeiro).
+// Conversas encerradas não aparecem: o contato só volta à lista quando manda uma nova
+// mensagem (que abre uma nova conversa). O histórico continua acessível pelo detalhe.
 func (s *Service) List(ctx context.Context, v Viewer) ([]Conversation, error) {
-	rows, err := s.db.Query(ctx, listQuery+` WHERE `+forViewer+` ORDER BY c.last_message_at DESC LIMIT 300`, v.ID, v.Admin)
+	rows, err := s.db.Query(ctx, listQuery+` WHERE c.status <> 'closed' AND `+forViewer+` ORDER BY c.last_message_at DESC LIMIT 300`, v.ID, v.Admin)
 	if err != nil {
 		return nil, err
 	}
@@ -506,7 +513,9 @@ func (s *Service) Get(ctx context.Context, v Viewer, id string) (Conversation, e
 	return c, err
 }
 
-// Messages devolve as mensagens mais recentes (até 300) em ordem cronológica.
+// Messages devolve as mensagens mais recentes (até 300) em ordem cronológica. Inclui as de
+// atendimentos anteriores do mesmo contato, mas só os que o viewer poderia ver: quem
+// atende o cliente que volta enxerga o histórico, sem expor conversas de outras equipes.
 func (s *Service) Messages(ctx context.Context, v Viewer, conversationID string) ([]Message, error) {
 	if _, err := s.Get(ctx, v, conversationID); err != nil {
 		return nil, err
@@ -514,9 +523,11 @@ func (s *Service) Messages(ctx context.Context, v Viewer, conversationID string)
 	rows, err := s.db.Query(ctx, `
 		SELECT * FROM (
 		    SELECT `+messageCols+`, m.created_at FROM messages m
-		     WHERE m.conversation_id = $1
+		      JOIN conversations c ON c.id = m.conversation_id
+		      LEFT JOIN segments s ON s.id = c.segment_id
+		     WHERE c.contact_id = (SELECT contact_id FROM conversations WHERE id = $3) AND `+forViewer+`
 		     ORDER BY m.sent_at DESC, m.created_at DESC LIMIT 300) x
-		 ORDER BY sent_at, created_at`, conversationID)
+		 ORDER BY sent_at, created_at`, v.ID, v.Admin, conversationID)
 	if err != nil {
 		return nil, err
 	}
@@ -828,7 +839,89 @@ func (s *Service) Close(ctx context.Context, v Viewer, convID string) error {
 	if err != nil {
 		return err
 	}
-	s.publishState(ctx, convID, nil)
+	s.publishState(ctx, convID, nil) // encerrada: sai da lista de quem a via (ver publishState)
+	return nil
+}
+
+// Transfer passa o atendimento para outra pessoa do escritório (mesmo de outra equipe).
+//
+// Quem pode: o responsável atual, um administrador ou, se a conversa ainda não tem
+// responsável, qualquer pessoa que a veja. A nova pessoa passa a enxergar e atender a
+// conversa; o histórico de atribuições registra a transferência.
+func (s *Service) Transfer(ctx context.Context, v Viewer, convID, targetID string) error {
+	if !httpx.ValidUUID(convID) {
+		return ErrNotFound
+	}
+	if !httpx.ValidUUID(targetID) {
+		return httpx.FieldErrors{"userId": "Escolha uma pessoa."}
+	}
+	var (
+		before  userSet
+		changed bool
+	)
+	err := database.InTx(ctx, s.db, func(tx pgx.Tx) error {
+		var (
+			status, assigneeName string
+			assignee             *string
+			segID, teamID        *string
+		)
+		err := tx.QueryRow(ctx, `
+			SELECT c.status, c.assignee_id, coalesce(u.name, ''), c.segment_id, s.team_id
+			  FROM conversations c
+			  LEFT JOIN segments s ON s.id = c.segment_id
+			  LEFT JOIN users u ON u.id = c.assignee_id
+			 WHERE c.id = $3 AND `+forViewer+`
+			 FOR UPDATE OF c`, v.ID, v.Admin, convID).Scan(&status, &assignee, &assigneeName, &segID, &teamID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if status == "closed" {
+			return ErrClosed
+		}
+		if assignee != nil && *assignee != v.ID && !v.Admin {
+			return &TakenError{Assignee: assigneeName}
+		}
+
+		var targetActive bool
+		err = tx.QueryRow(ctx, `SELECT is_active FROM users WHERE id = $1`, targetID).Scan(&targetActive)
+		if errors.Is(err, pgx.ErrNoRows) || (err == nil && !targetActive) {
+			return httpx.FieldErrors{"userId": "Pessoa não encontrada ou desativada."}
+		}
+		if err != nil {
+			return err
+		}
+		if assignee != nil && *assignee == targetID {
+			return nil // já é dela
+		}
+
+		if before, err = s.visibleUsers(ctx, tx, convID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE conversation_assignments SET ended_at = now(), ended_reason = 'transferred'
+			WHERE conversation_id = $1 AND ended_at IS NULL`, convID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE conversations SET assignee_id = $2, status = 'in_progress' WHERE id = $1`, convID, targetID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO conversation_assignments (conversation_id, user_id, team_id, segment_id) VALUES ($1, $2, $3, $4)`,
+			convID, targetID, teamID, segID); err != nil {
+			return err
+		}
+		changed = true
+		return audit.Record(ctx, tx, audit.Entry{ActorID: v.ID, Action: audit.ConversationTransfer, TargetType: "conversation", TargetID: convID,
+			Metadata: map[string]any{"from": assignee, "to": targetID}})
+	})
+	if err != nil {
+		return err
+	}
+	if changed {
+		s.publishState(ctx, convID, before)
+	}
 	return nil
 }
 

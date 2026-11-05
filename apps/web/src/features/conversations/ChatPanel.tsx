@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowDown, ArrowLeft, CheckCheck, CircleCheck, EllipsisVertical, PanelRight, Search, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, CheckCheck, CircleCheck, EllipsisVertical, PanelRight, Search, UserRoundPlus, X } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { Menu, MenuItem } from "@/components/Menu";
 import { Alert, IconButton, Spinner } from "@/components/ui";
@@ -11,6 +11,7 @@ import { formatDayDivider, formatTime, sameDay } from "@/lib/format";
 import { Composer } from "./Composer";
 import { getDraft, setDraft } from "./drafts";
 import { MessageBubble } from "./MessageBubble";
+import { TransferMenu } from "./TransferMenu";
 import { buildOutgoing, capabilities, useConversationActions, useMessages, useSendMessage, type OutgoingDraft } from "./store";
 import { statusLabel } from "./receipts";
 import { segmentClass, segmentLabel, type Conversation, type Message } from "./types";
@@ -97,11 +98,8 @@ export function ChatPanel({
   // O responsável encerra; administradores também podem encerrar qualquer atendimento.
   const canClose = capabilities.close && !closed && (mine || isAdmin);
 
-  const closeButton = canClose && (
-    <button className="font-medium text-accent hover:underline" onClick={() => actions.close(c.id)}>
-      Encerrar atendimento
-    </button>
-  );
+  const canTransfer = !closed && (mine || isAdmin || !c.assignee);
+  const [transferAt, setTransferAt] = useState<{ x: number; y: number } | null>(null);
   let banner: React.ReactNode;
   if (closed) {
     banner = <>Atendimento encerrado. Uma nova mensagem do cliente abre um novo atendimento.</>;
@@ -112,21 +110,12 @@ export function ChatPanel({
           Aguardando atendimento ·{" "}
           <span className="text-fg">{capabilities.send ? "ao responder, você assume esta conversa." : "fila " + segmentLabel(c)}</span>
         </span>
-        {closeButton}
       </span>
     );
   } else if (mine) {
-    banner = (
-      <span className="flex items-center gap-2">
-        Você está atendendo {closeButton}
-      </span>
-    );
+    banner = <>Você está atendendo</>;
   } else {
-    banner = (
-      <span className="flex items-center gap-2">
-        Em atendimento por {c.assignee.name} {closeButton}
-      </span>
-    );
+    banner = <>Em atendimento por {c.assignee.name}</>;
   }
 
   function submit(d: OutgoingDraft) {
@@ -186,6 +175,22 @@ export function ChatPanel({
           </span>
         </button>
         <div className="ml-auto flex items-center">
+          {!closed && (
+            <IconButton
+              label="Transferir conversa"
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                setTransferAt({ x: r.right - 256, y: r.bottom + 4 });
+              }}
+            >
+              <UserRoundPlus className="size-5" />
+            </IconButton>
+          )}
+          {canClose && (
+            <IconButton label="Encerrar atendimento" onClick={() => actions.close(c.id)}>
+              <CircleCheck className="size-5" />
+            </IconButton>
+          )}
           <IconButton
             label="Pesquisar na conversa"
             active={search !== null}
@@ -212,6 +217,16 @@ export function ChatPanel({
             {(close) => (
               <>
                 <MenuItem onClick={() => (onToggleContact(), close())}>Dados do contato</MenuItem>
+                <MenuItem
+                  icon={<UserRoundPlus />}
+                  disabled={closed}
+                  onClick={() => {
+                    close();
+                    setTransferAt({ x: window.innerWidth - 280, y: 56 });
+                  }}
+                >
+                  Transferir…
+                </MenuItem>
                 <MenuItem
                   icon={<CircleCheck />}
                   disabled={!canClose}
@@ -256,6 +271,7 @@ export function ChatPanel({
           {shown.map((m, i) => {
             const prev = shown[i - 1];
             const newDay = !prev || !sameDay(prev.sentAt, m.sentAt);
+            const newAttendance = !!prev && prev.conversationId !== m.conversationId;
             const showAuthor = m.direction === "out" && (!prev || newDay || prev.direction !== "out" || prev.authorName !== m.authorName);
             return (
               <Fragment key={m.id}>
@@ -263,6 +279,13 @@ export function ChatPanel({
                   <div className="my-3 flex justify-center">
                     <span className="rounded-md bg-elevated px-2.5 py-0.5 text-[11px] text-fg/75 shadow-sm">
                       {formatDayDivider(m.sentAt)}
+                    </span>
+                  </div>
+                )}
+                {newAttendance && (
+                  <div className="my-3 flex justify-center">
+                    <span className="rounded-md bg-elevated px-2.5 py-0.5 text-[11px] font-medium text-fg/75 shadow-sm">
+                      Novo atendimento
                     </span>
                   </div>
                 )}
@@ -328,6 +351,17 @@ export function ChatPanel({
         mediaDisabledReason={capabilities.media ? undefined : capabilities.mediaUnavailableReason}
         onSend={submit}
       />
+      {transferAt && (
+        <TransferMenu
+          conversation={c}
+          x={transferAt.x}
+          y={transferAt.y}
+          myId={actions.me.id}
+          canTransfer={canTransfer}
+          onPick={(p) => actions.transfer(c.id, p)}
+          onClose={() => setTransferAt(null)}
+        />
+      )}
     </section>
   );
 }

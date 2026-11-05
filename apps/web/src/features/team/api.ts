@@ -101,3 +101,14 @@ export function useSetUserTeams() {
     onSuccess: done,
   });
 }
+
+/** Pessoa do escritório (visível a qualquer usuário autenticado; sem e-mail). */
+export type Person = { id: string; name: string; role: Role; teams: string[] };
+
+export function usePeople() {
+  return useQuery({
+    queryKey: ["people"] as const,
+    staleTime: 60_000,
+    queryFn: async () => (await get<{ people: Person[] }>("/people")).people,
+  });
+}

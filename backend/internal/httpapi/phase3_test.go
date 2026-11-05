@@ -540,8 +540,14 @@ func TestCloseAndNewDemandIsReclassified(t *testing.T) {
 	expect(t, w.ana2.do("POST", "/api/v1/conversations/"+id+"/close", nil), 403)
 	expect(t, w.ana.do("POST", "/api/v1/conversations/"+id+"/close", nil), 204)
 	expect(t, w.ana.do("POST", "/api/v1/conversations/"+id+"/close", nil), 204) // idempotente
-	if got := mustConv(t, w.ana, "Cliente Recorrente"); got["status"] != "closed" {
-		t.Fatalf("status = %v", got["status"])
+	// Encerrada some da lista de todos; o detalhe continua acessível (histórico).
+	for name, c := range map[string]*client{"ana": w.ana, "ana2": w.ana2, "admin": w.admin} {
+		if conv(t, c, "Cliente Recorrente") != nil {
+			t.Fatalf("%s ainda vê a conversa encerrada na lista", name)
+		}
+	}
+	if got := w.ana.do("GET", "/api/v1/conversations/"+id, nil); got.status != 200 || got.body["status"] != "closed" {
+		t.Fatalf("detalhe da encerrada: %v", got.body)
 	}
 	expect(t, w.send(w.ana, id, "ainda aí?"), 409, "conversation_closed")
 
@@ -558,13 +564,11 @@ func TestCloseAndNewDemandIsReclassified(t *testing.T) {
 	for _, c := range list(t, w.admin) {
 		if c["contact"].(map[string]any)["name"] == "Cliente Recorrente" {
 			n++
-			if c["status"] == "new" {
-				fresh = c
-			}
+			fresh = c
 		}
 	}
-	if n != 2 || fresh == nil || fresh["segment"] != "notas" || fresh["assignee"] != nil {
-		t.Fatalf("conversas do cliente = %d, nova = %v", n, fresh)
+	if n != 1 || fresh["status"] != "new" || fresh["segment"] != "notas" || fresh["assignee"] != nil || fresh["id"] == id {
+		t.Fatalf("conversas do cliente na lista = %d, nova = %v", n, fresh)
 	}
 
 	// Admin pode encerrar mesmo sem ser responsável.

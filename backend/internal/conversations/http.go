@@ -27,6 +27,7 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Post("/conversations/{id}/messages", h.send)
 	r.Post("/conversations/{id}/read", h.read)
 	r.Post("/conversations/{id}/close", h.close)
+	r.Post("/conversations/{id}/transfer", h.transfer)
 	r.Put("/conversations/{id}/tags/{tagId}", h.addTag)
 	r.Delete("/conversations/{id}/tags/{tagId}", h.removeTag)
 	r.Patch("/contacts/{id}", h.updateContact)
@@ -92,6 +93,31 @@ func (h *Handler) read(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) close(w http.ResponseWriter, r *http.Request) {
 	if err := h.svc.Close(r.Context(), viewer(r), chi.URLParam(r, "id")); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
+// transfer passa o atendimento para outra pessoa do escritório (corpo: {userId}).
+func (h *Handler) transfer(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		UserID string `json:"userId"`
+	}
+	if !httpx.Decode(w, r, &in) {
+		return
+	}
+	err := h.svc.Transfer(r.Context(), viewer(r), chi.URLParam(r, "id"), in.UserID)
+	var taken *TakenError
+	if errors.As(err, &taken) {
+		msg := "Só quem está atendendo (ou um administrador) pode transferir esta conversa."
+		if taken.Assignee != "" {
+			msg = taken.Assignee + " está atendendo; só ela (ou um administrador) pode transferir esta conversa."
+		}
+		httpx.Error(w, http.StatusConflict, "conversation_taken", msg)
+		return
+	}
+	if err != nil {
 		writeError(w, r, err)
 		return
 	}

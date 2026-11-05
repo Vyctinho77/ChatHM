@@ -35,7 +35,7 @@ export function useConversations() {
     enabled: !!who.id,
     queryFn: async () => {
       await delay(150);
-      return [...getDB(who.id, who.name).conversations].sort((a, b) =>
+      return getDB(who.id, who.name).conversations.filter((c) => c.status !== "closed").sort((a, b) =>
         b.lastMessage.sentAt.localeCompare(a.lastMessage.sentAt),
       );
     },
@@ -77,6 +77,10 @@ export function useConversationActions() {
     },
     close(id: string) {
       patchConversation(id, (x) => ({ ...x, status: "closed" }));
+      refresh();
+    },
+    transfer(id: string, person: { id: string; name: string }) {
+      patchConversation(id, (x) => ({ ...x, status: "in_progress", assignee: { id: person.id, name: person.name } }));
       refresh();
     },
     setTags(id: string, tags: string[]) {

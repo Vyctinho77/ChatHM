@@ -131,9 +131,17 @@ Todas as rotas respeitam a visibilidade por equipe ([`queues.md`](queues.md)); o
 | POST | `/conversations/{id}/messages` | `{id?: uuid, text}` | `201 Message` (nova) · `200 Message` (repetição) · `409 conversation_taken` · `409 conversation_closed` · `409 id_conflict` · `422` · `503 whatsapp_unavailable` |
 | POST | `/conversations/{id}/read` | — | `204` |
 | POST | `/conversations/{id}/close` | — | `204` (responsável ou admin; idempotente) · `403` |
+| POST | `/conversations/{id}/transfer` | `{userId}` | `204` (responsável, admin ou conversa sem responsável) · `409 conversation_taken` · `409 conversation_closed` · `422` (pessoa inexistente/desativada) |
+| GET | `/people` | — | `200 {people: {id, name, role, teams: string[]}[]}` — usuários ativos (qualquer autenticado; sem e-mail) |
 | PUT | `/conversations/{id}/tags/{tagId}` | — | `204` (idempotente) · `404 tag_not_found` |
 | DELETE | `/conversations/{id}/tags/{tagId}` | — | `204` |
 | PATCH | `/contacts/{id}` | `{name?, company?, note?}` | `204` · `422` |
+
+Conversas **encerradas não aparecem** em `GET /conversations` (o detalhe por id continua funcionando) e o servidor
+publica `conversation.removed`. Quando o cliente volta, abre-se um novo atendimento (reclassificado). `GET .../messages`
+devolve o histórico de todos os atendimentos do mesmo contato que o usuário pode ver; cada mensagem traz seu
+`conversationId` (a interface mostra "Novo atendimento" na troca). Transferir encerra a atribuição atual com motivo
+`transferred`, atribui à pessoa escolhida (status `in_progress`) e registra auditoria `conversation.transfer`.
 
 `POST .../messages` **assume o atendimento** quando a conversa não tem responsável. Envie o `id` (UUID gerado no
 cliente): repetir a requisição não duplica. A resposta pode trazer `status: "failed"` se o WhatsApp recusou; reenviar

@@ -332,6 +332,42 @@ func (s *Service) SetTheme(ctx context.Context, userID, theme string) error {
 	return err
 }
 
+// Person é uma pessoa do escritório, como aparece em "transferir para": sem e-mail nem dados de acesso.
+type Person struct {
+	ID    string    `json:"id"`
+	Name  string    `json:"name"`
+	Role  auth.Role `json:"role"`
+	Teams []string  `json:"teams"`
+}
+
+// People lista os usuários ativos do escritório.
+func (s *Service) People(ctx context.Context) ([]Person, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT u.id, u.name, u.role,
+		       coalesce(array_agg(t.name::text ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL), '{}')
+		  FROM users u
+		  LEFT JOIN team_members tm ON tm.user_id = u.id
+		  LEFT JOIN teams t ON t.id = tm.team_id
+		 WHERE u.is_active
+		 GROUP BY u.id
+		 ORDER BY u.name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Person{}
+	for rows.Next() {
+		var p Person
+		var role string
+		if err := rows.Scan(&p.ID, &p.Name, &role, &p.Teams); err != nil {
+			return nil, err
+		}
+		p.Role = auth.Role(role)
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 // FindIDByEmail é usado pela CLI de administração.
 func (s *Service) FindIDByEmail(ctx context.Context, email string) (string, error) {
 	var id string

@@ -17,6 +17,7 @@ func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 // SelfRoutes: qualquer usuário autenticado.
 func (h *Handler) SelfRoutes(r chi.Router) {
 	r.Patch("/me/preferences", h.updatePreferences)
+	r.Get("/people", h.people)
 }
 
 // AdminRoutes: montar atrás de auth.RequireAdmin.
@@ -87,6 +88,16 @@ func (h *Handler) resetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.NoContent(w)
+}
+
+// people: todo o escritório (usuários ativos), para escolher a quem transferir uma conversa.
+func (h *Handler) people(w http.ResponseWriter, r *http.Request) {
+	ps, err := h.svc.People(r.Context())
+	if err != nil {
+		httpx.Internal(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"people": ps})
 }
 
 func (h *Handler) updatePreferences(w http.ResponseWriter, r *http.Request) {
