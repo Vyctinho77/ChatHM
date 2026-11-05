@@ -3,7 +3,9 @@ import { DEMO } from "@/lib/env";
 import { Contact } from "lucide-react";
 import { ConversationsPage } from "@/features/conversations/ConversationsPage";
 import { ComingSoon } from "@/features/placeholder/ComingSoon";
+import { QueuesConfigPage } from "@/features/queues/QueuesConfigPage";
 import { QueuesPage } from "@/features/queues/QueuesPage";
+import { SegmentDetailPage } from "@/features/queues/SegmentDetailPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { TagsPage } from "@/features/tags/TagsPage";
 import { TeamPage } from "@/features/team/TeamPage";
@@ -35,6 +37,8 @@ const routes: RouteObject[] = [
         element: <AdminOnly />,
         children: [
           { path: "whatsapp", element: <WhatsAppPage /> },
+          { path: "filas/configurar", element: <QueuesConfigPage /> },
+          { path: "filas/configurar/:key", element: <SegmentDetailPage /> },
         ],
       },
       { path: "configuracoes", element: <SettingsPage /> },

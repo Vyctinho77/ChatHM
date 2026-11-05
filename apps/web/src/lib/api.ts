@@ -86,6 +86,11 @@ export function isRejection(err: unknown) {
   return err instanceof ApiError && [403, 404, 409, 422, 503].includes(err.status);
 }
 
+/** Erros de validação por campo (vazio quando o erro não é de validação). */
+export function fieldErrors(err: unknown): FieldErrors {
+  return err instanceof ApiError ? err.fields : {};
+}
+
 export function errorMessage(err: unknown): string {
   if (err instanceof ApiError) return err.message;
   return "Não foi possível conectar ao servidor.";

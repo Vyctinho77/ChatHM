@@ -45,10 +45,16 @@ src/
 
 ## Telas da Fase 3
 
-- **Filas / Segmentos** (`features/queues`): cartões por fila com *aguardando* e *em atendimento* (contados a partir
-  das conversas que o usuário pode ver; atendentes só veem as filas da própria equipe + Geral), "Abrir fila" leva à
-  lista filtrada (`/conversas?fila=folha`). Admin tem a aba **Configuração**: testar classificação, vincular equipe,
-  ativar/desativar, palavras-chave com prioridade, criar e excluir segmentos.
+- **Filas / Segmentos** (`features/queues`), no padrão de listas do WhatsApp (componentes em `components/list.tsx`):
+  - `/filas`: uma linha por fila (ícone, nome, "Equipe X · N em atendimento", contador verde de aguardando, seta).
+    Tocar abre a lista de conversas já filtrada (`/conversas?fila=folha`). Atendentes só veem as filas da
+    própria equipe + Geral. A engrenagem (só admin) leva à configuração.
+  - `/filas/configurar` (admin): testar uma mensagem e lista de segmentos (+ Novo segmento).
+  - `/filas/configurar/:key` (admin): Nome, Equipe, interruptor "Classificar mensagens", palavras e
+    expressões (tocar edita a prioridade ou remove) e Excluir segmento; edições em janelas simples.
+  - Princípios: a linha é a unidade, sem caixas por item; opções raras atrás da engrenagem e em telas próprias;
+    verde como único destaque; textos de ajuda de uma linha. Não existe guia de design oficial do WhatsApp,
+    então o padrão segue as listas de configurações dele e a documentação de listas da Apple e do Material.
 - **Etiquetas** (`features/tags`): catálogo; só o admin cria, renomeia e exclui.
 - **Chat**: responder assume a conversa; se outra pessoa assumir antes, o texto volta ao campo e o aviso explica.
   Conversa assumida por outra pessoa bloqueia o campo e some da lista de quem perdeu o acesso (evento
