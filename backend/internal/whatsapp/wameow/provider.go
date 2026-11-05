@@ -4,17 +4,23 @@ package wameow
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/store/sqlstore"
+	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/vyctinho77/chathm/backend/internal/platform/secretbox"
 	"github.com/vyctinho77/chathm/backend/internal/whatsapp"
@@ -131,6 +137,29 @@ func (p *Provider) Close() {
 	p.swap(nil)
 }
 
+// NewMessageID segue o formato dos IDs do WhatsApp Web ("3EB0" + 18 hex).
+func (p *Provider) NewMessageID() string {
+	b := make([]byte, 9)
+	_, _ = rand.Read(b)
+	return "3EB0" + strings.ToUpper(hex.EncodeToString(b))
+}
+
+func (p *Provider) SendText(ctx context.Context, chatJID, messageID, text string) error {
+	p.mu.Lock()
+	cli := p.cli
+	p.mu.Unlock()
+	if cli == nil || !cli.IsConnected() || cli.Store.ID == nil {
+		return whatsapp.ErrNotConnected
+	}
+	to, err := types.ParseJID(chatJID)
+	if err != nil {
+		return fmt.Errorf("conversa inválida: %w", err)
+	}
+	_, err = cli.SendMessage(ctx, to, &waE2E.Message{Conversation: proto.String(text)},
+		whatsmeow.SendRequestExtra{ID: types.MessageID(messageID)})
+	return err
+}
+
 func (p *Provider) swap(cli *whatsmeow.Client) {
 	p.mu.Lock()
 	old := p.cli
@@ -175,6 +204,10 @@ func (p *Provider) handle(cli *whatsmeow.Client) func(any) {
 		case *events.Message:
 			if m, ok := convertMessage(context.Background(), cli, e); ok {
 				p.h.OnMessage(m)
+			}
+		case *events.Receipt:
+			if r, ok := convertReceipt(e); ok {
+				p.h.OnReceipt(r)
 			}
 		}
 	}

@@ -41,6 +41,8 @@ export function buildMock(myId: string, myName: string) {
         { direction: "out", sentAt: at(2, 16, 54), status: "read", authorName: ME, kind: "audio", durationSec: 22, waveform: wave(2) },
         { direction: "in", sentAt: at(0, 8, 47), kind: "image", url: svgImage("#0f766e", "#1e3a8a", "Foto do documento"), width: 640, height: 420, caption: "Segue a foto do cartão CNPJ" },
         { direction: "out", sentAt: at(0, 8, 48), status: "read", authorName: ME, kind: "document", fileName: "PGDAS-RECIBO-10.2026.pdf", mimeType: "application/pdf", sizeBytes: 5_200 },
+        { direction: "out", sentAt: at(0, 8, 48), status: "read", authorName: ME, kind: "image", url: svgImage("#166534", "#0f766e", "Pendências do Simples"), width: 640, height: 420, caption: "Tinha essas pendências de Simples e Parcelamento" },
+        { direction: "out", sentAt: at(0, 8, 49), status: "delivered", authorName: ME, kind: "image", url: svgImage("#1e3a8a", "#6d28d9", "Comprovante"), width: 640, height: 420 },
         { direction: "in", sentAt: at(0, 8, 49), kind: "audio", durationSec: 5, waveform: wave(3) },
         { direction: "out", sentAt: at(0, 8, 51), status: "read", authorName: ME, kind: "text", text: "se quiser nós podemos emitir a nota pra você" },
         { direction: "out", sentAt: at(0, 8, 51), status: "delivered", authorName: ME, kind: "text", text: "Bom dia!" },

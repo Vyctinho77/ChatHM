@@ -224,7 +224,7 @@ func TestIngestDedupAndRealtime(t *testing.T) {
 	}
 	c := convs[0].(map[string]any)
 	contact := c["contact"].(map[string]any)
-	if c["status"] != "new" || c["unreadCount"].(float64) != 2 || c["segment"] != "geral" ||
+	if c["status"] != "new" || c["unreadCount"].(float64) != 2 || c["segment"] != "notas" || c["classification"] != "keyword" ||
 		contact["name"] != "Rafael" || contact["phone"] != "+55 92 99811-2040" {
 		t.Fatalf("conversa = %v", c)
 	}

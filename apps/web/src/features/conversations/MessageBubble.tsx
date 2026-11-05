@@ -19,6 +19,64 @@ function Meta({ m }: { m: Message }) {
   );
 }
 
+/** Hora e status sobre a imagem, quando não há legenda abaixo dela. */
+function MetaOverlay({ m }: { m: Message }) {
+  return (
+    <span
+      className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-full bg-black/50 px-1.5 py-0.5 text-[10.5px] tabular-nums text-white"
+      title={m.direction === "out" ? receiptDetails(m) : undefined}
+    >
+      {formatTime(m.sentAt)}
+      {m.direction === "out" && <Ticks status={m.status} className="size-3.5" />}
+    </span>
+  );
+}
+
+function ImageBody({ m, showAuthor }: { m: Extract<Message, { kind: "image" }>; showAuthor: boolean }) {
+  const author = m.direction === "out" && showAuthor && m.authorName ? m.authorName : "";
+  const hasText = !!m.caption || !!author;
+  return (
+    <div className="w-72 max-w-full">
+      {/* Imagem de ponta a ponta: o balão só tem uma borda fina em volta. */}
+      <div className="relative overflow-hidden rounded-[5px]">
+        {m.url ? (
+          <a href={m.url} target="_blank" rel="noopener noreferrer" className="block">
+            <img
+              src={m.url}
+              alt={m.caption ?? "Imagem"}
+              width={m.width}
+              height={m.height}
+              className="block max-h-80 w-full object-cover"
+            />
+          </a>
+        ) : (
+          <div
+            className="flex h-40 w-full flex-col items-center justify-center gap-1.5 bg-black/10 text-[11.5px] opacity-80 dark:bg-black/25"
+            title="O download de mídias chega na Fase 4"
+          >
+            <ImageIcon className="size-6" />
+            Imagem recebida
+          </div>
+        )}
+        {m.hd && (
+          <span className="absolute left-1.5 top-1.5 rounded bg-black/50 px-1 text-[10px] font-semibold text-white">HD</span>
+        )}
+        {!hasText && <MetaOverlay m={m} />}
+      </div>
+      {hasText && (
+        // w-0 min-w-full: o texto quebra na largura da imagem em vez de alargar o balão.
+        <div className="w-0 min-w-full px-2 pb-1 pt-1.5">
+          {author && <p className="text-[12.5px] font-semibold">{author}:</p>}
+          <div className="flex flex-wrap items-end">
+            {m.caption && <p className="whitespace-pre-wrap break-words">{m.caption}</p>}
+            <Meta m={m} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DocumentCard({ m }: { m: Extract<Message, { kind: "document" }> }) {
   const isPdf = m.mimeType === "application/pdf";
   const ext = m.fileName.split(".").pop()?.toUpperCase() ?? "ARQ";
@@ -86,12 +144,15 @@ export function MessageBubble({ m, showAuthor, animateIn }: { m: Message; showAu
         transition={{ type: "spring", stiffness: 480, damping: 32, mass: 0.8 }}
         style={{ transformOrigin: out ? "100% 100%" : "0% 100%" }}
         className={cn(
-          "relative max-w-[min(32rem,80%)] rounded-lg px-2.5 py-1.5 text-[13.5px] leading-[1.4] shadow-sm",
+          "relative max-w-[min(32rem,80%)] rounded-lg text-[13.5px] leading-[1.4] shadow-sm",
+          m.kind === "image" ? "p-[3px]" : "px-2.5 py-1.5",
           out ? "rounded-tr-sm bg-out text-out-fg" : "rounded-tl-sm bg-in text-fg",
           m.status === "failed" && "ring-1 ring-danger",
         )}
       >
-        {out && showAuthor && m.authorName && <p className="text-[12.5px] font-semibold">{m.authorName}:</p>}
+        {m.kind !== "image" && out && showAuthor && m.authorName && (
+          <p className="text-[12.5px] font-semibold">{m.authorName}:</p>
+        )}
 
         {m.kind === "text" && (
           <div className="flex flex-wrap items-end">
@@ -114,34 +175,7 @@ export function MessageBubble({ m, showAuthor, animateIn }: { m: Message; showAu
           </div>
         )}
 
-        {m.kind === "image" && (
-          <div className="flex flex-col gap-1 pt-1">
-            {m.url ? (
-              <a href={m.url} target="_blank" rel="noopener noreferrer" className="block overflow-hidden rounded-lg">
-                <img
-                  src={m.url}
-                  alt={m.caption ?? "Imagem"}
-                  width={m.width}
-                  height={m.height}
-                  className="max-h-80 w-72 max-w-full object-cover"
-                />
-              </a>
-            ) : (
-              <div
-                className="flex h-36 w-64 max-w-full flex-col items-center justify-center gap-1.5 rounded-lg bg-black/10 text-[11.5px] opacity-80 dark:bg-black/25"
-                title="O download de mídias chega na Fase 4"
-              >
-                <ImageIcon className="size-6" />
-                Imagem recebida
-              </div>
-            )}
-            {m.hd && <span className="text-[11px] font-semibold opacity-70">HD</span>}
-            <div className="flex flex-wrap items-end">
-              {m.caption && <p className="whitespace-pre-wrap break-words">{m.caption}</p>}
-              <Meta m={m} />
-            </div>
-          </div>
-        )}
+        {m.kind === "image" && <ImageBody m={m} showAuthor={showAuthor} />}
 
         {m.kind === "unsupported" && (
           <div className="flex flex-wrap items-end">

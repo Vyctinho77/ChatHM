@@ -38,6 +38,18 @@ const (
 	TeamMemberRemove   = "team.member.remove"
 	WhatsAppConnect    = "whatsapp.connect"
 	WhatsAppDisconnect = "whatsapp.disconnect"
+
+	SegmentCreate        = "segment.create"
+	SegmentUpdate        = "segment.update"
+	SegmentDelete        = "segment.delete"
+	SegmentKeywordAdd    = "segment.keyword.add"
+	SegmentKeywordUpdate = "segment.keyword.update"
+	SegmentKeywordRemove = "segment.keyword.remove"
+	TagCreate            = "tag.create"
+	TagUpdate            = "tag.update"
+	TagDelete            = "tag.delete"
+	ConversationClaim    = "conversation.claim"
+	ConversationClose    = "conversation.close"
 )
 
 func Record(ctx context.Context, db database.DBTX, e Entry) error {

@@ -90,7 +90,7 @@ func setup(t *testing.T, o ...opts) *env {
 	srv := httptest.NewServer(NewRouter(Deps{
 		Config: cfg, Logger: logger, DB: pool,
 		Auth: svcs.Auth, Users: svcs.Users, Teams: svcs.Teams,
-		Hub: svcs.Hub, Conversations: svcs.Conversations, WhatsApp: svcs.WhatsApp,
+		Hub: svcs.Hub, Conversations: svcs.Conversations, Segments: svcs.Segments, Tags: svcs.Tags, WhatsApp: svcs.WhatsApp,
 	}))
 	t.Cleanup(srv.Close)
 	return &env{t: t, srv: srv, pool: pool, svcs: svcs, wa: wa}

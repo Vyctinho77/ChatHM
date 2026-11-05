@@ -14,6 +14,8 @@ import (
 	"github.com/vyctinho77/chathm/backend/internal/conversations"
 	"github.com/vyctinho77/chathm/backend/internal/platform/secretbox"
 	"github.com/vyctinho77/chathm/backend/internal/realtime"
+	"github.com/vyctinho77/chathm/backend/internal/segments"
+	"github.com/vyctinho77/chathm/backend/internal/tags"
 	"github.com/vyctinho77/chathm/backend/internal/teams"
 	"github.com/vyctinho77/chathm/backend/internal/users"
 	"github.com/vyctinho77/chathm/backend/internal/whatsapp"
@@ -27,6 +29,8 @@ type Services struct {
 	Teams         *teams.Service
 	Hub           *realtime.Hub
 	Conversations *conversations.Service
+	Segments      *segments.Service
+	Tags          *tags.Service
 	WhatsApp      *whatsapp.Manager
 	// Simulate entrega mensagens fictícias (somente provedor fake em development).
 	Simulate func(whatsapp.InboundMessage)
@@ -70,6 +74,11 @@ func NewServices(ctx context.Context, cfg config.Config, db *pgxpool.Pool, opt O
 		Teams:         teams.NewService(db),
 		Hub:           hub,
 		Conversations: convs,
+		Segments:      segments.NewService(db),
+		Tags:          tags.NewService(db),
+	}
+	if err := s.Segments.EnsureDefaults(ctx); err != nil {
+		return nil, err
 	}
 
 	factory := opt.WhatsAppFactory
@@ -91,5 +100,7 @@ func NewServices(ctx context.Context, cfg config.Config, db *pgxpool.Pool, opt O
 		}
 	}
 	s.WhatsApp = whatsapp.NewManager(db, hub, convs.Ingest, factory, opt.Logger)
+	s.WhatsApp.SetReceiptHandler(convs.ApplyReceipt)
+	convs.SetSender(s.WhatsApp)
 	return s, nil
 }

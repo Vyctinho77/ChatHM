@@ -121,6 +121,8 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.Error(w, http.StatusNotFound, "not_found", "Equipe não encontrada.")
 	case errors.Is(err, ErrUserNotFound):
 		httpx.Error(w, http.StatusNotFound, "user_not_found", "Usuário não encontrado.")
+	case errors.Is(err, ErrInUse):
+		httpx.Error(w, http.StatusConflict, "team_in_use", "Esta equipe está vinculada a segmentos (filas). Desvincule-os em Filas / Segmentos antes de excluir.")
 	case errors.Is(err, ErrNameTaken):
 		httpx.Validation(w, httpx.FieldErrors{"name": "Já existe uma equipe com esse nome."})
 	default:

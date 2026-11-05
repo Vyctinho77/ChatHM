@@ -4,6 +4,8 @@ package fake
 
 import (
 	"context"
+	"errors"
+	"strconv"
 	"sync"
 	"time"
 
@@ -20,6 +22,16 @@ type Provider struct {
 	mu      sync.Mutex
 	session bool
 	events  chan whatsapp.PairEvent
+	counter int
+	sent    []Sent
+	sendErr error
+	// connected espelha o estado do "celular": só envia depois de conectado.
+	connected bool
+}
+
+// Sent é uma mensagem de texto enviada pelo sistema (para asserções em testes).
+type Sent struct {
+	ChatJID, MessageID, Text string
 }
 
 func New(h whatsapp.Handler) *Provider {
@@ -51,6 +63,9 @@ func (p *Provider) Restore(context.Context) error {
 	if !ok {
 		return whatsapp.ErrNoSession
 	}
+	p.mu.Lock()
+	p.connected = true
+	p.mu.Unlock()
 	go p.h.OnConnected(p.Account)
 	return nil
 }
@@ -77,6 +92,7 @@ func (p *Provider) Pair(ctx context.Context) (<-chan whatsapp.PairEvent, error) 
 func (p *Provider) CompletePairing() {
 	p.mu.Lock()
 	p.session = true
+	p.connected = true
 	ch := p.events
 	p.events = nil
 	p.mu.Unlock()
@@ -109,6 +125,9 @@ func (p *Provider) ExpirePairing() {
 
 // Drop simula queda de conexão (loggedOut=true: desvinculado pelo celular).
 func (p *Provider) Drop(loggedOut bool) {
+	p.mu.Lock()
+	p.connected = false
+	p.mu.Unlock()
 	if loggedOut {
 		p.mu.Lock()
 		p.session = false
@@ -123,8 +142,57 @@ func (p *Provider) Receive(m whatsapp.InboundMessage) { p.h.OnMessage(m) }
 func (p *Provider) Logout(context.Context) error {
 	p.mu.Lock()
 	p.session = false
+	p.connected = false
 	p.mu.Unlock()
 	return nil
 }
 
 func (p *Provider) Close() {}
+
+func (p *Provider) NewMessageID() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.counter++
+	return "FAKE" + strconv.Itoa(p.counter)
+}
+
+func (p *Provider) SendText(_ context.Context, chatJID, messageID, text string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.connected {
+		return whatsapp.ErrNotConnected
+	}
+	if p.sendErr != nil {
+		return p.sendErr
+	}
+	// Reenvio com o mesmo ID não duplica (como no WhatsApp).
+	for _, s := range p.sent {
+		if s.MessageID == messageID {
+			return nil
+		}
+	}
+	p.sent = append(p.sent, Sent{ChatJID: chatJID, MessageID: messageID, Text: text})
+	return nil
+}
+
+// Sent devolve uma cópia das mensagens enviadas.
+func (p *Provider) Sent() []Sent {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]Sent(nil), p.sent...)
+}
+
+// FailSends faz os próximos envios falharem (nil restaura o normal).
+func (p *Provider) FailSends(err error) {
+	p.mu.Lock()
+	p.sendErr = err
+	p.mu.Unlock()
+}
+
+// SimulateFailure é um erro de envio genérico para testes.
+var SimulateFailure = errors.New("falha simulada no envio")
+
+// Receipt simula um recibo de entrega/leitura vindo do WhatsApp.
+func (p *Provider) Receipt(status whatsapp.ReceiptStatus, ids ...string) {
+	p.h.OnReceipt(whatsapp.Receipt{MessageIDs: ids, Status: status, Timestamp: time.Now()})
+}

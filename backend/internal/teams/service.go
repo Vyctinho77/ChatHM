@@ -24,6 +24,7 @@ var (
 	ErrNotFound     = errors.New("teams: equipe não encontrada")
 	ErrNameTaken    = errors.New("teams: nome já utilizado")
 	ErrUserNotFound = errors.New("teams: usuário não encontrado")
+	ErrInUse        = errors.New("teams: equipe vinculada a segmentos")
 )
 
 type Team struct {
@@ -210,6 +211,9 @@ func (s *Service) Delete(ctx context.Context, sess *auth.Session, ip, id string)
 		err := tx.QueryRow(ctx, `DELETE FROM teams WHERE id = $1 RETURNING name`, id).Scan(&name)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
+		}
+		if database.IsCode(err, database.ForeignKeyViolation) {
+			return ErrInUse // segmentos vinculados: excluir tornaria a fila visível a todos
 		}
 		if err != nil {
 			return err

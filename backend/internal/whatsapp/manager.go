@@ -46,16 +46,21 @@ type Publisher interface {
 // Ingestor grava mensagens recebidas (conversations.Service).
 type Ingestor func(ctx context.Context, m InboundMessage) (bool, error)
 
+// ReceiptHandler aplica recibos de entrega/leitura (conversations.Service).
+type ReceiptHandler func(ctx context.Context, r Receipt)
+
 // Manager coordena o provedor, o estado persistido e os eventos em tempo real.
 type Manager struct {
 	db     *pgxpool.Pool
 	pub    Publisher
 	ingest Ingestor
+	onRcpt ReceiptHandler
 	p      Provider
 	log    *slog.Logger
 
 	pairTimeout time.Duration
 
+	setMu      sync.Mutex // serializa apply (memória → banco → eventos)
 	mu         sync.Mutex
 	status     Status
 	qr         *QR
@@ -150,24 +155,29 @@ func (m *Manager) Connect(ctx context.Context, actorID, ip string) error {
 				if exp <= 0 {
 					exp = 20 * time.Second
 				}
-				m.set(Status{State: StatePendingQR}, &QR{Code: ev.QR, ExpiresAt: time.Now().Add(exp)})
+				// Eventos de pareamento só valem enquanto o estado ainda é "aguardando QR":
+				// um QR atrasado não pode sobrescrever uma conexão que já foi concluída.
+				m.setIfPending(Status{State: StatePendingQR}, &QR{Code: ev.QR, ExpiresAt: time.Now().Add(exp)})
 			case ev.Success:
 				// OnConnected define o estado final com número e nome.
 				return
 			case ev.Timeout:
-				m.p.Close()
-				m.set(Status{State: StateDisconnected, LastError: "O QR Code expirou sem leitura. Gere um novo."}, nil)
+				if m.setIfPending(Status{State: StateDisconnected, LastError: "O QR Code expirou sem leitura. Gere um novo."}, nil) {
+					m.p.Close()
+				}
 				return
 			case ev.Err != nil:
 				m.log.Error("pareamento", "err", ev.Err)
-				m.p.Close()
-				m.set(Status{State: StateError, LastError: "Falha no pareamento. Tente novamente."}, nil)
+				if m.setIfPending(Status{State: StateError, LastError: "Falha no pareamento. Tente novamente."}, nil) {
+					m.p.Close()
+				}
 				return
 			}
 		}
-		if pctx.Err() != nil && m.Status().State == StatePendingQR {
-			m.p.Close()
-			m.set(Status{State: StateDisconnected, LastError: "Tempo para leitura do QR Code esgotado."}, nil)
+		if pctx.Err() != nil {
+			if m.setIfPending(Status{State: StateDisconnected, LastError: "Tempo para leitura do QR Code esgotado."}, nil) {
+				m.p.Close()
+			}
 		}
 	}()
 	return nil
@@ -229,6 +239,28 @@ func (m *Manager) OnDisconnected(reason string, loggedOut bool) {
 	m.set(Status{State: StateError, Phone: cur.Phone, DisplayName: cur.DisplayName, LastError: reason}, nil)
 }
 
+// SetReceiptHandler define quem processa os recibos (ligado depois da criação, pois
+// o serviço de conversas também depende do Manager para enviar).
+func (m *Manager) SetReceiptHandler(h ReceiptHandler) { m.onRcpt = h }
+
+func (m *Manager) OnReceipt(r Receipt) {
+	if m.onRcpt == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	m.onRcpt(ctx, r)
+}
+
+// Connected informa se o WhatsApp está conectado e pronto para enviar.
+func (m *Manager) Connected() bool { return m.Status().State == StateConnected }
+
+func (m *Manager) NewMessageID() string { return m.p.NewMessageID() }
+
+func (m *Manager) SendText(ctx context.Context, chatJID, messageID, text string) error {
+	return m.p.SendText(ctx, chatJID, messageID, text)
+}
+
 func (m *Manager) OnMessage(msg InboundMessage) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -240,8 +272,20 @@ func (m *Manager) OnMessage(msg InboundMessage) {
 
 // --- interno ---------------------------------------------------------------
 
-func (m *Manager) set(st Status, qr *QR) {
+func (m *Manager) set(st Status, qr *QR) { m.apply(st, qr, false) }
+
+// setIfPending aplica o estado só se a conexão ainda estiver aguardando o QR Code.
+func (m *Manager) setIfPending(st Status, qr *QR) bool { return m.apply(st, qr, true) }
+
+func (m *Manager) apply(st Status, qr *QR, onlyIfPending bool) bool {
+	// setMu mantém ordenadas a atualização em memória, a gravação e a publicação.
+	m.setMu.Lock()
+	defer m.setMu.Unlock()
 	m.mu.Lock()
+	if onlyIfPending && m.status.State != StatePendingQR {
+		m.mu.Unlock()
+		return false
+	}
 	m.status = st
 	m.qr = qr
 	m.mu.Unlock()
@@ -258,6 +302,7 @@ func (m *Manager) set(st Status, qr *QR) {
 		m.pub.Publish(EventStatus, st, nil)
 		m.pub.Publish(EventQR, qr, realtime.AdminsOnly)
 	}
+	return true
 }
 
 func (m *Manager) audit(ctx context.Context, e audit.Entry) {

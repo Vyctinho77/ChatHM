@@ -17,6 +17,8 @@ import (
 	"github.com/vyctinho77/chathm/backend/internal/conversations"
 	"github.com/vyctinho77/chathm/backend/internal/platform/httpx"
 	"github.com/vyctinho77/chathm/backend/internal/realtime"
+	"github.com/vyctinho77/chathm/backend/internal/segments"
+	"github.com/vyctinho77/chathm/backend/internal/tags"
 	"github.com/vyctinho77/chathm/backend/internal/teams"
 	"github.com/vyctinho77/chathm/backend/internal/users"
 	"github.com/vyctinho77/chathm/backend/internal/whatsapp"
@@ -32,6 +34,8 @@ type Deps struct {
 
 	Hub           *realtime.Hub
 	Conversations *conversations.Service
+	Segments      *segments.Service
+	Tags          *tags.Service
 	WhatsApp      *whatsapp.Manager
 	// Simulate habilita POST /dev/whatsapp/inbound (provedor fake em development).
 	Simulate func(whatsapp.InboundMessage)
@@ -71,6 +75,8 @@ func NewRouter(d Deps) http.Handler {
 	usersH := users.NewHandler(d.Users)
 	teamsH := teams.NewHandler(d.Teams)
 	convsH := conversations.NewHandler(d.Conversations)
+	segmentsH := segments.NewHandler(d.Segments)
+	tagsH := tags.NewHandler(d.Tags)
 	waH := whatsapp.NewHTTPHandler(d.WhatsApp, d.Simulate)
 
 	// O WebSocket revalida a sessão periodicamente (logout/desativação encerram a conexão).
@@ -102,6 +108,8 @@ func NewRouter(d Deps) http.Handler {
 			usersH.SelfRoutes(r)
 			teamsH.Routes(r)
 			convsH.Routes(r)
+			segmentsH.Routes(r)
+			tagsH.Routes(r)
 			waH.Routes(r)
 			r.Get("/ws", d.Hub.Handler(validateWS))
 

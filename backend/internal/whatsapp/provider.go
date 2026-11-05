@@ -55,11 +55,27 @@ type InboundMessage struct {
 	Payload      map[string]any // metadados (mídia, localização); nunca o binário
 }
 
+// ReceiptStatus é o avanço de uma mensagem enviada, informado pelo WhatsApp.
+type ReceiptStatus string
+
+const (
+	ReceiptDelivered ReceiptStatus = "delivered"
+	ReceiptRead      ReceiptStatus = "read"
+)
+
+// Receipt é um recibo de entrega ou leitura de mensagens que o escritório enviou.
+type Receipt struct {
+	MessageIDs []string
+	Status     ReceiptStatus
+	Timestamp  time.Time
+}
+
 // Handler recebe os eventos do provedor. Implementado pelo Manager.
 type Handler interface {
 	OnConnected(Account)
 	OnDisconnected(reason string, loggedOut bool)
 	OnMessage(InboundMessage)
+	OnReceipt(Receipt)
 }
 
 // PairEvent é emitido durante o pareamento por QR Code.
@@ -71,7 +87,10 @@ type PairEvent struct {
 	Err     error
 }
 
-var ErrNoSession = errors.New("whatsapp: nenhuma sessão salva")
+var (
+	ErrNoSession    = errors.New("whatsapp: nenhuma sessão salva")
+	ErrNotConnected = errors.New("whatsapp: não conectado")
+)
 
 type Provider interface {
 	// HasSession informa se há uma sessão salva para reconectar.
@@ -84,6 +103,11 @@ type Provider interface {
 	Logout(ctx context.Context) error
 	// Close encerra a conexão sem apagar a sessão.
 	Close()
+	// NewMessageID gera o ID de uma mensagem a enviar. Reenviar com o mesmo ID é seguro:
+	// o WhatsApp descarta a duplicata.
+	NewMessageID() string
+	// SendText envia texto para uma conversa 1:1 usando o ID informado.
+	SendText(ctx context.Context, chatJID, messageID, text string) error
 }
 
 // Factory cria o provedor ligado ao handler de eventos.
