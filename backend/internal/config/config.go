@@ -35,6 +35,9 @@ type Config struct {
 	// Guardada fora do banco.
 	EncryptionKey string
 
+	// Provedor do WhatsApp: "whatsmeow" (QR Code) ou "fake" (simulado, testes/dev).
+	WhatsAppProvider string
+
 	// Armazenamento S3 compatível (anexos).
 	S3Endpoint  string
 	S3Region    string
@@ -58,6 +61,7 @@ func Load() (Config, error) {
 		RequireAdminMFA:   getbool("REQUIRE_ADMIN_MFA", true),
 		TrustProxyHeaders: getbool("TRUST_PROXY_HEADERS", false),
 		EncryptionKey:     os.Getenv("ENCRYPTION_KEY"),
+		WhatsAppProvider:  getenv("WHATSAPP_PROVIDER", "whatsmeow"),
 		S3Endpoint:        os.Getenv("S3_ENDPOINT"),
 		S3Region:          getenv("S3_REGION", "us-east-1"),
 		S3Bucket:          os.Getenv("S3_BUCKET"),
@@ -88,6 +92,9 @@ func Load() (Config, error) {
 		errs = append(errs, errors.New("DATABASE_URL é obrigatório"))
 	}
 
+	if cfg.WhatsAppProvider != "whatsmeow" && cfg.WhatsAppProvider != "fake" {
+		errs = append(errs, errors.New("WHATSAPP_PROVIDER deve ser whatsmeow ou fake"))
+	}
 	if cfg.EncryptionKey == "" {
 		errs = append(errs, errors.New("ENCRYPTION_KEY é obrigatório (gere com: openssl rand -base64 32)"))
 	}
@@ -95,6 +102,9 @@ func Load() (Config, error) {
 	if !cfg.IsDevelopment() {
 		if !cfg.CookieSecure {
 			errs = append(errs, errors.New("COOKIE_SECURE deve ser true fora de development"))
+		}
+		if cfg.WhatsAppProvider == "fake" {
+			errs = append(errs, errors.New("WHATSAPP_PROVIDER=fake só é permitido em development"))
 		}
 		if !cfg.RequireAdminMFA {
 			errs = append(errs, errors.New("REQUIRE_ADMIN_MFA deve ser true fora de development"))

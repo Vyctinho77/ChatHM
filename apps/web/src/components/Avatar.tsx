@@ -18,7 +18,7 @@ function colorFor(seed: string) {
   return palette[h % palette.length];
 }
 
-const sizes = { sm: "size-8 text-xs", md: "size-11 text-base", lg: "size-24 text-3xl" } as const;
+const sizes = { sm: "size-7 text-[10.5px]", md: "size-10 text-[13px]", lg: "size-20 text-2xl" } as const;
 
 export function Avatar({
   name,

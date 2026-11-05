@@ -37,11 +37,11 @@ export function ThemeSwitcher({ className }: { className?: string }) {
           title={label}
           onClick={() => choose(value)}
           className={cn(
-            "inline-flex size-8 items-center justify-center rounded-md text-muted transition-colors hover:text-fg",
+            "inline-flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:text-fg",
             theme === value && "bg-hover text-fg shadow-sm",
           )}
         >
-          <Icon className="size-4" />
+          <Icon className="size-3.5" />
         </button>
       ))}
     </div>

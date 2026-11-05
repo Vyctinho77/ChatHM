@@ -21,7 +21,7 @@ export function Button({ variant = "primary", loading, className, children, disa
       {...rest}
       disabled={disabled || loading}
       className={cn(
-        "inline-flex h-9 items-center justify-center gap-2 rounded-lg px-4 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+        "inline-flex h-8 items-center justify-center gap-1.5 rounded-lg px-3.5 text-[13px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60",
         variant === "primary" && "bg-accent text-accent-fg hover:brightness-110",
         variant === "secondary" && "border border-line bg-elevated hover:bg-hover",
         variant === "ghost" && "hover:bg-hover",
@@ -49,7 +49,7 @@ export function IconButton({
       title={label}
       {...rest}
       className={cn(
-        "inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-hover hover:text-fg disabled:opacity-50",
+        "inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-hover hover:text-fg disabled:opacity-50",
         active && "bg-hover text-fg",
         className,
       )}
@@ -69,7 +69,7 @@ export const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
   const inputId = id ?? auto;
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
-      <label htmlFor={inputId} className="text-sm font-medium">
+      <label htmlFor={inputId} className="text-[13px] font-medium">
         {label}
       </label>
       <input
@@ -79,7 +79,7 @@ export const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
         aria-describedby={error || hint ? `${inputId}-desc` : undefined}
         {...rest}
         className={cn(
-          "h-10 rounded-lg border bg-elevated px-3 text-sm outline-none transition-colors placeholder:text-muted focus:border-accent",
+          "h-9 rounded-lg border bg-elevated px-3 text-[13px] outline-none transition-colors placeholder:text-muted focus:border-accent",
           error ? "border-danger" : "border-line",
         )}
       />
@@ -97,7 +97,7 @@ export function Alert({ children, tone = "danger" }: { children: ReactNode; tone
     <div
       role="alert"
       className={cn(
-        "rounded-lg border px-3 py-2 text-sm",
+        "rounded-lg border px-3 py-2 text-[13px]",
         tone === "danger" ? "border-danger/40 bg-danger/10 text-danger" : "border-accent/40 bg-accent/10 text-fg",
       )}
     >
@@ -144,7 +144,7 @@ export function Modal({
       {open && (
         <div className="flex flex-col gap-4 p-5">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">{title}</h2>
+            <h2 className="text-base font-semibold">{title}</h2>
             <IconButton label="Fechar" onClick={onClose}>
               <X className="size-5" />
             </IconButton>
@@ -160,7 +160,7 @@ export function Badge({ children, className }: { children: ReactNode; className?
   return (
     <span
       className={cn(
-        "inline-flex min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold leading-5",
+        "inline-flex min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10.5px] font-semibold leading-[18px] tabular-nums",
         className,
       )}
     >

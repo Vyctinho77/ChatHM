@@ -14,9 +14,12 @@ import (
 
 	"github.com/vyctinho77/chathm/backend/internal/auth"
 	"github.com/vyctinho77/chathm/backend/internal/config"
+	"github.com/vyctinho77/chathm/backend/internal/conversations"
 	"github.com/vyctinho77/chathm/backend/internal/platform/httpx"
+	"github.com/vyctinho77/chathm/backend/internal/realtime"
 	"github.com/vyctinho77/chathm/backend/internal/teams"
 	"github.com/vyctinho77/chathm/backend/internal/users"
+	"github.com/vyctinho77/chathm/backend/internal/whatsapp"
 )
 
 type Deps struct {
@@ -26,6 +29,12 @@ type Deps struct {
 	Auth   *auth.Service
 	Users  *users.Service
 	Teams  *teams.Service
+
+	Hub           *realtime.Hub
+	Conversations *conversations.Service
+	WhatsApp      *whatsapp.Manager
+	// Simulate habilita POST /dev/whatsapp/inbound (provedor fake em development).
+	Simulate func(whatsapp.InboundMessage)
 }
 
 func NewRouter(d Deps) http.Handler {
@@ -61,6 +70,18 @@ func NewRouter(d Deps) http.Handler {
 
 	usersH := users.NewHandler(d.Users)
 	teamsH := teams.NewHandler(d.Teams)
+	convsH := conversations.NewHandler(d.Conversations)
+	waH := whatsapp.NewHTTPHandler(d.WhatsApp, d.Simulate)
+
+	// O WebSocket revalida a sessão periodicamente (logout/desativação encerram a conexão).
+	validateWS := func(ctx context.Context, r *http.Request) bool {
+		c, err := r.Cookie(d.Config.SessionCookieName)
+		if err != nil {
+			return false
+		}
+		_, err = d.Auth.Authenticate(ctx, c.Value)
+		return err == nil
+	}
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(d.Auth.LoadSession)
@@ -80,6 +101,9 @@ func NewRouter(d Deps) http.Handler {
 			d.Auth.ProtectedRoutes(r)
 			usersH.SelfRoutes(r)
 			teamsH.Routes(r)
+			convsH.Routes(r)
+			waH.Routes(r)
+			r.Get("/ws", d.Hub.Handler(validateWS))
 
 			r.Group(func(r chi.Router) {
 				r.Use(auth.RequireAdmin)

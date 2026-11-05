@@ -4,7 +4,7 @@ import { Avatar } from "@/components/Avatar";
 import { Menu, MenuItem } from "@/components/Menu";
 import { IconButton } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { useConversationActions } from "./store";
+import { capabilities, useConversationActions } from "./store";
 import { segments, tagCatalog, type Conversation } from "./types";
 
 const statusLabel = { new: "Aguardando", in_progress: "Em atendimento", closed: "Encerrado" } as const;
@@ -18,27 +18,27 @@ export function ContactPanel({ conversation: c, onClose }: { conversation: Conve
 
   return (
     <aside aria-label="Dados do contato" className="flex h-full min-w-0 flex-col bg-panel">
-      <header className="flex h-16 shrink-0 items-center gap-2 border-b border-line px-3">
+      <header className="flex h-14 shrink-0 items-center gap-1.5 border-b border-line px-2.5">
         <IconButton label="Fechar dados do contato" onClick={onClose}>
           <X className="size-5" />
         </IconButton>
-        <h2 className="font-semibold">Dados do contato</h2>
+        <h2 className="text-[13.5px] font-semibold">Dados do contato</h2>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col items-center gap-2 border-b border-line px-6 py-6 text-center">
           <Avatar name={c.contact.name} src={c.contact.avatarUrl} size="lg" />
-          <p className="mt-2 text-lg font-semibold">{c.contact.name}</p>
-          <p className="text-sm text-muted">{c.contact.phone}</p>
+          <p className="mt-1.5 text-[15px] font-semibold">{c.contact.name}</p>
+          <p className="text-[12.5px] text-muted">{c.contact.phone}</p>
         </div>
 
-        <dl className="flex flex-col gap-4 border-b border-line px-5 py-5 text-sm">
+        <dl className="flex flex-col gap-3.5 border-b border-line px-5 py-4 text-[13px]">
           <Row icon={<Phone />} label="Telefone" value={c.contact.phone} />
           {c.contact.company && <Row icon={<Building2 />} label="Empresa" value={c.contact.company} />}
           <div>
             <dt className="text-xs text-muted">Segmento atual</dt>
             <dd className="mt-1">
-              <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", segments[c.segment].className)}>
+              <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", segments[c.segment].className)}>
                 {segments[c.segment].label}
               </span>
             </dd>
@@ -53,6 +53,7 @@ export function ContactPanel({ conversation: c, onClose }: { conversation: Conve
         <section className="border-b border-line px-5 py-5">
           <div className="flex items-center justify-between">
             <h3 className="text-xs text-muted">Etiquetas</h3>
+            {capabilities.tags && (
             <Menu
               trigger={({ toggle }) => (
                 <IconButton label="Adicionar etiqueta" onClick={toggle} disabled={available.length === 0} className="size-7">
@@ -68,23 +69,28 @@ export function ContactPanel({ conversation: c, onClose }: { conversation: Conve
                 ))
               }
             </Menu>
+            )}
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {c.tags.length === 0 && <p className="text-sm text-muted">Nenhuma etiqueta.</p>}
+            {c.tags.length === 0 && (
+              <p className="text-[12.5px] text-muted">
+                {capabilities.tags ? "Nenhuma etiqueta." : "Etiquetas chegam com as filas automáticas."}
+              </p>
+            )}
             {c.tags.map((t) => (
               <span
                 key={t}
                 className="inline-flex items-center gap-1 rounded-full border border-line py-0.5 pl-2.5 pr-1 text-[11px] font-semibold uppercase"
               >
                 {t}
-                <button
+                {capabilities.tags && <button
                   type="button"
                   aria-label={`Remover etiqueta ${t}`}
                   className="rounded-full p-0.5 text-muted hover:bg-hover hover:text-fg"
                   onClick={() => actions.setTags(c.id, c.tags.filter((x) => x !== t))}
                 >
                   <X className="size-3" />
-                </button>
+                </button>}
               </span>
             ))}
           </div>
@@ -101,7 +107,7 @@ export function ContactPanel({ conversation: c, onClose }: { conversation: Conve
             onBlur={() => note !== c.contact.note && actions.setNote(c.id, note)}
             rows={4}
             placeholder="Visível apenas para a equipe"
-            className="mt-2 w-full resize-none rounded-lg border border-line bg-elevated p-3 text-sm outline-none placeholder:text-muted focus:border-accent"
+            className="mt-2 w-full resize-none rounded-lg border border-line bg-elevated p-2.5 text-[13px] outline-none placeholder:text-muted focus:border-accent"
           />
         </section>
       </div>

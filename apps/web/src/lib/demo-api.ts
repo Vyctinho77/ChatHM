@@ -25,6 +25,24 @@ const teams: T[] = ["Clientes novos", "Emissão de notas", "Folha de pagamento"]
 const members = new Set<string>([`${teams[2]!.id}:${users[1]!.id}`, `${teams[1]!.id}:${users[2]!.id}`]);
 
 let session: U | null = null;
+
+// Conexão WhatsApp simulada: o "celular" lê o QR alguns segundos após conectar.
+let wa: { state: string; phone: string; displayName: string; connectedAt?: string; pairAt?: number; lastError?: string } = {
+  state: "disconnected",
+  phone: "",
+  displayName: "",
+};
+function waView(admin: boolean) {
+  if (wa.state === "pending_qr" && wa.pairAt && Date.now() >= wa.pairAt) {
+    wa = { state: "connected", phone: "+55 11 90000-0000", displayName: "Escritório HM (demonstração)", connectedAt: now() };
+  }
+  const { pairAt, ...pub } = wa;
+  const qr =
+    admin && wa.state === "pending_qr"
+      ? { code: "chathm-demonstracao-sem-celular-" + Math.floor((pairAt ?? 0) / 1000), expiresAt: new Date((pairAt ?? Date.now()) + 2000).toISOString() }
+      : null;
+  return { ...pub, qr };
+}
 const csrf = "demo-csrf";
 
 const isMember = (t: string, u: string) => members.has(`${t}:${u}`);
@@ -100,6 +118,19 @@ export async function demoApi(method: string, path: string, body: Body = {}): Pr
     case "PATCH /me/preferences":
       requireSession().theme = body.theme as Theme;
       return { theme: body.theme };
+
+    case "GET /whatsapp/connection":
+      return waView(requireSession().role === "admin");
+    case "POST /whatsapp/connect": {
+      requireAdmin();
+      if (wa.state === "connected") throw new DemoError(409, "already_connected", "O WhatsApp já está conectado.");
+      if (wa.state !== "pending_qr") wa = { state: "pending_qr", phone: "", displayName: "", pairAt: Date.now() + 7000 };
+      return waView(true);
+    }
+    case "POST /whatsapp/disconnect":
+      requireAdmin();
+      wa = { state: "disconnected", phone: "", displayName: "" };
+      return waView(true);
 
     case "GET /users":
       requireAdmin();

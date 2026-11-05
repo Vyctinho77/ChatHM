@@ -5,6 +5,7 @@ import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panel
 import { useMediaQuery } from "@/lib/theme";
 import type { Me } from "@/features/auth/api";
 import { DEMO } from "@/lib/env";
+import { useRealtime } from "@/features/realtime/useRealtime";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 
@@ -21,6 +22,7 @@ export function ResizeHandle() {
 export function AppShell({ me }: { me: Me }) {
   const desktop = useMediaQuery("(min-width: 1024px)");
   const [drawer, setDrawer] = useState(false);
+  useRealtime(!DEMO);
   const layout = useDefaultLayout({ id: "chathm-shell", storage: safeStorage });
 
   return (
@@ -34,7 +36,7 @@ export function AppShell({ me }: { me: Me }) {
             defaultLayout={layout.defaultLayout}
             onLayoutChanged={layout.onLayoutChanged}
           >
-            <Panel id="sidebar" defaultSize={256} minSize={200} maxSize={320} groupResizeBehavior="preserve-pixel-size">
+            <Panel id="sidebar" defaultSize={220} minSize={180} maxSize={300} groupResizeBehavior="preserve-pixel-size">
               <Sidebar role={me.user.role} />
             </Panel>
             <ResizeHandle />
@@ -62,7 +64,7 @@ export function AppShell({ me }: { me: Me }) {
         )}
       </div>
 
-      <footer className="hidden h-8 shrink-0 items-center border-t border-line bg-app px-5 text-xs text-muted lg:flex">
+      <footer className="hidden h-7 shrink-0 items-center border-t border-line bg-app px-4 text-[11px] text-muted lg:flex">
         ChatHM {APP_VERSION}
         {DEMO && <span className="ml-3">· Demonstração com dados fictícios; nada é salvo ao recarregar.</span>}
       </footer>

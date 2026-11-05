@@ -1,0 +1,90 @@
+// Package whatsapp define a integração com o WhatsApp desacoplada do provedor.
+//
+// O sistema conversa apenas com a interface Provider. O primeiro adaptador
+// (pacote wameow) usa whatsmeow — sessão espelhada por QR Code, não oficial e
+// sujeita a instabilidade/restrições. Um adaptador para a WhatsApp Business
+// Platform oficial pode ser adicionado sem mudar o restante do sistema; o fluxo
+// de conexão dela é diferente (cadastro do número na Meta, sem QR Code).
+package whatsapp
+
+import (
+	"context"
+	"errors"
+	"time"
+)
+
+type State string
+
+const (
+	StateDisconnected State = "disconnected"
+	StatePendingQR    State = "pending_qr"
+	StateConnected    State = "connected"
+	StateError        State = "error"
+)
+
+// Account identifica o número conectado.
+type Account struct {
+	Phone     string // E.164, ex.: +5592999990000
+	Name      string // nome do perfil no WhatsApp
+	DeviceJID string
+}
+
+type Kind string
+
+const (
+	KindText        Kind = "text"
+	KindAudio       Kind = "audio"
+	KindImage       Kind = "image"
+	KindDocument    Kind = "document"
+	KindLocation    Kind = "location"
+	KindUnsupported Kind = "unsupported"
+)
+
+// InboundMessage é uma mensagem recebida (ou enviada pelo próprio celular) já
+// normalizada, independente do provedor.
+type InboundMessage struct {
+	ExternalID   string // ID da mensagem no provedor (deduplicação)
+	ChatJID      string // conversa 1:1 no provedor
+	ContactWAID  string // identificador estável do contato (número ou LID)
+	ContactPhone string // E.164 quando conhecido
+	PushName     string
+	FromMe       bool // enviada pelo celular do escritório
+	Timestamp    time.Time
+	Kind         Kind
+	Body         string         // texto ou legenda
+	Payload      map[string]any // metadados (mídia, localização); nunca o binário
+}
+
+// Handler recebe os eventos do provedor. Implementado pelo Manager.
+type Handler interface {
+	OnConnected(Account)
+	OnDisconnected(reason string, loggedOut bool)
+	OnMessage(InboundMessage)
+}
+
+// PairEvent é emitido durante o pareamento por QR Code.
+type PairEvent struct {
+	QR      string        // novo QR Code a exibir
+	Expires time.Duration // validade do QR atual
+	Success bool
+	Timeout bool // QR Codes esgotados sem leitura
+	Err     error
+}
+
+var ErrNoSession = errors.New("whatsapp: nenhuma sessão salva")
+
+type Provider interface {
+	// HasSession informa se há uma sessão salva para reconectar.
+	HasSession(ctx context.Context) (bool, error)
+	// Restore reconecta usando a sessão salva.
+	Restore(ctx context.Context) error
+	// Pair inicia uma nova sessão e transmite os QR Codes até concluir.
+	Pair(ctx context.Context) (<-chan PairEvent, error)
+	// Logout desvincula o aparelho e apaga a sessão local.
+	Logout(ctx context.Context) error
+	// Close encerra a conexão sem apagar a sessão.
+	Close()
+}
+
+// Factory cria o provedor ligado ao handler de eventos.
+type Factory func(h Handler) Provider

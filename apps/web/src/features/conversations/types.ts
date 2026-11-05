@@ -24,13 +24,15 @@ type Base = {
   authorName?: string; // atendente que enviou
 };
 
+// `url` ausente = mídia recebida cujo arquivo ainda não é baixado (download chega na Fase 4).
 export type Message = Base &
   (
     | { kind: "text"; text: string }
-    | { kind: "audio"; durationSec: number; waveform: number[]; url?: string }
-    | { kind: "document"; fileName: string; mimeType: string; sizeBytes: number; url?: string }
-    | { kind: "image"; url: string; caption?: string; width: number; height: number; hd?: boolean }
+    | { kind: "audio"; durationSec: number; waveform?: number[]; url?: string }
+    | { kind: "document"; fileName: string; mimeType: string; sizeBytes: number; url?: string; caption?: string }
+    | { kind: "image"; url?: string; caption?: string; width?: number; height?: number; hd?: boolean }
     | { kind: "location"; lat: number; lng: number; name?: string; address?: string }
+    | { kind: "unsupported"; label: string; text?: string }
   );
 
 export type Contact = {

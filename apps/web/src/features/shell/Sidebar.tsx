@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { Role } from "@/features/auth/api";
 import { useConversations } from "@/features/conversations/store";
+import { stateDot, stateLabel, useConnection } from "@/features/whatsapp/api";
 import { mainNav, secondaryNav, settingsNav, type NavItem } from "./nav";
 
 function Item({ item, extra, onNavigate }: { item: NavItem; extra?: React.ReactNode; onNavigate?: () => void }) {
@@ -13,14 +14,14 @@ function Item({ item, extra, onNavigate }: { item: NavItem; extra?: React.ReactN
       onClick={onNavigate}
       className={({ isActive }) =>
         cn(
-          "flex h-11 items-center gap-3 rounded-lg px-3 text-[15px] transition-colors",
+          "flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-[13px] transition-colors",
           isActive ? "bg-accent/15 font-medium text-fg ring-1 ring-accent/30" : "text-fg/85 hover:bg-hover",
         )
       }
     >
       {({ isActive }) => (
         <>
-          <Icon className={cn("size-5 shrink-0", isActive ? "text-accent" : "text-muted")} />
+          <Icon className={cn("size-[18px] shrink-0", isActive ? "text-accent" : "text-muted")} />
           <span className="truncate">{item.label}</span>
           {extra && <span className="ml-auto">{extra}</span>}
         </>
@@ -31,12 +32,13 @@ function Item({ item, extra, onNavigate }: { item: NavItem; extra?: React.ReactN
 
 export function Sidebar({ role, onNavigate }: { role: Role; onNavigate?: () => void }) {
   const { data } = useConversations();
+  const { data: wa } = useConnection();
   const unread = data?.filter((c) => c.unreadCount > 0).length ?? 0;
   const allowed = (i: NavItem) => !i.roles || i.roles.includes(role);
 
   return (
-    <nav aria-label="Menu principal" className="flex h-full flex-col bg-panel px-3 py-4">
-      <div className="flex flex-col gap-1">
+    <nav aria-label="Menu principal" className="flex h-full flex-col bg-panel px-2.5 py-3">
+      <div className="flex flex-col gap-0.5">
         {mainNav.filter(allowed).map((item) => (
           <Item
             key={item.to}
@@ -51,7 +53,7 @@ export function Sidebar({ role, onNavigate }: { role: Role; onNavigate?: () => v
         ))}
       </div>
       <hr className="my-3 border-line" />
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-0.5">
         {secondaryNav.filter(allowed).map((item) => (
           <Item
             key={item.to}
@@ -59,7 +61,10 @@ export function Sidebar({ role, onNavigate }: { role: Role; onNavigate?: () => v
             onNavigate={onNavigate}
             extra={
               item.to === "/whatsapp" ? (
-                <span className="block size-2.5 rounded-full bg-muted/60" title="Não conectado" />
+                <span
+                  className={cn("block size-2 rounded-full", stateDot[wa?.state ?? "disconnected"])}
+                  title={stateLabel[wa?.state ?? "disconnected"]}
+                />
               ) : undefined
             }
           />

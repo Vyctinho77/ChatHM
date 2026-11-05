@@ -33,8 +33,8 @@ export function TeamPage() {
   return (
     <div className="h-full overflow-y-auto bg-app">
       <div className="mx-auto max-w-5xl px-4 py-6 sm:px-8">
-        <h1 className="text-2xl font-semibold">Equipe</h1>
-        <p className="mt-1 text-sm text-muted">
+        <h1 className="text-xl font-semibold">Equipe</h1>
+        <p className="mt-1 text-[13px] text-muted">
           {isAdmin
             ? "Cadastre atendentes e defina de quais equipes participam. A equipe determina quais filas cada pessoa vê."
             : "Equipes das quais você participa."}

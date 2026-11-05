@@ -3,9 +3,16 @@ import { Pause, Play } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { formatDuration } from "@/lib/format";
 
+const DEMO = import.meta.env.VITE_DEMO === "1";
+
+/** Barras estáveis quando o provedor não envia a forma de onda. */
+function fallbackWave(seed: number, n = 40) {
+  return Array.from({ length: n }, (_, i) => 0.25 + Math.abs(Math.sin(seed * 7.3 + i * 1.7)) * 0.75);
+}
+
 /**
- * Player de mensagem de voz. Com `url` usa <audio>; sem arquivo (dados fictícios)
- * simula a reprodução para manter a interação.
+ * Player de mensagem de voz. Com `url` usa <audio>. Sem arquivo: na demonstração
+ * simula a reprodução; no app real o áudio fica indisponível até o download (Fase 4).
  */
 export function AudioPlayer({
   durationSec,
@@ -14,11 +21,13 @@ export function AudioPlayer({
   outgoing,
 }: {
   durationSec: number;
-  waveform: number[];
+  waveform?: number[];
   url?: string;
   outgoing?: boolean;
 }) {
   const audio = useRef<HTMLAudioElement>(null);
+  const bars = waveform?.length ? waveform : fallbackWave(durationSec || 1);
+  const unavailable = !url && !DEMO;
   const [playing, setPlaying] = useState(false);
   const [pos, setPos] = useState(0); // segundos
 
@@ -58,7 +67,7 @@ export function AudioPlayer({
   const progress = durationSec ? pos / durationSec : 0;
 
   return (
-    <div className="flex w-64 max-w-full items-center gap-3 py-1">
+    <div className="flex w-60 max-w-full items-center gap-2.5 py-0.5">
       {url && (
         <audio
           ref={audio}
@@ -74,10 +83,12 @@ export function AudioPlayer({
       <button
         type="button"
         onClick={toggle}
+        disabled={unavailable}
         aria-label={playing ? "Pausar áudio" : "Reproduzir áudio"}
-        className="inline-flex size-9 shrink-0 items-center justify-center rounded-full hover:bg-black/10 dark:hover:bg-white/10"
+        title={unavailable ? "Reprodução disponível quando o download de mídias for ativado (Fase 4)" : undefined}
+        className="inline-flex size-8 shrink-0 items-center justify-center rounded-full hover:bg-black/10 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-white/10"
       >
-        {playing ? <Pause className="size-5 fill-current" /> : <Play className="size-5 fill-current" />}
+        {playing ? <Pause className="size-4 fill-current" /> : <Play className="size-4 fill-current" />}
       </button>
       <div className="min-w-0 flex-1">
         <div
@@ -87,7 +98,7 @@ export function AudioPlayer({
           aria-valuemin={0}
           aria-valuemax={Math.round(durationSec)}
           aria-valuenow={Math.round(pos)}
-          className="flex h-7 cursor-pointer items-center gap-[2px]"
+          className="flex h-6 cursor-pointer items-center gap-[2px]"
           onClick={(e) => {
             const r = e.currentTarget.getBoundingClientRect();
             seek((e.clientX - r.left) / r.width);
@@ -97,12 +108,12 @@ export function AudioPlayer({
             if (e.key === "ArrowLeft") seek(Math.max(0, progress - 0.1));
           }}
         >
-          {waveform.map((h, i) => (
+          {bars.map((h, i) => (
             <span
               key={i}
               className={cn(
                 "w-[3px] shrink-0 rounded-full",
-                i / waveform.length < progress
+                i / bars.length < progress
                   ? "bg-read"
                   : outgoing
                     ? "bg-out-fg/45"
@@ -112,7 +123,7 @@ export function AudioPlayer({
             />
           ))}
         </div>
-        <span className="text-xs tabular-nums opacity-75">{formatDuration(playing || pos ? pos : durationSec)}</span>
+        <span className="text-[11px] tabular-nums opacity-75">{formatDuration(playing || pos ? pos : durationSec)}</span>
       </div>
     </div>
   );

@@ -34,11 +34,18 @@ src/
 
 | Área | Fonte |
 |---|---|
-| Login, MFA, sessão, tema, Equipe, Configurações | API real (Fase 1) |
-| Conversas, mensagens, etiquetas, observações | **Dados fictícios** em `features/conversations/mock.ts` |
+| Login, MFA, sessão, tema, Equipe, Configurações | API real |
+| Conversas, mensagens, observação do contato, Conexão WhatsApp | API real + WebSocket (`features/realtime`) |
+| Envio, etiquetas, encerrar atendimento | desativados até a Fase 3 (`capabilities` em `store.api.ts`) |
 
-Os hooks de `features/conversations/store.ts` (`useConversations`, `useMessages`, `useSendMessage`…) já têm
-a forma que a API terá; nas Fases 2–3 só a implementação deles muda (REST + WebSocket), não os componentes.
+`features/conversations/store.ts` escolhe a implementação no build: `store.api.ts` no app e `store.mock.ts`
+(dados fictícios) somente no build de demonstração — o bundle de produção não contém os dados fictícios.
+
+## Tipografia
+
+Inter (variável, empacotada com o app via `@fontsource-variable/inter`, sem chamadas externas), corpo em 13,5px.
+Escala usada: 10,5–11px (metadados, horários), 12–12,5px (prévias, rótulos), 13–13,5px (texto, nomes),
+15–16px (títulos de painel), 20px (títulos de página).
 
 Já funcionam na interface com os dados fictícios: envio otimista (pendente → enviada, falha marcada),
 assumir a conversa ao responder, bloqueio do composer quando outra pessoa atende, encerrar atendimento,

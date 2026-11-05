@@ -1,4 +1,4 @@
-# API — Fase 1 (autenticação, usuários e equipes)
+# API (Fases 1 e 2)
 
 Base: `/api/v1`. Todas as respostas são JSON. Erros seguem o formato:
 
@@ -100,3 +100,47 @@ make create-admin email=admin@escritorio.com.br name="Nome do Admin"
 cd backend && go run ./cmd/admin reset-password -email usuario@escritorio.com.br
 cd backend && go run ./cmd/admin reset-mfa -email admin@escritorio.com.br   # recuperação se perder o celular
 ```
+
+## WhatsApp (Fase 2)
+
+| Método | Rota | Acesso | Resposta |
+|---|---|---|---|
+| GET | `/whatsapp/connection` | completo | `200 Connection` (o QR só vem para admin) |
+| POST | `/whatsapp/connect` | admin | `202 Connection` · `409 already_connected` · `502 provider_error` |
+| POST | `/whatsapp/disconnect` | admin | `200 Connection` |
+| POST | `/dev/whatsapp/inbound` | admin, só com provedor `fake` em development | `204` |
+
+```ts
+type Connection = {
+  state: "disconnected" | "pending_qr" | "connected" | "error";
+  phone: string; displayName: string; lastError?: string; connectedAt?: string;
+  qr?: { code: string; expiresAt: string } | null; // somente admin
+  simulator?: boolean;                               // somente admin
+};
+```
+
+## Conversas (Fase 2: fila geral, visível a todos os usuários autenticados)
+
+| Método | Rota | Corpo | Resposta |
+|---|---|---|---|
+| GET | `/conversations` | — | `200 {conversations: Conversation[]}` (até 300, mais recentes primeiro) |
+| GET | `/conversations/{id}` | — | `200 Conversation` · `404` |
+| GET | `/conversations/{id}/messages` | — | `200 {messages: Message[]}` (até 300 mais recentes, em ordem cronológica) |
+| POST | `/conversations/{id}/read` | — | `204` |
+| PATCH | `/contacts/{id}` | `{name?, company?, note?}` | `204` · `422` |
+
+`Conversation` e `Message` seguem os tipos de `apps/web/src/features/conversations/types.ts`.
+
+## Tempo real
+
+`GET /api/v1/ws` (WebSocket; exige sessão completa e origem permitida). Mensagens do servidor:
+
+```ts
+{ type: "conversation.updated", data: Conversation }
+{ type: "message.created",      data: Message }
+{ type: "whatsapp.status",      data: Omit<Connection, "qr" | "simulator"> }
+{ type: "whatsapp.qr",          data: { code, expiresAt } | null }   // somente admin
+```
+
+A sessão é revalidada a cada minuto; logout ou desativação encerram a conexão (código `4401`).
+O cliente reconecta com espera exponencial e, ao reconectar, recarrega a lista.

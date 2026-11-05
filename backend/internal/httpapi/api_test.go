@@ -25,6 +25,7 @@ import (
 	"github.com/vyctinho77/chathm/backend/internal/config"
 	"github.com/vyctinho77/chathm/backend/internal/platform/testdb"
 	"github.com/vyctinho77/chathm/backend/internal/users"
+	"github.com/vyctinho77/chathm/backend/internal/whatsapp/fake"
 )
 
 const (
@@ -39,9 +40,13 @@ type env struct {
 	srv  *httptest.Server
 	pool *pgxpool.Pool
 	svcs *app.Services
+	wa   *fake.Provider // provedor WhatsApp simulado
 }
 
-type opts struct{ requireAdminMFA bool }
+type opts struct {
+	requireAdminMFA bool
+	waSession       bool // provedor já com sessão salva (simula reinício)
+}
 
 func setup(t *testing.T, o ...opts) *env {
 	t.Helper()
@@ -58,19 +63,37 @@ func setup(t *testing.T, o ...opts) *env {
 		SessionIdle:       30 * time.Minute,
 		EncryptionKey:     base64.StdEncoding.EncodeToString(key),
 	}
+	var op opts
 	if len(o) > 0 {
-		cfg.RequireAdminMFA = o[0].requireAdminMFA
+		op = o[0]
 	}
-	svcs, err := app.NewServices(cfg, pool, fastHasher)
+	cfg.RequireAdminMFA = op.requireAdminMFA
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	var wa *fake.Provider
+	svcs, err := app.NewServices(context.Background(), cfg, pool, app.Options{
+		Hasher: fastHasher, Logger: logger,
+		WhatsAppFactory: fake.Factory(0, func(p *fake.Provider) {
+			wa = p
+			if op.waSession {
+				_ = p.Logout(context.Background())
+				p.CompletePairingSilently()
+			}
+		}),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := svcs.WhatsApp.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(svcs.WhatsApp.Shutdown)
 	srv := httptest.NewServer(NewRouter(Deps{
-		Config: cfg, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), DB: pool,
+		Config: cfg, Logger: logger, DB: pool,
 		Auth: svcs.Auth, Users: svcs.Users, Teams: svcs.Teams,
+		Hub: svcs.Hub, Conversations: svcs.Conversations, WhatsApp: svcs.WhatsApp,
 	}))
 	t.Cleanup(srv.Close)
-	return &env{t: t, srv: srv, pool: pool, svcs: svcs}
+	return &env{t: t, srv: srv, pool: pool, svcs: svcs, wa: wa}
 }
 
 func (e *env) createUser(email string, role auth.Role, teamIDs ...string) users.User {

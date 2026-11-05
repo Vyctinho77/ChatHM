@@ -50,22 +50,28 @@ func run() error {
 		}
 	}
 
-	svcs, err := app.NewServices(cfg, pool, auth.NewHasher())
+	svcs, err := app.NewServices(ctx, cfg, pool, app.Options{Hasher: auth.NewHasher(), Logger: logger})
 	if err != nil {
 		return err
 	}
 	go svcs.Auth.RunJanitor(ctx, time.Hour)
+	if err := svcs.WhatsApp.Start(ctx); err != nil {
+		return err
+	}
+	defer svcs.WhatsApp.Shutdown()
 
 	srv := &http.Server{
 		Addr: cfg.HTTPAddr,
 		Handler: httpapi.NewRouter(httpapi.Deps{
 			Config: cfg, Logger: logger, DB: pool,
 			Auth: svcs.Auth, Users: svcs.Users, Teams: svcs.Teams,
+			Hub: svcs.Hub, Conversations: svcs.Conversations, WhatsApp: svcs.WhatsApp, Simulate: svcs.Simulate,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      60 * time.Second,
-		IdleTimeout:       120 * time.Second,
+		WriteTimeout:      60 * time.Second, // não afeta o WebSocket (prazos removidos no Hijack)
+
+		IdleTimeout: 120 * time.Second,
 	}
 
 	errCh := make(chan error, 1)

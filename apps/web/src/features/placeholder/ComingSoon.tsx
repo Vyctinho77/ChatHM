@@ -16,8 +16,8 @@ export function ComingSoon({
       <span className="rounded-2xl bg-elevated p-4">
         <Icon className="size-8 text-muted" />
       </span>
-      <h1 className="text-xl font-semibold">{title}</h1>
-      <p className="max-w-md text-sm text-muted">{description}</p>
+      <h1 className="text-lg font-semibold">{title}</h1>
+      <p className="max-w-md text-[13px] text-muted">{description}</p>
       <span className="rounded-full border border-line px-3 py-1 text-xs text-muted">{phase}</span>
     </div>
   );

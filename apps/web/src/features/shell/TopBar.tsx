@@ -14,7 +14,7 @@ export function TopBar({ me, onOpenMenu }: { me: Me; onOpenMenu?: () => void }) 
   const setMe = useSetMe();
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-app px-3 sm:px-5">
+    <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line bg-app px-3 sm:px-4">
       {onOpenMenu && (
         <IconButton label="Abrir menu" onClick={onOpenMenu} className="-ml-1">
           <MenuIcon className="size-5" />
@@ -24,7 +24,7 @@ export function TopBar({ me, onOpenMenu }: { me: Me; onOpenMenu?: () => void }) 
       <div className="ml-auto flex items-center gap-2 sm:gap-3">
         <ThemeSwitcher className="hidden sm:flex" />
         <IconButton label="Notificações" className="relative">
-          <Bell className="size-5" />
+          <Bell className="size-[18px]" />
         </IconButton>
         <Menu
           trigger={({ toggle, open }) => (
@@ -36,7 +36,7 @@ export function TopBar({ me, onOpenMenu }: { me: Me; onOpenMenu?: () => void }) 
               className="flex items-center gap-2 rounded-lg py-1 pl-1 pr-2 hover:bg-hover"
             >
               <Avatar name={me.user.name} size="sm" className="bg-blue-600 text-white" />
-              <span className="hidden max-w-40 truncate text-sm font-medium sm:block">{me.user.name}</span>
+              <span className="hidden max-w-40 truncate text-[13px] font-medium sm:block">{me.user.name}</span>
               <ChevronDown className="size-4 text-muted" />
             </button>
           )}
@@ -44,7 +44,7 @@ export function TopBar({ me, onOpenMenu }: { me: Me; onOpenMenu?: () => void }) 
           {(close) => (
             <>
               <div className="border-b border-line px-3 py-2">
-                <p className="truncate text-sm font-medium">{me.user.name}</p>
+                <p className="truncate text-[13px] font-medium">{me.user.name}</p>
                 <p className="truncate text-xs text-muted">
                   {me.user.email} · {roleLabel[me.user.role]}
                 </p>

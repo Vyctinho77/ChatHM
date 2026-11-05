@@ -26,7 +26,8 @@ classificação automática de mensagens e distribuição por equipe.
 │   │   ├── audit/           # audit_logs
 │   │   ├── conversations/   # contatos, conversas, mensagens, atribuição
 │   │   ├── segments/        # segmentos, palavras-chave, classificador
-│   │   ├── whatsapp/        # WhatsAppProvider + adaptadores
+│   │   ├── realtime/        # WebSocket (eventos para o navegador)
+│   │   ├── whatsapp/        # WhatsAppProvider, Manager, adaptadores wameow (whatsmeow) e fake
 │   │   └── storage/         # anexos em S3 privado
 │   └── migrations/          # SQL versionado (embutido no binário)
 ├── docs/
@@ -47,6 +48,7 @@ make setup        # pnpm install, go mod download, cria .env com ENCRYPTION_KEY
 make up           # Postgres (5432) e MinIO (9000 / console 9001)
 make create-admin email=admin@escritorio.com.br name="Admin"   # pede a senha (mín. 12)
 make api          # API em http://localhost:8080 (AUTO_MIGRATE=true aplica migrações)
+                  # sem celular? WHATSAPP_PROVIDER=fake no .env simula conexão e mensagens
 make web          # Frontend em http://localhost:5173 (proxy /api → :8080)
 ```
 
@@ -66,8 +68,7 @@ Verificação rápida: `curl localhost:8080/healthz` e `curl localhost:8080/read
 ## Roadmap
 
 1. ✅ **Fundação e acesso seguro** — login, sessões, perfis, equipes, MFA de admin (backend).
-2. **WhatsApp** — QR Code, sessão criptografada, recepção de mensagens.
-   - Interface base pronta (layout, login/MFA, Equipe, Configurações); conversas ainda com dados fictícios.
+2. ✅ **WhatsApp** — QR Code, sessão criptografada, recepção de mensagens em tempo real ([`docs/whatsapp.md`](docs/whatsapp.md)).
 3. **Segmentação e filas** — classificador determinístico, fila geral, atribuição atômica.
 4. **Chat completo** — layout em painéis, mídias, temas.
 5. **Validação e piloto** — E2E, backups, LGPD, operação.

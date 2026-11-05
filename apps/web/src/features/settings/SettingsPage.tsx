@@ -21,7 +21,7 @@ export function SettingsPage() {
   return (
     <div className="h-full overflow-y-auto bg-app">
       <div className="mx-auto flex max-w-2xl flex-col gap-4 px-4 py-6 sm:px-8">
-        <h1 className="text-2xl font-semibold">Configurações</h1>
+        <h1 className="text-xl font-semibold">Configurações</h1>
 
         <Card title="Aparência" description="Claro, escuro ou acompanhar o sistema. Salvo no seu usuário.">
           <ThemeSwitcher className="w-fit" />

@@ -8,7 +8,7 @@ import { cn } from "@/lib/cn";
 import { formatDayDivider, formatTime, sameDay } from "@/lib/format";
 import { Composer } from "./Composer";
 import { MessageBubble } from "./MessageBubble";
-import { buildOutgoing, useConversationActions, useMessages, useSendMessage } from "./store";
+import { buildOutgoing, capabilities, useConversationActions, useMessages, useSendMessage } from "./store";
 import { statusLabel } from "./receipts";
 import { segments, type Conversation, type Message } from "./types";
 
@@ -78,7 +78,8 @@ export function ChatPanel({
       (m) =>
         (m.kind === "text" && normalize(m.text).includes(q)) ||
         (m.kind === "document" && normalize(m.fileName).includes(q)) ||
-        (m.kind === "image" && normalize(m.caption ?? "").includes(q)),
+        (m.kind === "image" && normalize(m.caption ?? "").includes(q)) ||
+        (m.kind === "unsupported" && normalize(m.text ?? "").includes(q)),
     );
   }, [messages, search]);
 
@@ -86,7 +87,9 @@ export function ChatPanel({
   const lockedByOther = !!c.assignee && !mine && c.status === "in_progress";
 
   let banner: React.ReactNode;
-  if (c.status === "new" || !c.assignee) {
+  if (!capabilities.send && (c.status === "new" || !c.assignee)) {
+    banner = <>Fila geral · aguardando atendimento</>;
+  } else if (c.status === "new" || !c.assignee) {
     banner = (
       <>
         Aguardando atendimento · <span className="text-fg">ao responder, você assume esta conversa.</span>
@@ -98,9 +101,11 @@ export function ChatPanel({
     banner = (
       <span className="flex items-center gap-2">
         Você está atendendo
-        <button className="font-medium text-accent hover:underline" onClick={() => actions.close(c.id)}>
-          Encerrar atendimento
-        </button>
+        {capabilities.close && (
+          <button className="font-medium text-accent hover:underline" onClick={() => actions.close(c.id)}>
+            Encerrar atendimento
+          </button>
+        )}
       </span>
     );
   } else {
@@ -109,7 +114,7 @@ export function ChatPanel({
 
   return (
     <section aria-label={`Conversa com ${c.contact.name}`} className="flex h-full min-w-0 flex-col">
-      <header className="flex h-16 shrink-0 items-center gap-2 border-b border-line bg-panel px-3">
+      <header className="flex h-14 shrink-0 items-center gap-1.5 border-b border-line bg-panel px-2.5">
         {onBack && (
           <IconButton label="Voltar para a lista" onClick={onBack}>
             <ArrowLeft className="size-5" />
@@ -120,15 +125,15 @@ export function ChatPanel({
           onClick={onToggleContact}
           aria-expanded={contactOpen}
           aria-label="Ver dados do contato"
-          className="flex min-w-0 items-center gap-3 rounded-lg py-1 pl-1 pr-3 text-left hover:bg-hover"
+          className="flex min-w-0 items-center gap-2.5 rounded-lg py-1 pl-1 pr-2.5 text-left hover:bg-hover"
         >
           <Avatar name={c.contact.name} src={c.contact.avatarUrl} />
           <span className="min-w-0">
             <span className="flex min-w-0 items-center gap-2">
-              <span className="truncate font-semibold">{c.contact.name}</span>
+              <span className="truncate text-[13.5px] font-semibold">{c.contact.name}</span>
               <span
                 className={cn(
-                  "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium leading-4",
+                  "shrink-0 rounded-full px-1.5 py-px text-[10.5px] font-medium leading-4",
                   segments[c.segment].className,
                 )}
               >
@@ -136,7 +141,7 @@ export function ChatPanel({
               </span>
             </span>
             {c.contact.phone !== c.contact.name && (
-              <span className="block truncate text-xs text-muted">{c.contact.phone}</span>
+              <span className="block truncate text-[11.5px] text-muted">{c.contact.phone}</span>
             )}
           </span>
         </button>
@@ -169,7 +174,7 @@ export function ChatPanel({
                 <MenuItem onClick={() => (onToggleContact(), close())}>Dados do contato</MenuItem>
                 <MenuItem
                   icon={<CircleCheck />}
-                  disabled={!mine || c.status === "closed"}
+                  disabled={!capabilities.close || !mine || c.status === "closed"}
                   onClick={() => (actions.close(c.id), close())}
                 >
                   Encerrar atendimento
@@ -203,7 +208,7 @@ export function ChatPanel({
       <div ref={scroller} onScroll={onScroll} className="chat-wallpaper h-full overflow-y-auto px-3 py-4 sm:px-8">
         {isPending && <Spinner className="mx-auto mt-10" />}
         <motion.div
-          className="mx-auto flex max-w-5xl flex-col gap-1.5"
+          className="mx-auto flex max-w-4xl flex-col gap-1"
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: messages ? 1 : 0, y: messages ? 0 : 8 }}
           transition={{ duration: 0.25, ease: "easeOut" }}
@@ -216,7 +221,7 @@ export function ChatPanel({
               <Fragment key={m.id}>
                 {newDay && (
                   <div className="my-3 flex justify-center">
-                    <span className="rounded-lg bg-elevated px-3 py-1 text-xs text-fg/80 shadow-sm">
+                    <span className="rounded-md bg-elevated px-2.5 py-0.5 text-[11px] text-fg/75 shadow-sm">
                       {formatDayDivider(m.sentAt)}
                     </span>
                   </div>
@@ -252,12 +257,18 @@ export function ChatPanel({
       </AnimatePresence>
       </div>
 
-      {!lockedByOther && <div className="border-t border-line bg-panel px-4 py-1.5 text-xs text-muted">{banner}</div>}
+      {!lockedByOther && <div className="border-t border-line bg-panel px-4 py-1 text-[11.5px] text-muted">{banner}</div>}
       <Composer
         key={c.id}
         conversationId={c.id}
-        disabled={lockedByOther}
-        disabledReason={lockedByOther ? `${c.assignee?.name} está atendendo esta conversa.` : undefined}
+        disabled={lockedByOther || !capabilities.send}
+        disabledReason={
+          !capabilities.send
+            ? capabilities.sendUnavailableReason
+            : lockedByOther
+              ? `${c.assignee?.name} está atendendo esta conversa.`
+              : undefined
+        }
         onSend={(d) => send.mutate({ msg: buildOutgoing(c.id, actions.me.name, d) })}
       />
     </section>
@@ -294,7 +305,7 @@ function ReceiptLine({ m, onRetry }: { m: Message; onRetry: () => void }) {
       <AnimatePresence mode="wait" initial={false}>
         <motion.span
           key={status}
-          className="text-xs text-muted"
+          className="text-[11px] text-muted"
           initial={{ opacity: 0, y: -4 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 4 }}

@@ -1,10 +1,10 @@
-import { FileText, Image, MapPin, Mic } from "lucide-react";
+import { Ban, FileText, Image, MapPin, Mic } from "lucide-react";
 import { formatDuration } from "@/lib/format";
 import type { Message } from "./types";
 
 /** Resumo de uma mensagem para a lista de conversas. */
 export function MessagePreview({ m }: { m: Message }) {
-  const icon = "size-4 shrink-0";
+  const icon = "size-3.5 shrink-0";
   switch (m.kind) {
     case "text":
       return <span className="truncate">{m.text}</span>;
@@ -24,6 +24,12 @@ export function MessagePreview({ m }: { m: Message }) {
       return (
         <>
           <Image className={icon} /> <span className="truncate">{m.caption || "Foto"}</span>
+        </>
+      );
+    case "unsupported":
+      return (
+        <>
+          <Ban className={icon} /> <span className="truncate">{m.label}</span>
         </>
       );
     case "location":

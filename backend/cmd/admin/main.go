@@ -24,6 +24,7 @@ import (
 	"github.com/vyctinho77/chathm/backend/internal/platform/database"
 	"github.com/vyctinho77/chathm/backend/internal/platform/httpx"
 	"github.com/vyctinho77/chathm/backend/internal/users"
+	"github.com/vyctinho77/chathm/backend/internal/whatsapp/fake"
 	"github.com/vyctinho77/chathm/backend/migrations"
 )
 
@@ -60,7 +61,8 @@ func run(args []string) error {
 		return err
 	}
 	defer pool.Close()
-	svcs, err := app.NewServices(cfg, pool, auth.NewHasher())
+	cfg.WhatsAppProvider = "fake" // a CLI não abre conexão com o WhatsApp
+	svcs, err := app.NewServices(ctx, cfg, pool, app.Options{Hasher: auth.NewHasher(), WhatsAppFactory: fake.Factory(0, nil)})
 	if err != nil {
 		return err
 	}

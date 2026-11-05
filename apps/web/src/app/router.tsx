@@ -1,10 +1,11 @@
 import { createBrowserRouter, createMemoryRouter, Navigate, type RouteObject } from "react-router";
 import { DEMO } from "@/lib/env";
-import { Contact, Layers, Smartphone, Tag } from "lucide-react";
+import { Contact, Layers, Tag } from "lucide-react";
 import { ConversationsPage } from "@/features/conversations/ConversationsPage";
 import { ComingSoon } from "@/features/placeholder/ComingSoon";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { TeamPage } from "@/features/team/TeamPage";
+import { WhatsAppPage } from "@/features/whatsapp/WhatsAppPage";
 import { AdminOnly, Root } from "./Root";
 
 const routes: RouteObject[] = [
@@ -51,17 +52,7 @@ const routes: RouteObject[] = [
       {
         element: <AdminOnly />,
         children: [
-          {
-            path: "whatsapp",
-            element: (
-              <ComingSoon
-                icon={Smartphone}
-                title="Conexão WhatsApp"
-                description="Status da sessão, número conectado, QR Code temporário e reconexão. Somente administradores."
-                phase="Fase 2 — conectar WhatsApp"
-              />
-            ),
-          },
+          { path: "whatsapp", element: <WhatsAppPage /> },
         ],
       },
       { path: "configuracoes", element: <SettingsPage /> },

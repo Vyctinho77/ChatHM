@@ -1,0 +1,130 @@
+// Package fake implementa um Provider em memória para testes e desenvolvimento
+// (WHATSAPP_PROVIDER=fake), permitindo simular pareamento e mensagens sem celular.
+package fake
+
+import (
+	"context"
+	"sync"
+	"time"
+
+	"github.com/vyctinho77/chathm/backend/internal/whatsapp"
+)
+
+type Provider struct {
+	h whatsapp.Handler
+
+	// AutoPairAfter: se > 0, conclui o pareamento sozinho após esse tempo (modo dev).
+	AutoPairAfter time.Duration
+	Account       whatsapp.Account
+
+	mu      sync.Mutex
+	session bool
+	events  chan whatsapp.PairEvent
+}
+
+func New(h whatsapp.Handler) *Provider {
+	return &Provider{h: h, Account: whatsapp.Account{Phone: "+5511900000000", Name: "Escritório (simulado)", DeviceJID: "fake@s.whatsapp.net"}}
+}
+
+// Factory devolve uma whatsapp.Factory; o callback permite ao teste capturar a instância.
+func Factory(autoPair time.Duration, created func(*Provider)) whatsapp.Factory {
+	return func(h whatsapp.Handler) whatsapp.Provider {
+		p := New(h)
+		p.AutoPairAfter = autoPair
+		if created != nil {
+			created(p)
+		}
+		return p
+	}
+}
+
+func (p *Provider) HasSession(context.Context) (bool, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.session, nil
+}
+
+func (p *Provider) Restore(context.Context) error {
+	p.mu.Lock()
+	ok := p.session
+	p.mu.Unlock()
+	if !ok {
+		return whatsapp.ErrNoSession
+	}
+	go p.h.OnConnected(p.Account)
+	return nil
+}
+
+func (p *Provider) Pair(ctx context.Context) (<-chan whatsapp.PairEvent, error) {
+	ch := make(chan whatsapp.PairEvent, 8)
+	p.mu.Lock()
+	p.events = ch
+	p.mu.Unlock()
+	ch <- whatsapp.PairEvent{QR: "chathm-fake-qr-" + time.Now().Format("150405"), Expires: 60 * time.Second}
+	if p.AutoPairAfter > 0 {
+		go func() {
+			select {
+			case <-ctx.Done():
+			case <-time.After(p.AutoPairAfter):
+				p.CompletePairing()
+			}
+		}()
+	}
+	return ch, nil
+}
+
+// CompletePairing simula a leitura do QR Code no celular.
+func (p *Provider) CompletePairing() {
+	p.mu.Lock()
+	p.session = true
+	ch := p.events
+	p.events = nil
+	p.mu.Unlock()
+	p.h.OnConnected(p.Account)
+	if ch != nil {
+		ch <- whatsapp.PairEvent{Success: true}
+		close(ch)
+	}
+}
+
+// CompletePairingSilently marca a sessão como salva sem emitir eventos
+// (estado de um servidor que reinicia com sessão válida).
+func (p *Provider) CompletePairingSilently() {
+	p.mu.Lock()
+	p.session = true
+	p.mu.Unlock()
+}
+
+// ExpirePairing simula o esgotamento dos QR Codes.
+func (p *Provider) ExpirePairing() {
+	p.mu.Lock()
+	ch := p.events
+	p.events = nil
+	p.mu.Unlock()
+	if ch != nil {
+		ch <- whatsapp.PairEvent{Timeout: true}
+		close(ch)
+	}
+}
+
+// Drop simula queda de conexão (loggedOut=true: desvinculado pelo celular).
+func (p *Provider) Drop(loggedOut bool) {
+	if loggedOut {
+		p.mu.Lock()
+		p.session = false
+		p.mu.Unlock()
+	}
+	p.h.OnDisconnected("simulado", loggedOut)
+}
+
+// Receive entrega uma mensagem como se viesse do WhatsApp.
+func (p *Provider) Receive(m whatsapp.InboundMessage) { p.h.OnMessage(m) }
+
+func (p *Provider) Logout(context.Context) error {
+	p.mu.Lock()
+	p.session = false
+	p.mu.Unlock()
+	return nil
+}
+
+func (p *Provider) Close() {}
