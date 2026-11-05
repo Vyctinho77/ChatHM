@@ -124,13 +124,20 @@ export function ChatPanel({
         >
           <Avatar name={c.contact.name} src={c.contact.avatarUrl} />
           <span className="min-w-0">
-            <span className="block truncate font-semibold">{c.contact.name}</span>
-            <span className="flex items-center gap-2 text-xs text-muted">
-              <span className={cn("rounded-full px-2 py-0.5 font-medium", segments[c.segment].className)}>
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="truncate font-semibold">{c.contact.name}</span>
+              <span
+                className={cn(
+                  "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium leading-4",
+                  segments[c.segment].className,
+                )}
+              >
                 {segments[c.segment].label}
               </span>
-              <span className="hidden truncate sm:inline">{c.contact.phone}</span>
             </span>
+            {c.contact.phone !== c.contact.name && (
+              <span className="block truncate text-xs text-muted">{c.contact.phone}</span>
+            )}
           </span>
         </button>
         <div className="ml-auto flex items-center">

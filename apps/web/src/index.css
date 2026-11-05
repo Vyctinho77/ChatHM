@@ -98,7 +98,11 @@ body {
   scrollbar-color: var(--c-border) transparent;
 }
 
-:focus-visible {
-  outline: 2px solid var(--c-accent);
-  outline-offset: 2px;
+/* Foco visível para navegação por teclado. Em @layer base para que utilitários
+   (ex.: outline-none no campo de mensagem) possam sobrescrever. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--c-accent);
+    outline-offset: 2px;
+  }
 }

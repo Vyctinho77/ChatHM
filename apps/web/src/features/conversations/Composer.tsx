@@ -208,7 +208,7 @@ export function Composer({
             onKeyDown={onKeyDown}
             placeholder="Digite uma mensagem"
             aria-label="Mensagem"
-            className="mx-1 max-h-40 min-h-10 flex-1 resize-none rounded-xl border border-line bg-elevated px-4 py-2.5 text-sm outline-none placeholder:text-muted focus:border-accent"
+            className="mx-1 max-h-40 min-h-10 flex-1 resize-none rounded-xl border border-line bg-elevated px-4 py-2.5 text-sm outline-none placeholder:text-muted focus-visible:outline-none"
           />
 
           <AnimatePresence mode="popLayout" initial={false}>
