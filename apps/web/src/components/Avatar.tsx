@@ -18,19 +18,22 @@ function colorFor(seed: string) {
   return palette[h % palette.length];
 }
 
-const sizes = { sm: "size-7 text-[10.5px]", md: "size-10 text-[13px]", lg: "size-20 text-2xl" } as const;
+const sizes = {
+  sm: "size-7 text-[10.5px]",
+  list: "size-9 text-xs", // lista de conversas
+  md: "size-10 text-[13px]",
+  lg: "size-20 text-2xl",
+} as const;
 
 export function Avatar({
   name,
   src,
   size = "md",
-  ring,
   className,
 }: {
   name: string;
   src?: string;
   size?: keyof typeof sizes;
-  ring?: boolean;
   className?: string;
 }) {
   return (
@@ -39,7 +42,6 @@ export function Avatar({
         "inline-flex shrink-0 select-none items-center justify-center overflow-hidden rounded-full font-semibold",
         sizes[size],
         !src && colorFor(name),
-        ring && "ring-2 ring-unread ring-offset-2 ring-offset-panel",
         className,
       )}
       aria-hidden

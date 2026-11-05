@@ -205,7 +205,7 @@ function ConversationRow({ c, selected, onClick }: { c: Conversation; selected: 
           />
         )}
         <span className="relative">
-        <Avatar name={c.contact.name} src={c.contact.avatarUrl} ring={c.status === "new"} />
+        <Avatar name={c.contact.name} src={c.contact.avatarUrl} size="list" />
         </span>
         <div className="relative min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
