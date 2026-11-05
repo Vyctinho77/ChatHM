@@ -49,6 +49,7 @@ type InboundMessage struct {
 	ContactPhone string // E.164 quando conhecido
 	PushName     string
 	FromMe       bool // enviada pelo celular do escritório
+	Historical   bool // importada do histórico; não incrementa não lidas
 	Timestamp    time.Time
 	Kind         Kind
 	Body         string         // texto ou legenda
@@ -137,3 +138,22 @@ type Provider interface {
 
 // Factory cria o provedor ligado ao handler de eventos.
 type Factory func(h Handler) Provider
+
+type HistoryContact struct {
+	WAID, Phone, Name string
+}
+
+type HistoryProgress struct {
+	State    string `json:"state"`
+	Messages int    `json:"messages"`
+	Contacts int    `json:"contacts"`
+	Failed   int    `json:"failed"`
+}
+
+// HistoryHandler imports the chunks supplied by WhatsApp independently from
+// the live connection event handler.
+type HistoryHandler interface {
+	OnHistoryMessage(InboundMessage) (bool, error)
+	OnHistoryContact(HistoryContact) error
+	OnHistoryProgress(HistoryProgress)
+}

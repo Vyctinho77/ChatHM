@@ -26,11 +26,15 @@ const (
 
 // Status é o estado público da conexão (sem segredos).
 type Status struct {
-	State       State      `json:"state"`
-	Phone       string     `json:"phone"`
-	DisplayName string     `json:"displayName"`
-	LastError   string     `json:"lastError,omitempty"`
-	ConnectedAt *time.Time `json:"connectedAt,omitempty"`
+	State           State            `json:"state"`
+	Phone           string           `json:"phone"`
+	DisplayName     string           `json:"displayName"`
+	LastError       string           `json:"lastError,omitempty"`
+	ConnectedAt     *time.Time       `json:"connectedAt,omitempty"`
+	PairingComplete bool             `json:"pairingComplete,omitempty"`
+	Sync            *HistoryProgress `json:"sync,omitempty"`
+	HistoryRequest  string           `json:"historyRequest,omitempty"`
+	Preparing       bool             `json:"preparing,omitempty"`
 }
 
 // QR é o código temporário de pareamento (somente admin; nunca persistido).
@@ -51,20 +55,25 @@ type ReceiptHandler func(ctx context.Context, r Receipt)
 
 // Manager coordena o provedor, o estado persistido e os eventos em tempo real.
 type Manager struct {
-	db     *pgxpool.Pool
-	pub    Publisher
-	ingest Ingestor
-	onRcpt ReceiptHandler
-	p      Provider
-	log    *slog.Logger
+	db               *pgxpool.Pool
+	pub              Publisher
+	ingest           Ingestor
+	onRcpt           ReceiptHandler
+	onHistoryContact func(context.Context, HistoryContact) error
+	p                Provider
+	log              *slog.Logger
 
 	pairTimeout time.Duration
 
-	setMu      sync.Mutex // serializa apply (memória → banco → eventos)
-	mu         sync.Mutex
-	status     Status
-	qr         *QR
-	pairCancel context.CancelFunc
+	setMu                sync.Mutex // serializa apply (memória → banco → eventos)
+	mu                   sync.Mutex
+	status               Status
+	historyProgress      *HistoryProgress
+	qr                   *QR
+	pairCancel           context.CancelFunc
+	lastHistoryRequest   time.Time
+	initialHistoryDevice string
+	historyRequest       string
 }
 
 func NewManager(db *pgxpool.Pool, pub Publisher, ingest Ingestor, factory Factory, log *slog.Logger) *Manager {
@@ -107,7 +116,13 @@ func (m *Manager) Start(ctx context.Context) error {
 func (m *Manager) Status() Status {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.status
+	st := m.status
+	st.HistoryRequest = m.historyRequest
+	if m.historyProgress != nil {
+		progress := *m.historyProgress
+		st.Sync = &progress
+	}
+	return st
 }
 
 // CurrentQR devolve o QR vigente (admin) ou nil.
@@ -134,7 +149,9 @@ func (m *Manager) Connect(ctx context.Context, actorID, ip string) error {
 	}
 	pctx, cancel := context.WithTimeout(context.Background(), m.pairTimeout)
 	m.pairCancel = cancel
+	m.historyProgress = nil
 	m.mu.Unlock()
+	m.set(Status{State: StatePendingQR}, nil)
 
 	events, err := m.p.Pair(pctx)
 	if err != nil {
@@ -144,7 +161,6 @@ func (m *Manager) Connect(ctx context.Context, actorID, ip string) error {
 		return err
 	}
 	m.audit(ctx, audit.Entry{ActorID: actorID, Action: audit.WhatsAppConnect, IP: ip})
-	m.set(Status{State: StatePendingQR}, nil)
 
 	go func() {
 		defer cancel()
@@ -160,6 +176,9 @@ func (m *Manager) Connect(ctx context.Context, actorID, ip string) error {
 				m.setIfPending(Status{State: StatePendingQR}, &QR{Code: ev.QR, ExpiresAt: time.Now().Add(exp)})
 			case ev.Success:
 				// OnConnected define o estado final com número e nome.
+				m.setIfPending(Status{State: StatePendingQR, PairingComplete: true, LastError: "QR Code lido. Confirmando conexão com o WhatsApp…"}, nil)
+				// Pairing succeeded. Real connection/disconnection events now own
+				// the state; a local timer cannot declare this linked device invalid.
 				return
 			case ev.Timeout:
 				if m.setIfPending(Status{State: StateDisconnected, LastError: "O QR Code expirou sem leitura. Gere um novo."}, nil) {
@@ -225,6 +244,15 @@ func (m *Manager) OnConnected(a Account) {
 	}
 	m.mu.Unlock()
 	m.set(Status{State: StateConnected, Phone: a.Phone, DisplayName: a.Name, ConnectedAt: connectedAt}, nil)
+	m.requestInitialHistory(a.DeviceJID)
+}
+
+// The server has authenticated us, but whatsmeow is still preparing message
+// keys. Show the confirmed connection immediately; enable messaging/history
+// requests only on the later Connected event.
+func (m *Manager) OnAuthenticated(a Account) {
+	now := time.Now()
+	m.set(Status{State: StateConnected, Preparing: true, Phone: a.Phone, DisplayName: a.Name, ConnectedAt: &now}, nil)
 }
 
 func (m *Manager) OnDisconnected(reason string, loggedOut bool) {
@@ -253,7 +281,10 @@ func (m *Manager) OnReceipt(r Receipt) {
 }
 
 // Connected informa se o WhatsApp está conectado e pronto para enviar.
-func (m *Manager) Connected() bool { return m.Status().State == StateConnected }
+func (m *Manager) Connected() bool {
+	st := m.Status()
+	return st.State == StateConnected && !st.Preparing
+}
 
 func (m *Manager) NewMessageID() string { return m.p.NewMessageID() }
 
@@ -294,9 +325,25 @@ func (m *Manager) apply(st Status, qr *QR, onlyIfPending bool) bool {
 		m.mu.Unlock()
 		return false
 	}
+	if st.Preparing && m.status.State == StateConnected {
+		m.mu.Unlock()
+		return false
+	}
 	m.status = st
 	m.qr = qr
+	st.HistoryRequest = m.historyRequest
+	if m.historyProgress != nil {
+		progress := *m.historyProgress
+		st.Sync = &progress
+	}
 	m.mu.Unlock()
+
+	// Notify the browser immediately; database latency must not keep the QR
+	// visible after the provider has confirmed the live connection.
+	if m.pub != nil {
+		m.pub.Publish(EventStatus, st, nil)
+		m.pub.Publish(EventQR, qr, realtime.AdminsOnly)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -306,11 +353,97 @@ func (m *Manager) apply(st Status, qr *QR, onlyIfPending bool) bool {
 		 WHERE id = 1`, string(st.State), st.Phone, st.DisplayName, st.LastError, st.ConnectedAt); err != nil {
 		m.log.Error("salvando status da conexão", "err", err)
 	}
-	if m.pub != nil {
-		m.pub.Publish(EventStatus, st, nil)
-		m.pub.Publish(EventQR, qr, realtime.AdminsOnly)
-	}
 	return true
+}
+
+func (m *Manager) SetHistoryContactHandler(h func(context.Context, HistoryContact) error) {
+	m.onHistoryContact = h
+}
+
+func (m *Manager) OnHistoryMessage(msg InboundMessage) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	msg.Historical = true
+	return m.ingest(ctx, msg)
+}
+
+func (m *Manager) OnHistoryContact(contact HistoryContact) error {
+	if m.onHistoryContact == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return m.onHistoryContact(ctx, contact)
+}
+
+func (m *Manager) OnHistoryProgress(progress HistoryProgress) {
+	m.mu.Lock()
+	m.historyProgress = &progress
+	m.mu.Unlock()
+	if m.pub != nil {
+		m.pub.Publish("whatsapp.sync", progress, realtime.AdminsOnly)
+	}
+}
+
+func (m *Manager) RequestHistory(ctx context.Context) error {
+	requester, ok := m.p.(interface{ RequestHistory(context.Context) error })
+	if !ok || !m.Connected() {
+		return ErrNotConnected
+	}
+	m.mu.Lock()
+	if time.Since(m.lastHistoryRequest) < time.Minute {
+		m.mu.Unlock()
+		return ErrBusy
+	}
+	m.lastHistoryRequest = time.Now()
+	m.historyRequest = "requesting"
+	m.mu.Unlock()
+	m.publishHistoryRequest()
+	err := requester.RequestHistory(ctx)
+	m.mu.Lock()
+	if err != nil {
+		m.historyRequest = "failed"
+	} else {
+		m.historyRequest = "requested"
+	}
+	m.mu.Unlock()
+	m.publishHistoryRequest()
+	return err
+}
+
+// Request once per linked device during this server run, including restoration
+// of a saved session. Network reconnects and profile-name events must not repeat
+// a potentially large transfer. A fresh QR pairing has a different DeviceJID.
+func (m *Manager) requestInitialHistory(device string) {
+	if device == "" {
+		return
+	}
+	if _, ok := m.p.(interface{ RequestHistory(context.Context) error }); !ok {
+		return
+	}
+	m.mu.Lock()
+	if m.initialHistoryDevice == device {
+		m.mu.Unlock()
+		return
+	}
+	if m.initialHistoryDevice != "" {
+		m.lastHistoryRequest = time.Time{}
+	}
+	m.initialHistoryDevice = device
+	m.mu.Unlock()
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := m.RequestHistory(ctx); err != nil {
+			m.log.Warn("solicitação automática de histórico não concluída", "err", err)
+		}
+	}()
+}
+
+func (m *Manager) publishHistoryRequest() {
+	if m.pub != nil {
+		m.pub.Publish(EventStatus, m.Status(), nil)
+	}
 }
 
 func (m *Manager) audit(ctx context.Context, e audit.Entry) {

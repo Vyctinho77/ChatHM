@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/vyctinho77/chathm/backend/internal/agenda"
 	"github.com/vyctinho77/chathm/backend/internal/auth"
 	"github.com/vyctinho77/chathm/backend/internal/config"
 	"github.com/vyctinho77/chathm/backend/internal/conversations"
@@ -78,6 +79,7 @@ func NewRouter(d Deps) http.Handler {
 	segmentsH := segments.NewHandler(d.Segments)
 	tagsH := tags.NewHandler(d.Tags)
 	waH := whatsapp.NewHTTPHandler(d.WhatsApp, d.Simulate)
+	agendaH := agenda.NewHandler(agenda.NewService(d.DB, d.Conversations))
 
 	// O WebSocket revalida a sessão periodicamente (logout/desativação encerram a conexão).
 	validateWS := func(ctx context.Context, r *http.Request) bool {
@@ -111,6 +113,7 @@ func NewRouter(d Deps) http.Handler {
 			segmentsH.Routes(r)
 			tagsH.Routes(r)
 			waH.Routes(r)
+			agendaH.Routes(r)
 			r.Get("/ws", d.Hub.Handler(validateWS))
 
 			r.Group(func(r chi.Router) {

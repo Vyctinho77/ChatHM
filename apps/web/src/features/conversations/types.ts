@@ -32,6 +32,7 @@ type Base = {
   deliveredAt?: string; // recibo de entrega (mensagens enviadas)
   readAt?: string; // recibo de leitura (mensagens enviadas)
   authorName?: string; // atendente que enviou
+  historical?: boolean;
   /** Mídia recebida sem arquivo: o download falhou ou foi bloqueado pela verificação de segurança. */
   mediaState?: "failed" | "blocked";
 };

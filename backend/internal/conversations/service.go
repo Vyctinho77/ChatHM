@@ -234,15 +234,30 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 
 		// Conversa aberta do contato (no máximo uma — índice único parcial).
 		created := true
-		err := tx.QueryRow(ctx, `
+		err := pgx.ErrNoRows
+		if m.Historical {
+			// Backfill belongs to the existing thread and must not reopen an
+			// atendimento that staff already closed.
+			err = tx.QueryRow(ctx, `SELECT id FROM conversations WHERE contact_id=$1
+				ORDER BY (status <> 'closed') DESC, created_at DESC LIMIT 1 FOR UPDATE`, contactID).Scan(&convID)
+			if err == nil {
+				created = false
+			}
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return err
+			}
+		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			err = tx.QueryRow(ctx, `
 			INSERT INTO conversations (contact_id, last_message_at) VALUES ($1, $2)
 			ON CONFLICT (contact_id) WHERE status <> 'closed' DO NOTHING
 			RETURNING id`, contactID, m.Timestamp).Scan(&convID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			created = false
-			err = tx.QueryRow(ctx,
-				`SELECT id FROM conversations WHERE contact_id = $1 AND status <> 'closed' FOR UPDATE`,
-				contactID).Scan(&convID)
+			if errors.Is(err, pgx.ErrNoRows) {
+				created = false
+				err = tx.QueryRow(ctx,
+					`SELECT id FROM conversations WHERE contact_id = $1 AND status <> 'closed' FOR UPDATE`,
+					contactID).Scan(&convID)
+			}
 		}
 		if err != nil {
 			return err
@@ -274,7 +289,7 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 		}
 
 		unread := 0
-		if !m.FromMe {
+		if !m.FromMe && !m.Historical {
 			unread = 1
 		}
 		if _, err := tx.Exec(ctx, `
@@ -287,7 +302,7 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 
 		// Classificação: só mensagens do cliente, só enquanto a conversa não tem fila
 		// e ninguém assumiu — conversa em andamento nunca muda de fila por palavras isoladas.
-		if m.FromMe || m.Body == "" {
+		if m.FromMe || m.Historical || m.Body == "" {
 			return nil
 		}
 		var curSeg, assignee *string
@@ -326,7 +341,7 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 
 	after := s.publishState(ctx, convID, before)
 	s.publishMessage(ctx, EventMessageCreated, msgID, after)
-	if m.Download != nil && s.store != nil && s.media != nil {
+	if !m.Historical && m.Download != nil && s.store != nil && s.media != nil {
 		go func() {
 			s.mediaSlots <- struct{}{} // no máximo alguns downloads simultâneos
 			defer func() { <-s.mediaSlots }()

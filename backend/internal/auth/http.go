@@ -200,6 +200,7 @@ func (s *Service) me(sess *Session) MeResponse {
 // PublicRoutes: rotas acessíveis sem sessão.
 func (s *Service) PublicRoutes(r chi.Router) {
 	r.With(s.CheckOrigin).Post("/auth/login", s.handleLogin)
+	r.With(s.CheckOrigin).Post("/auth/register", s.handleRegister)
 }
 
 // SessionRoutes: rotas disponíveis mesmo com MFA pendente / não configurado.

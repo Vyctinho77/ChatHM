@@ -36,6 +36,7 @@ export function useSetMe() {
 }
 
 export const login = (email: string, password: string) => post<Me>("/auth/login", { email, password });
+export const register = (name: string, email: string, password: string) => post<Me>("/auth/register", { name, email, password });
 export const verifyMfa = (code: string) => post<Me>("/auth/mfa/verify", { code });
 export const setupMfa = () => post<{ secret: string; otpauthUrl: string }>("/auth/mfa/setup");
 export const enableMfa = (code: string) => post<Me>("/auth/mfa/enable", { code });

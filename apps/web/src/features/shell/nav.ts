@@ -7,8 +7,7 @@ export const mainNav: NavItem[] = [
   { to: "/conversas", label: "Conversas", icon: MessageSquareText },
   { to: "/filas", label: "Filas / Segmentos", icon: Layers },
   { to: "/clientes", label: "Clientes", icon: Contact },
-  // Protótipo: só existe na versão de demonstração até a agenda ter backend.
-  ...(import.meta.env.VITE_DEMO === "1" ? [{ to: "/agenda", label: "Agenda", icon: CalendarDays }] : []),
+  { to: "/agenda", label: "Agenda", icon: CalendarDays },
   { to: "/etiquetas", label: "Etiquetas", icon: Tag },
 ];
 

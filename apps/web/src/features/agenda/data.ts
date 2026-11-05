@@ -1,10 +1,10 @@
-// PROTÓTIPO (somente na demonstração): agenda em memória, sem backend.
-// Na versão real, cada item terá `teamId` (a visibilidade segue a regra das filas) e
-// virá de uma API; aqui a equipe é identificada pelo nome para casar com a API simulada.
+// Agenda persistida na API. A demonstração mantém seus exemplos em memória.
 import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTeams } from "@/features/team/api";
 import { addDays, toISO } from "./dates";
+import { DEMO } from "@/lib/env";
+import { api, get, del, patch } from "@/lib/api";
 
 export type AgendaKind = "appointment" | "deadline";
 
@@ -15,6 +15,7 @@ export type AgendaItem = {
   date: string; // YYYY-MM-DD
   time?: string; // HH:MM (só compromissos)
   team: string; // nome da equipe
+  teamId?: string;
   contact?: { name: string; conversationId: string };
   note: string;
   done: boolean;
@@ -58,12 +59,12 @@ const key = ["agenda"] as const;
 export function useAgendaItems() {
   const teams = useTeams();
   const visible = useMemo(() => new Set((teams.data ?? []).map((t) => t.name)), [teams.data]);
-  const q = useQuery({ queryKey: key, queryFn: async () => [...store()] });
+  const q = useQuery({ queryKey: key, queryFn: async () => DEMO ? [...store()] : (await get<{items: AgendaItem[]}>("/agenda")).items, refetchInterval: DEMO ? false : 15_000 });
   const items = useMemo(() => (q.data ?? []).filter((i) => visible.has(i.team)), [q.data, visible]);
-  return { items, teamNames: [...visible].sort(), isPending: q.isPending || teams.isPending };
+  return { items, teamNames: [...visible].sort(), isPending: q.isPending || teams.isPending, error: q.error ?? teams.error };
 }
 
-function useAgendaMutation<V>(fn: (v: V) => void) {
+function useAgendaMutation<V>(fn: (v: V) => void | Promise<unknown>) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (v: V) => fn(v),
@@ -71,24 +72,39 @@ function useAgendaMutation<V>(fn: (v: V) => void) {
   });
 }
 
-export const useSaveItem = () =>
-  useAgendaMutation((item: AgendaItem) => {
+export const useSaveItem = () => {
+  const teams = useTeams();
+  return useAgendaMutation(async (item: AgendaItem) => {
+    if (!DEMO) {
+      const teamId = teams.data?.find((t) => t.name === item.team)?.id;
+      if (!teamId) throw new Error("Escolha uma equipe válida.");
+      return api<AgendaItem>("PUT", `/agenda/${item.id}`, {kind:item.kind,title:item.title,date:item.date,time:item.time ?? "",teamId,conversationId:item.contact?.conversationId ?? "",note:item.note,done:item.done});
+    }
     const list = store();
     const i = list.findIndex((x) => x.id === item.id);
     if (i >= 0) list[i] = item;
     else list.push(item);
   });
+};
 
 export const useDeleteItem = () =>
-  useAgendaMutation((id: string) => {
+  useAgendaMutation(async (id: string) => {
+    if (!DEMO) return del(`/agenda/${id}`);
     db = store().filter((x) => x.id !== id);
   });
 
-export const useToggleDone = () =>
-  useAgendaMutation((id: string) => {
+export const useToggleDone = () => {
+  const qc = useQueryClient();
+  return useAgendaMutation(async (id: string) => {
+    if (!DEMO) {
+      const item = qc.getQueryData<AgendaItem[]>(key)?.find((i) => i.id === id);
+      if (!item) throw new Error("Item não encontrado.");
+      return patch(`/agenda/${id}/done`, {done:!item.done});
+    }
     const it = store().find((x) => x.id === id);
     if (it) it.done = !it.done;
   });
+};
 
 /** Compromissos antes dos prazos? Não: prazos (dia inteiro) primeiro, depois por horário. */
 export function sortItems(items: AgendaItem[]) {

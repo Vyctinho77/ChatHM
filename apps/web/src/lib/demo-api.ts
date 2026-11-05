@@ -121,6 +121,21 @@ export async function demoApi(method: string, path: string, body: Body = {}): Pr
   const sub = seg[3];
 
   switch (route) {
+    case "POST /auth/register": {
+      const email = String(body.email ?? "").trim().toLowerCase();
+      const name = String(body.name ?? "").trim();
+      const password = String(body.password ?? "");
+      const fields: Record<string, string> = {};
+      if (!name || [...name].length > 120) fields.name = "Informe um nome de até 120 caracteres.";
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) fields.email = "E-mail inválido.";
+      if ([...password].length < 12 || [...password].length > 128) fields.password = "Use de 12 a 128 caracteres.";
+      if (Object.keys(fields).length) throw invalid(fields);
+      if (users.some((u) => u.email === email)) throw new DemoError(409, "email_unavailable", "Não foi possível usar este e-mail. Entre com sua conta ou use outro endereço.");
+      const u: U = { id: uid(), name, email, password, role: "agent", isActive: true, mfaEnabled: false, theme: "system", lastLoginAt: now(), createdAt: now() };
+      users.push(u);
+      session = u;
+      return me(u);
+    }
     case "GET /auth/me":
       return me(requireSession());
     case "POST /auth/login": {

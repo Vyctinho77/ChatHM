@@ -248,29 +248,6 @@ func (s *secureStore) AddOutgoingEvent(ctx context.Context, chat types.JID, id t
 
 var aadPreKey = []byte("wa:prekey")
 
-func (s *secureStore) insertPreKey(ctx context.Context, id uint32, uploaded bool) (*keys.PreKey, error) {
-	k := keys.NewPreKey(id)
-	enc, err := s.box.Seal(k.Priv[:], aadPreKey)
-	if err != nil {
-		return nil, err
-	}
-	_, err = s.db.Exec(ctx,
-		`INSERT INTO whatsapp_prekeys (device_jid, key_id, key_enc, uploaded) VALUES ($1, $2, $3, $4)`,
-		s.jid, int64(k.KeyID), enc, uploaded)
-	return k, err
-}
-
-func (s *secureStore) nextPreKeyID(ctx context.Context) (uint32, error) {
-	var last *int64
-	if err := s.db.QueryRow(ctx, `SELECT max(key_id) FROM whatsapp_prekeys WHERE device_jid = $1`, s.jid).Scan(&last); err != nil {
-		return 0, err
-	}
-	if last == nil {
-		return 1, nil
-	}
-	return uint32(*last) + 1, nil
-}
-
 func (s *secureStore) decodePreKey(id int64, enc []byte) (*keys.PreKey, error) {
 	priv, err := s.box.Open(enc, aadPreKey)
 	if err != nil {
@@ -283,52 +260,81 @@ func (s *secureStore) decodePreKey(id int64, enc []byte) (*keys.PreKey, error) {
 }
 
 func (s *secureStore) GenOnePreKey(ctx context.Context) (*keys.PreKey, error) {
-	id, err := s.nextPreKeyID(ctx)
+	keys, err := s.generatePreKeys(ctx, 1, true)
 	if err != nil {
 		return nil, err
 	}
-	return s.insertPreKey(ctx, id, true)
+	return keys[0], nil
 }
 
 func (s *secureStore) GetOrGenPreKeys(ctx context.Context, count uint32) ([]*keys.PreKey, error) {
-	rows, err := s.db.Query(ctx,
-		`SELECT key_id, key_enc FROM whatsapp_prekeys WHERE device_jid = $1 AND NOT uploaded ORDER BY key_id LIMIT $2`,
-		s.jid, int64(count))
+	return s.generatePreKeys(ctx, count, false)
+}
+
+// Encrypt locally and insert all missing keys in one COPY, rather than paying
+// one network round trip per key before whatsmeow can emit Connected.
+func (s *secureStore) generatePreKeys(ctx context.Context, count uint32, uploaded bool) ([]*keys.PreKey, error) {
+	if count == 0 {
+		return []*keys.PreKey{}, nil
+	}
+	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var out []*keys.PreKey
-	for rows.Next() {
-		var id int64
-		var enc []byte
-		if err := rows.Scan(&id, &enc); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		k, err := s.decodePreKey(id, enc)
-		if err != nil {
-			rows.Close()
-			return nil, err
-		}
-		out = append(out, k)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "wa-prekeys:"+s.jid); err != nil {
 		return nil, err
 	}
-	if uint32(len(out)) < count {
-		next, err := s.nextPreKeyID(ctx)
+	var out []*keys.PreKey
+	if !uploaded {
+		rows, err := tx.Query(ctx,
+			`SELECT key_id, key_enc FROM whatsapp_prekeys WHERE device_jid = $1 AND NOT uploaded ORDER BY key_id LIMIT $2`,
+			s.jid, int64(count))
 		if err != nil {
 			return nil, err
 		}
-		for uint32(len(out)) < count {
-			k, err := s.insertPreKey(ctx, next, false)
+		for rows.Next() {
+			var id int64
+			var enc []byte
+			if err := rows.Scan(&id, &enc); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			k, err := s.decodePreKey(id, enc)
 			if err != nil {
+				rows.Close()
 				return nil, err
 			}
 			out = append(out, k)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	if uint32(len(out)) < count {
+		var last int64
+		if err := tx.QueryRow(ctx, `SELECT coalesce(max(key_id),0) FROM whatsapp_prekeys WHERE device_jid=$1`, s.jid).Scan(&last); err != nil {
+			return nil, err
+		}
+		next := uint32(last) + 1
+		rows := [][]any{}
+		for uint32(len(out)) < count {
+			k := keys.NewPreKey(next)
+			enc, err := s.box.Seal(k.Priv[:], aadPreKey)
+			if err != nil {
+				return nil, err
+			}
+			rows = append(rows, []any{s.jid, int64(k.KeyID), enc, uploaded})
+			out = append(out, k)
 			next++
 		}
+		if _, err := tx.CopyFrom(ctx, pgx.Identifier{"whatsapp_prekeys"}, []string{"device_jid", "key_id", "key_enc", "uploaded"}, pgx.CopyFromRows(rows)); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
 	}
 	return out, nil
 }

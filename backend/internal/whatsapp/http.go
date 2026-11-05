@@ -38,10 +38,28 @@ func (h *HTTPHandler) Routes(r chi.Router) {
 		r.Use(auth.RequireAdmin)
 		r.Post("/whatsapp/connect", h.connect)
 		r.Post("/whatsapp/disconnect", h.disconnect)
+		r.Post("/whatsapp/history", h.requestHistory)
 		if h.sim != nil {
 			r.Post("/dev/whatsapp/inbound", h.simulate)
 		}
 	})
+}
+
+func (h *HTTPHandler) requestHistory(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	err := h.m.RequestHistory(ctx)
+	switch {
+	case errors.Is(err, ErrNotConnected):
+		httpx.Error(w, 409, "whatsapp_unavailable", "Conecte o WhatsApp antes de solicitar o histórico.")
+	case errors.Is(err, ErrBusy):
+		w.Header().Set("Retry-After", "60")
+		httpx.Error(w, 429, "too_many_attempts", "Aguarde um minuto antes de solicitar novamente.")
+	case err != nil:
+		httpx.Error(w, 502, "provider_error", "Não foi possível enviar a solicitação ao WhatsApp.")
+	default:
+		httpx.JSON(w, 202, map[string]string{"status": "requested"})
+	}
 }
 
 func (h *HTTPHandler) get(w http.ResponseWriter, r *http.Request) {

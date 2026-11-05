@@ -3,12 +3,18 @@ import { get, post } from "@/lib/api";
 
 export type ConnectionState = "disconnected" | "pending_qr" | "connected" | "error";
 
+export type HistoryProgress = { state: "syncing" | "ready" | "partial"; messages: number; contacts: number; failed: number };
+
 export type Connection = {
   state: ConnectionState;
   phone: string;
   displayName: string;
   lastError?: string;
   connectedAt?: string;
+  pairingComplete?: boolean;
+  sync?: HistoryProgress;
+  historyRequest?: "requesting" | "requested" | "failed";
+  preparing?: boolean;
   qr?: { code: string; expiresAt: string } | null;
   simulator?: boolean;
 };
@@ -20,7 +26,7 @@ export function useConnection() {
     queryKey: connectionKey,
     queryFn: () => get<Connection>("/whatsapp/connection"),
     // O WebSocket atualiza em tempo real; a consulta periódica cobre quedas do WebSocket.
-    refetchInterval: (q) => (q.state.data?.state === "pending_qr" ? 3_000 : 30_000),
+    refetchInterval: (q) => (q.state.data?.state === "pending_qr" || q.state.data?.preparing || q.state.data?.sync?.state === "syncing" ? 1_000 : 10_000),
   });
 }
 
@@ -28,12 +34,17 @@ function useConnectionMutation(path: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => post<Connection>(path),
-    onSuccess: (data) => qc.setQueryData(connectionKey, data),
+    // A provider event may already be newer than the POST response.
+    onSuccess: () => qc.invalidateQueries({ queryKey: connectionKey }),
   });
 }
 
 export const useConnect = () => useConnectionMutation("/whatsapp/connect");
 export const useDisconnect = () => useConnectionMutation("/whatsapp/disconnect");
+
+export function useRequestHistory() {
+  return useMutation({ mutationFn: () => post<{status: string}>("/whatsapp/history") });
+}
 
 export function useSimulateInbound() {
   return useMutation({

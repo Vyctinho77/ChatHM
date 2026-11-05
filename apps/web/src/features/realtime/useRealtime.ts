@@ -3,7 +3,7 @@ import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { meKey } from "@/features/auth/api";
 import { conversationKeys } from "@/features/conversations/store.api";
 import type { Conversation, Message } from "@/features/conversations/types";
-import { connectionKey, type Connection } from "@/features/whatsapp/api";
+import { connectionKey, type Connection, type HistoryProgress } from "@/features/whatsapp/api";
 
 type ServerEvent =
   | { type: "conversation.updated"; data: Conversation }
@@ -12,11 +12,13 @@ type ServerEvent =
   | { type: "message.updated"; data: Message }
   | { type: "whatsapp.status"; data: Omit<Connection, "qr" | "simulator"> }
   | { type: "whatsapp.qr"; data: Connection["qr"] };
+// History import progresses independently from the live connection.
+type HistoryEvent = { type: "whatsapp.sync"; data: HistoryProgress };
 
 const sortByLast = (a: Conversation, b: Conversation) =>
   (b.lastMessage?.sentAt ?? "").localeCompare(a.lastMessage?.sentAt ?? "");
 
-function apply(qc: QueryClient, ev: ServerEvent) {
+export function applyRealtimeEvent(qc: QueryClient, ev: ServerEvent | HistoryEvent) {
   switch (ev.type) {
     case "conversation.updated": {
       const c = ev.data;
@@ -51,7 +53,14 @@ function apply(qc: QueryClient, ev: ServerEvent) {
       }));
       break;
     case "whatsapp.qr":
-      qc.setQueryData<Connection>(connectionKey, (old) => (old ? { ...old, qr: ev.data } : old));
+      qc.setQueryData<Connection>(connectionKey, (old) => (old && old.state === "pending_qr" && !old.pairingComplete ? { ...old, qr: ev.data } : old));
+      break;
+    case "whatsapp.sync":
+      qc.setQueryData<Connection>(connectionKey, (old) => old ? { ...old, sync: ev.data } : old);
+      if (ev.data.state !== "syncing") {
+        void qc.invalidateQueries({ queryKey: ["contacts"] });
+        void qc.invalidateQueries({ queryKey: conversationKeys.list });
+      }
       break;
   }
 }
@@ -79,7 +88,7 @@ export function useRealtime(enabled: boolean) {
       };
       ws.onmessage = (e) => {
         try {
-          apply(qc, JSON.parse(e.data as string) as ServerEvent);
+          applyRealtimeEvent(qc, JSON.parse(e.data as string) as ServerEvent | HistoryEvent);
         } catch {
           /* evento malformado: ignora */
         }

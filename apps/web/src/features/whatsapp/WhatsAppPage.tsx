@@ -5,7 +5,7 @@ import { MessageSquarePlus, ShieldAlert, Smartphone, TriangleAlert } from "lucid
 import { Alert, Button, Field, Modal, Spinner } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { stateDot, stateLabel, useConnect, useConnection, useDisconnect, useSimulateInbound } from "./api";
+import { stateDot, stateLabel, useConnect, useConnection, useDisconnect, useSimulateInbound, useRequestHistory } from "./api";
 
 function useSecondsLeft(iso?: string) {
   const [now, setNow] = useState(() => Date.now());
@@ -21,6 +21,7 @@ export function WhatsAppPage() {
   const { data: conn, isPending, error } = useConnection();
   const connect = useConnect();
   const disconnect = useDisconnect();
+  const history = useRequestHistory();
   const [confirming, setConfirming] = useState(false);
   const secondsLeft = useSecondsLeft(conn?.qr?.expiresAt);
 
@@ -41,7 +42,7 @@ export function WhatsAppPage() {
           <section className="rounded-xl border border-line bg-panel">
             <header className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-3.5">
               <span className={cn("size-2.5 rounded-full", stateDot[conn.state], conn.state === "pending_qr" && "animate-pulse")} />
-              <span className="font-medium">{stateLabel[conn.state]}</span>
+              <span className="font-medium">{conn.state === "pending_qr" && conn.pairingComplete ? "QR Code lido · Confirmando conexão" : stateLabel[conn.state]}</span>
               {conn.state === "connected" && conn.phone && (
                 <span className="text-[13px] text-muted">
                   {conn.displayName ? `${conn.displayName} · ` : ""}
@@ -60,7 +61,7 @@ export function WhatsAppPage() {
                   transition={{ duration: 0.18 }}
                   className="flex flex-col gap-4"
                 >
-                  {conn.lastError && conn.state !== "pending_qr" && (
+                  {conn.lastError && (
                     <Alert tone={conn.state === "error" ? "danger" : "info"}>{conn.lastError}</Alert>
                   )}
 
@@ -75,7 +76,13 @@ export function WhatsAppPage() {
                     </>
                   )}
 
-                  {conn.state === "pending_qr" && (
+                  {conn.state === "pending_qr" && conn.pairingComplete && (
+                    <div className="flex items-center gap-3 py-4 text-sm text-muted" role="status">
+                      <Spinner /> O celular reconheceu o QR Code. Aguardando o WhatsApp concluir a conexão…
+                    </div>
+                  )}
+
+                  {conn.state === "pending_qr" && !conn.pairingComplete && (
                     <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
                       <div className="mx-auto flex shrink-0 flex-col items-center gap-2 sm:mx-0">
                         <div className="rounded-xl bg-white p-3">
@@ -125,6 +132,17 @@ export function WhatsAppPage() {
 
                   {conn.state === "connected" && (
                     <>
+                      <p className="text-sm text-muted" role="status">{conn.preparing ? "WhatsApp conectado. Preparando mensagens e sincronização…" : "WhatsApp conectado. Pronto para receber mensagens."}</p>
+                      <div className="rounded-lg border border-line bg-app p-3 text-[13px]" role="status" aria-live="polite">
+                        <p className="font-medium">{conn.sync?.state === "syncing" ? "Importando dados do WhatsApp…" : conn.sync?.messages ? "Histórico recebido" : conn.sync?.contacts ? "Contatos sincronizados · aguardando mensagens" : "Aguardando o histórico do WhatsApp…"}</p>
+                        {conn.sync && <p className="mt-1 text-muted">{conn.sync.messages} mensagens importadas · {conn.sync.contacts} registros de contato processados</p>}
+                        {conn.sync?.state === "partial" && <p className="mt-1 text-danger">Não foi possível importar {conn.sync.failed} registros.</p>}
+                        <p className="mt-2 text-xs text-muted">As conversas individuais aparecem em Conversas conforme o celular envia os dados. O WhatsApp pode fornecer apenas parte do histórico. Mídias antigas são importadas com seus metadados.</p>
+                        {!conn.simulator && <p className="mt-2 text-xs text-muted">{conn.historyRequest === "requesting" ? "Solicitando histórico automaticamente…" : conn.historyRequest === "failed" ? "Não foi possível solicitar o histórico automaticamente. Tente novamente." : "O histórico é solicitado automaticamente após a conexão. Mantenha o WhatsApp conectado à internet no celular."}</p>}
+                        {!conn.simulator && <Button variant="ghost" className="mt-2" disabled={conn.preparing} loading={history.isPending || conn.historyRequest === "requesting"} onClick={() => history.mutate()}>Tentar sincronizar novamente</Button>}
+                        {history.isSuccess && <p className="mt-2 text-xs text-muted">Solicitação enviada. Mantenha o WhatsApp aberto e conectado à internet no celular. As mensagens aparecerão quando o aparelho enviar os dados dos últimos 30 dias; a disponibilidade depende do WhatsApp.</p>}
+                        {history.error && <p className="mt-2 text-xs text-danger">{errorMessage(history.error)}</p>}
+                      </div>
                       <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-[13px]">
                         <dt className="text-muted">Número</dt>
                         <dd>{conn.phone || "—"}</dd>

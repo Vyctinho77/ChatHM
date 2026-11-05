@@ -1,8 +1,7 @@
 import { createBrowserRouter, createMemoryRouter, Navigate, type RouteObject } from "react-router";
 import { DEMO } from "@/lib/env";
-import { Contact } from "lucide-react";
 import { ConversationsPage } from "@/features/conversations/ConversationsPage";
-import { ComingSoon } from "@/features/placeholder/ComingSoon";
+import { ContactsPage } from "@/features/contacts/ContactsPage";
 import { AgendaPage } from "@/features/agenda/AgendaPage";
 import { QueuesConfigPage } from "@/features/queues/QueuesConfigPage";
 import { QueuesPage } from "@/features/queues/QueuesPage";
@@ -21,19 +20,8 @@ const routes: RouteObject[] = [
       { index: true, element: <Navigate to="/conversas" replace /> },
       { path: "conversas/:id?", element: <ConversationsPage /> },
       { path: "filas", element: <QueuesPage /> },
-      // Protótipo da agenda: só na demonstração (o bundle normal não inclui a página).
-      ...(import.meta.env.VITE_DEMO === "1" ? [{ path: "agenda", element: <AgendaPage /> }] : []),
-      {
-        path: "clientes",
-        element: (
-          <ComingSoon
-            icon={Contact}
-            title="Clientes"
-            description="Contatos com nome, telefone, empresa, observações e histórico de atendimentos."
-            phase="Fase 2 — contatos recebidos pelo WhatsApp"
-          />
-        ),
-      },
+      { path: "agenda", element: <AgendaPage /> },
+      { path: "clientes", element: <ContactsPage /> },
       { path: "etiquetas", element: <TagsPage /> },
       { path: "equipe", element: <TeamPage /> },
       {

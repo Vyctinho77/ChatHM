@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
 import { CalendarDays, Clock, MessageSquareText, Plus, UserRound, Users, X } from "lucide-react";
-import { Button, Field, IconButton } from "@/components/ui";
+import { Alert, Button, Field, IconButton } from "@/components/ui";
+import { errorMessage, fieldErrors } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { longDate } from "./dates";
 import {
@@ -83,6 +84,7 @@ function ItemView({ item, onView, onClose }: Props & { item: AgendaItem }) {
     <div>
       <Header title={kindLabel[item.kind]} kind={item.kind} onClose={onClose} />
       <div className="flex flex-col gap-3 px-4 pb-4">
+        {(toggle.error || remove.error) && <Alert>{errorMessage(toggle.error ?? remove.error)}</Alert>}
         <h2 className={cn("text-[16px] font-semibold leading-snug", item.done && "text-muted line-through")}>{item.title}</h2>
         <Row icon={<CalendarDays />}>
           {cap(longDate(item.date))}
@@ -120,7 +122,7 @@ function ItemView({ item, onView, onClose }: Props & { item: AgendaItem }) {
           </div>
         ) : (
           <div className="flex items-center gap-1 pt-1">
-            <Button variant="secondary" onClick={() => toggle.mutate(item.id)}>
+            <Button variant="secondary" loading={toggle.isPending} onClick={() => toggle.mutate(item.id)}>
               {item.done ? "Reabrir" : "Concluir"}
             </Button>
             <Button variant="ghost" onClick={() => onView({ type: "form", id: item.id })}>
@@ -136,7 +138,7 @@ function ItemView({ item, onView, onClose }: Props & { item: AgendaItem }) {
   );
 }
 
-function DayView({ date, items, onView, onClose }: Props & { date: string }) {
+function DayView({ date, items, teamNames, onView, onClose }: Props & { date: string }) {
   const list = sortItems(items.filter((i) => i.date === date));
   return (
     <div>
@@ -160,6 +162,7 @@ function DayView({ date, items, onView, onClose }: Props & { date: string }) {
       <div className="border-t border-line px-2 py-1.5">
         <button
           type="button"
+          disabled={teamNames.length === 0}
           onClick={() => onView({ type: "form", date })}
           className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[13.5px] font-medium text-brand hover:bg-hover"
         >
@@ -213,13 +216,14 @@ function FormView({
       note: note.trim(),
       done: editing?.done ?? false,
     };
-    save.mutate(item, { onSuccess: () => onView({ type: "item", id: item.id }) });
+    save.mutate(item, { onSuccess: () => onView({ type: "item", id: item.id }), onError: (err) => setErrors(fieldErrors(err)) });
   }
 
   return (
     <form onSubmit={submit}>
       <Header title={editing ? "Editar item" : "Novo item"} onClose={onClose} />
       <div className="flex flex-col gap-3 px-4 pb-4">
+        {save.error && <Alert>{errorMessage(save.error)}</Alert>}
         <div role="radiogroup" aria-label="Tipo" className="flex rounded-lg bg-elevated p-0.5 text-[13px]">
           {(["appointment", "deadline"] as const).map((k) => (
             <button
@@ -241,7 +245,7 @@ function FormView({
         <div className="flex gap-3">
           <Field className="flex-1" label="Data" type="date" value={day} error={errors.date} onChange={(e) => setDay(e.target.value)} />
           {kind === "appointment" && (
-            <Field className="w-28" label="Hora" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+            <Field className="w-28" label="Hora" type="time" value={time} error={errors.time} onChange={(e) => setTime(e.target.value)} />
           )}
         </div>
         <label className="flex flex-col gap-1.5 text-[13px] font-medium">
@@ -277,7 +281,7 @@ function FormView({
           <Button type="button" variant="secondary" onClick={() => (editing ? onView({ type: "item", id: editing.id }) : onClose())}>
             Cancelar
           </Button>
-          <Button type="submit" loading={save.isPending}>
+          <Button type="submit" loading={save.isPending} disabled={teamNames.length === 0}>
             Salvar
           </Button>
         </div>

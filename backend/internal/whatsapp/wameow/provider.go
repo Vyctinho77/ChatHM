@@ -34,6 +34,9 @@ func NewFactory(ctx context.Context, pool *pgxpool.Pool, sqlDB *sql.DB, box *sec
 	if err := container.Upgrade(ctx); err != nil {
 		return nil, fmt.Errorf("preparando tabelas do whatsmeow: %w", err)
 	}
+	if _, err := sqlDB.ExecContext(ctx, protectStoreTables); err != nil {
+		return nil, fmt.Errorf("protegendo tabelas do whatsmeow: %w", err)
+	}
 	sc := &secureContainer{inner: container, db: pool, box: box, log: wlog.Sub("device")}
 	return func(h whatsapp.Handler) whatsapp.Provider {
 		return &Provider{h: h, store: sc, log: wlog}
@@ -45,8 +48,12 @@ type Provider struct {
 	store *secureContainer
 	log   waLog.Logger
 
-	mu  sync.Mutex
-	cli *whatsmeow.Client
+	mu              sync.Mutex
+	cli             *whatsmeow.Client
+	historyMu       sync.Mutex
+	historyClient   *whatsmeow.Client
+	historyProgress whatsapp.HistoryProgress
+	contactsSyncing bool
 }
 
 func (p *Provider) HasSession(ctx context.Context) (bool, error) {
@@ -65,6 +72,7 @@ func (p *Provider) Restore(ctx context.Context) error {
 	cli := whatsmeow.NewClient(d, p.log.Sub("client"))
 	cli.AddEventHandler(p.handle(cli))
 	p.swap(cli)
+	p.observeAuthentication(cli)
 	return cli.Connect()
 }
 
@@ -81,6 +89,7 @@ func (p *Provider) Pair(ctx context.Context) (<-chan whatsapp.PairEvent, error) 
 		return nil, err
 	}
 	p.swap(cli)
+	p.observeAuthentication(cli)
 	if err := cli.Connect(); err != nil {
 		return nil, err
 	}
@@ -267,8 +276,9 @@ func (p *Provider) handle(cli *whatsmeow.Client) func(any) {
 				acc.DeviceJID = cli.Store.ID.String()
 			}
 			p.h.OnConnected(acc)
+			p.scheduleContactSync(cli)
 		case *events.PushNameSetting:
-			if cli.Store.ID != nil {
+			if cli.Store.ID != nil && cli.IsLoggedIn() {
 				p.h.OnConnected(whatsapp.Account{Phone: "+" + cli.Store.ID.User, Name: cli.Store.PushName, DeviceJID: cli.Store.ID.String()})
 			}
 		case *events.LoggedOut:
@@ -285,6 +295,10 @@ func (p *Provider) handle(cli *whatsmeow.Client) func(any) {
 			if m, ok := convertMessage(context.Background(), cli, e); ok {
 				p.h.OnMessage(m)
 			}
+		case *events.HistorySync:
+			go p.importHistory(cli, e)
+		case *events.Contact, *events.AppStateSyncComplete:
+			p.scheduleContactSync(cli)
 		case *events.Receipt:
 			if r, ok := convertReceipt(e); ok {
 				p.h.OnReceipt(r)

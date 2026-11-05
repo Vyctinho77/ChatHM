@@ -57,6 +57,18 @@ Verificação rápida: `curl localhost:8080/healthz` e `curl localhost:8080/read
 
 ## Comandos
 
+Com as dependências instaladas e os serviços do Docker
+iniciados (`make up`), execute na raiz para iniciar backend e frontend juntos:
+
+```bash
+npm run dev
+```
+
+A API fica em http://localhost:8080 e o frontend em http://localhost:5173.
+O comando carrega as variáveis do `.env` da raiz. Se ele não existir, cria o arquivo
+a partir de `.env.example` com uma chave de criptografia aleatória. Ajuste os valores
+conforme seu ambiente. Use `Ctrl+C` para encerrar ambos.
+
 | Comando | O que faz |
 |---|---|
 | `make test` | Testes Go (`-race`, integração no Postgres do compose) e web (Vitest) |

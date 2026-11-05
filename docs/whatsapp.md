@@ -26,6 +26,54 @@ whatsmeow (WhatsApp Web) ──► wameow.Provider ──► whatsapp.Manager �
 O QR Code nunca é gravado no banco nem enviado a atendentes (API e WebSocket filtram por perfil).
 Reiniciar o backend restaura a sessão salva automaticamente.
 
+Após a leitura do QR, `pairingComplete=true` remove o código e mostra a confirmação
+em andamento. Quando `Client.IsLoggedIn()` confirma a autenticação no servidor,
+a interface mostra conectado com `preparing=true`, sem aguardar o upload das
+pre-keys. O evento posterior `Connected` libera mensagens e a solicitação de
+histórico. QR lido sozinho não é considerado autenticação. Um limite local de
+espera não invalida um pareamento já confirmado.
+
+As pre-keys são cifradas localmente e gravadas em lote dentro de uma transação,
+com trava por dispositivo para que pedidos simultâneos reutilizem as mesmas
+chaves. Atualizações de conexão são publicadas antes de gravar o status no banco;
+sincronizar histórico não bloqueia essa confirmação.
+
+## Importação inicial
+
+O adaptador processa automaticamente os lotes `HistorySync` fornecidos pelo
+WhatsApp: nomes de contatos e mensagens de conversas individuais, recebidas e
+enviadas pelo celular. A tela mostra mensagens importadas, contatos processados e
+falhas pelo evento `whatsapp.sync`. Ao finalizar cada lote, as consultas de
+conversas e mensagens são atualizadas.
+
+O histórico não incrementa não lidas, não classifica filas com base em textos
+antigos e usa os mesmos identificadores para evitar duplicação. Arquivos antigos
+de mídia não são baixados em massa; seus metadados e legendas são preservados.
+Grupos, status e canais continuam fora do escopo.
+
+A quantidade de histórico depende do que o WhatsApp disponibiliza ao dispositivo
+vinculado. Lotes recebidos antes desta implementação não são recuperados apenas
+por atualizar a página; pode ser necessário um novo pareamento. Os contadores de
+sincronização ficam em memória, enquanto contatos e mensagens ficam no banco.
+
+Os contatos também são copiados do cache persistido do WhatsApp ao conectar ou
+restaurar a sessão e após sincronizações de app state. Isso independe da chegada
+de um lote de mensagens. A página Clientes consulta `GET /api/v1/contacts`:
+administradores veem o diretório importado; atendentes veem apenas contatos de
+conversas às quais já têm acesso.
+
+Ao confirmar a conexão, o backend solicita automaticamente até 30 dias de
+histórico ao celular, em segundo plano. Isso também ocorre ao restaurar a sessão
+após iniciar o servidor, uma vez por dispositivo durante essa execução. Eventos
+repetidos de conexão ou alteração do perfil não repetem a solicitação.
+
+Para tentar recuperar mensagens ausentes sem desvincular a conta, um administrador
+pode usar “Tentar sincronizar novamente” (`POST /api/v1/whatsapp/history`).
+O pedido manual é limitado a um por minuto. Um retorno 202
+confirma somente o envio da solicitação, não a entrega das mensagens: o telefone
+ou o WhatsApp podem recusar ou limitar a sincronização. As mensagens recebidas
+continuam passando pelo importador idempotente de `HistorySync`.
+
 ## Segredos da sessão
 
 O whatsmeow guarda tudo em texto puro por padrão. O ChatHM substitui o armazenamento do dispositivo

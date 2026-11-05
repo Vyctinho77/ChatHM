@@ -34,6 +34,7 @@ function MetaOverlay({ m }: { m: Message }) {
 
 /** Texto do espaço de uma mídia cujo arquivo ainda não chegou ou não pode ser exibido. */
 function mediaStateLabel(m: Message, what: string) {
+  if (m.historical) return `${what} do histórico · arquivo não importado`;
   if (m.mediaState === "blocked") return `${what} bloqueada por segurança`;
   if (m.mediaState === "failed") return `Não foi possível baixar ${what.toLowerCase() === "imagem" ? "a imagem" : "o arquivo"}`;
   return `${what} recebida · baixando…`;
@@ -100,7 +101,7 @@ function DocumentCard({ m }: { m: Extract<Message, { kind: "document" }> }) {
         <p className="break-all text-[13px] font-medium leading-snug">{m.fileName}</p>
         <p className="text-[11px] opacity-70">
           {isPdf ? "PDF" : ext} • {formatBytes(m.sizeBytes)}
-          {!m.url && ` • ${m.mediaState === "blocked" ? "bloqueado por segurança" : m.mediaState === "failed" ? "download falhou" : "baixando…"}`}
+          {!m.url && ` • ${m.historical ? "arquivo do histórico não importado" : m.mediaState === "blocked" ? "bloqueado por segurança" : m.mediaState === "failed" ? "download falhou" : "baixando…"}`}
         </p>
       </div>
       {m.url && (
@@ -169,9 +170,12 @@ export function MessageBubble({ m, showAuthor, animateIn }: { m: Message; showAu
         )}
 
         {m.kind === "audio" && (
+          <div className="flex flex-col">
           <div className="flex items-end">
             <AudioPlayer durationSec={m.durationSec} waveform={m.waveform} url={m.url} outgoing={out} />
             <Meta m={m} />
+          </div>
+          {m.historical && !m.url && <p className="mt-1 text-[11px] opacity-70">Áudio do histórico · arquivo não importado</p>}
           </div>
         )}
 

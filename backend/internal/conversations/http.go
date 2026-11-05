@@ -30,6 +30,7 @@ func viewer(r *http.Request) Viewer {
 
 // Routes: usuários autenticados. A visibilidade por equipe é aplicada em cada consulta.
 func (h *Handler) Routes(r chi.Router) {
+	r.Get("/contacts", h.contacts)
 	r.Get("/conversations", h.list)
 	r.Get("/conversations/{id}", h.get)
 	r.Get("/conversations/{id}/messages", h.messages)
@@ -41,6 +42,15 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Put("/conversations/{id}/tags/{tagId}", h.addTag)
 	r.Delete("/conversations/{id}/tags/{tagId}", h.removeTag)
 	r.Patch("/contacts/{id}", h.updateContact)
+}
+
+func (h *Handler) contacts(w http.ResponseWriter, r *http.Request) {
+	contacts, err := h.svc.ListContacts(r.Context(), viewer(r))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"contacts": contacts})
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {

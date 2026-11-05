@@ -120,6 +120,7 @@ func NewServices(ctx context.Context, cfg config.Config, db *pgxpool.Pool, opt O
 	}
 	s.WhatsApp = whatsapp.NewManager(db, hub, convs.Ingest, factory, opt.Logger)
 	s.WhatsApp.SetReceiptHandler(convs.ApplyReceipt)
+	s.WhatsApp.SetHistoryContactHandler(convs.ImportContact)
 	convs.SetSender(s.WhatsApp)
 	return s, nil
 }

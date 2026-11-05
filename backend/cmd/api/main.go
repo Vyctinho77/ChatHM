@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -34,6 +35,14 @@ func run() error {
 
 	logger := newLogger(cfg)
 	slog.SetDefault(logger)
+
+	// Reserve the HTTP port before touching the shared WhatsApp session. A
+	// duplicate process must fail before it can restore or replace that session.
+	listener, err := net.Listen("tcp", cfg.HTTPAddr)
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -78,7 +87,7 @@ func run() error {
 	errCh := make(chan error, 1)
 	go func() {
 		logger.Info("api ouvindo", "addr", cfg.HTTPAddr, "env", cfg.Env)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
 		close(errCh)

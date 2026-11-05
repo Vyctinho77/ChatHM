@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { Page, PageHeader } from "@/components/list";
-import { Button, IconButton, Spinner } from "@/components/ui";
+import { Alert, Button, IconButton, Spinner } from "@/components/ui";
+import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { useMediaQuery } from "@/lib/theme";
 import { useConversations } from "@/features/conversations/store";
@@ -15,13 +16,13 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 type Open = { view: CardView; anchor: DOMRect } | null;
 
-/** Protótipo (demonstração): calendário mensal; clicar num item abre um card flutuante. */
+/** Calendário mensal; clicar num item abre um card flutuante. */
 export function AgendaPage() {
   const wide = useMediaQuery("(min-width: 768px)");
   const [today] = useState(() => new Date());
   const [month, setMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
   const [open, setOpen] = useState<Open>(null);
-  const { items, teamNames, isPending } = useAgendaItems();
+  const { items, teamNames, isPending, error } = useAgendaItems();
   const { data: conversations = [] } = useConversations();
 
   const contacts = useMemo<ContactOption[]>(() => {
@@ -51,12 +52,18 @@ export function AgendaPage() {
         <PageHeader
           title="Agenda"
           actions={
-            <Button variant="secondary" onClick={(e) => show({ type: "form", date: todayISO }, e.currentTarget)}>
+            <Button variant="secondary" disabled={isPending || !!error || teamNames.length === 0} onClick={(e) => show({ type: "form", date: todayISO }, e.currentTarget)}>
               <Plus className="size-4" /> Novo
             </Button>
           }
         />
 
+        {error && <div className="px-3 py-2"><Alert>{errorMessage(error)}</Alert></div>}
+        {!isPending && !error && teamNames.length === 0 && (
+          <p className="px-5 pb-1 pt-3 text-xs leading-relaxed text-muted">
+            Para criar compromissos, cadastre ou participe de uma equipe.
+          </p>
+        )}
         <div className="flex items-center gap-1 px-3 py-2">
           <IconButton label="Mês anterior" onClick={() => setMonth((m) => addMonths(m, -1))}>
             <ChevronLeft className="size-5" />
