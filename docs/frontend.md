@@ -37,10 +37,23 @@ src/
 |---|---|
 | Login, MFA, sessão, tema, Equipe, Configurações | API real |
 | Conversas, mensagens, observação do contato, Conexão WhatsApp | API real + WebSocket (`features/realtime`) |
-| Envio, etiquetas, encerrar atendimento | desativados até a Fase 3 (`capabilities` em `store.api.ts`) |
+| Filas / Segmentos, Etiquetas, responder (assumir), encerrar, etiquetar | API real |
+| Anexos e áudio | desativados até a Fase 4 (`capabilities.media` em `store.api.ts`) |
 
 `features/conversations/store.ts` escolhe a implementação no build: `store.api.ts` no app e `store.mock.ts`
 (dados fictícios) somente no build de demonstração — o bundle de produção não contém os dados fictícios.
+
+## Telas da Fase 3
+
+- **Filas / Segmentos** (`features/queues`): cartões por fila com *aguardando* e *em atendimento* (contados a partir
+  das conversas que o usuário pode ver; atendentes só veem as filas da própria equipe + Geral), "Abrir fila" leva à
+  lista filtrada (`/conversas?fila=folha`). Admin tem a aba **Configuração**: testar classificação, vincular equipe,
+  ativar/desativar, palavras-chave com prioridade, criar e excluir segmentos.
+- **Etiquetas** (`features/tags`): catálogo; só o admin cria, renomeia e exclui.
+- **Chat**: responder assume a conversa; se outra pessoa assumir antes, o texto volta ao campo e o aviso explica.
+  Conversa assumida por outra pessoa bloqueia o campo e some da lista de quem perdeu o acesso (evento
+  `conversation.removed`). Falha de envio mantém a bolha com "Tentar de novo".
+- Balões com imagem: borda fina, imagem de ponta a ponta, legenda e autor abaixo, hora sobre a imagem sem legenda.
 
 ## Tipografia
 

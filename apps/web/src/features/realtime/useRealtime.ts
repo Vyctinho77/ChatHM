@@ -7,7 +7,9 @@ import { connectionKey, type Connection } from "@/features/whatsapp/api";
 
 type ServerEvent =
   | { type: "conversation.updated"; data: Conversation }
+  | { type: "conversation.removed"; data: { id: string } }
   | { type: "message.created"; data: Message }
+  | { type: "message.updated"; data: Message }
   | { type: "whatsapp.status"; data: Omit<Connection, "qr" | "simulator"> }
   | { type: "whatsapp.qr"; data: Connection["qr"] };
 
@@ -25,11 +27,20 @@ function apply(qc: QueryClient, ev: ServerEvent) {
       });
       break;
     }
-    case "message.created": {
+    case "conversation.removed": {
+      // Perdeu acesso (ex.: outra pessoa assumiu uma conversa da fila geral).
+      qc.setQueryData<Conversation[]>(conversationKeys.list, (old) => old?.filter((c) => c.id !== ev.data.id));
+      qc.removeQueries({ queryKey: conversationKeys.messages(ev.data.id) });
+      break;
+    }
+    case "message.created":
+    case "message.updated": {
       const m = ev.data;
-      qc.setQueryData<Message[]>(conversationKeys.messages(m.conversationId), (old) =>
-        old && !old.some((x) => x.id === m.id) ? [...old, m] : old,
-      );
+      // O id da mensagem enviada é do cliente: se já existe (bolha otimista), atualiza em vez de duplicar.
+      qc.setQueryData<Message[]>(conversationKeys.messages(m.conversationId), (old) => {
+        if (!old) return old;
+        return old.some((x) => x.id === m.id) ? old.map((x) => (x.id === m.id ? m : x)) : [...old, m];
+      });
       break;
     }
     case "whatsapp.status":

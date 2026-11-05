@@ -3,14 +3,17 @@ import { AnimatePresence, motion } from "motion/react";
 import { ArrowDown, ArrowLeft, CheckCheck, CircleCheck, EllipsisVertical, PanelRight, Search, X } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { Menu, MenuItem } from "@/components/Menu";
-import { IconButton, Spinner } from "@/components/ui";
+import { Alert, IconButton, Spinner } from "@/components/ui";
+import { errorMessage, isRejection } from "@/lib/api";
+import { useMe } from "@/features/auth/api";
 import { cn } from "@/lib/cn";
 import { formatDayDivider, formatTime, sameDay } from "@/lib/format";
 import { Composer } from "./Composer";
+import { getDraft, setDraft } from "./drafts";
 import { MessageBubble } from "./MessageBubble";
-import { buildOutgoing, capabilities, useConversationActions, useMessages, useSendMessage } from "./store";
+import { buildOutgoing, capabilities, useConversationActions, useMessages, useSendMessage, type OutgoingDraft } from "./store";
 import { statusLabel } from "./receipts";
-import { segments, type Conversation, type Message } from "./types";
+import { segmentClass, segmentLabel, type Conversation, type Message } from "./types";
 
 const normalize = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
@@ -28,6 +31,10 @@ export function ChatPanel({
   const { data: messages, isPending } = useMessages(c.id);
   const actions = useConversationActions();
   const send = useSendMessage(c.id);
+  const { data: me } = useMe();
+  const isAdmin = me?.user.role === "admin";
+  // Muda ao devolver um texto recusado ao campo de mensagem (remonta o Composer).
+  const [composerKey, setComposerKey] = useState(0);
   const scroller = useRef<HTMLDivElement>(null);
   const [search, setSearch] = useState<string | null>(null);
   // Mensagens com horário posterior à abertura da conversa entram animadas.
@@ -84,32 +91,58 @@ export function ChatPanel({
   }, [messages, search]);
 
   const mine = c.assignee?.id === actions.me.id;
-  const lockedByOther = !!c.assignee && !mine && c.status === "in_progress";
+  const closed = c.status === "closed";
+  // Outra pessoa já assumiu: só ela responde (o servidor também garante isso).
+  const lockedByOther = !!c.assignee && !mine && !closed;
+  // O responsável encerra; administradores também podem encerrar qualquer atendimento.
+  const canClose = capabilities.close && !closed && (mine || isAdmin);
 
+  const closeButton = canClose && (
+    <button className="font-medium text-accent hover:underline" onClick={() => actions.close(c.id)}>
+      Encerrar atendimento
+    </button>
+  );
   let banner: React.ReactNode;
-  if (!capabilities.send && (c.status === "new" || !c.assignee)) {
-    banner = <>Fila geral · aguardando atendimento</>;
-  } else if (c.status === "new" || !c.assignee) {
+  if (closed) {
+    banner = <>Atendimento encerrado. Uma nova mensagem do cliente abre um novo atendimento.</>;
+  } else if (!c.assignee) {
     banner = (
-      <>
-        Aguardando atendimento · <span className="text-fg">ao responder, você assume esta conversa.</span>
-      </>
+      <span className="flex items-center gap-2">
+        <span>
+          Aguardando atendimento ·{" "}
+          <span className="text-fg">{capabilities.send ? "ao responder, você assume esta conversa." : "fila " + segmentLabel(c)}</span>
+        </span>
+        {closeButton}
+      </span>
     );
-  } else if (c.status === "closed") {
-    banner = <>Atendimento encerrado. Uma nova mensagem do cliente poderá ser reclassificada.</>;
   } else if (mine) {
     banner = (
       <span className="flex items-center gap-2">
-        Você está atendendo
-        {capabilities.close && (
-          <button className="font-medium text-accent hover:underline" onClick={() => actions.close(c.id)}>
-            Encerrar atendimento
-          </button>
-        )}
+        Você está atendendo {closeButton}
       </span>
     );
   } else {
-    banner = <>Em atendimento por {c.assignee.name}</>;
+    banner = (
+      <span className="flex items-center gap-2">
+        Em atendimento por {c.assignee.name} {closeButton}
+      </span>
+    );
+  }
+
+  function submit(d: OutgoingDraft) {
+    const msg = buildOutgoing(c.id, actions.me.name, d);
+    send.mutate(
+      { msg },
+      {
+        onError: (err) => {
+          // O servidor recusou (ex.: outra pessoa assumiu): o texto volta ao campo, sem perder o que foi digitado.
+          if (d.kind === "text" && isRejection(err) && !getDraft(c.id)) {
+            setDraft(c.id, d.text);
+            setComposerKey((k) => k + 1);
+          }
+        },
+      },
+    );
   }
 
   return (
@@ -132,12 +165,19 @@ export function ChatPanel({
             <span className="flex min-w-0 items-center gap-2">
               <span className="truncate text-[13.5px] font-semibold">{c.contact.name}</span>
               <span
+                title={
+                  c.classification === "conflict"
+                    ? "Fila geral: a mensagem combinou com mais de um segmento"
+                    : c.segment === "geral"
+                      ? "Fila geral: sem correspondência com um segmento"
+                      : undefined
+                }
                 className={cn(
                   "shrink-0 rounded-full px-1.5 py-px text-[10.5px] font-medium leading-4",
-                  segments[c.segment].className,
+                  segmentClass(c.segment),
                 )}
               >
-                {segments[c.segment].label}
+                {segmentLabel(c)}
               </span>
             </span>
             {c.contact.phone !== c.contact.name && (
@@ -174,7 +214,7 @@ export function ChatPanel({
                 <MenuItem onClick={() => (onToggleContact(), close())}>Dados do contato</MenuItem>
                 <MenuItem
                   icon={<CircleCheck />}
-                  disabled={!capabilities.close || !mine || c.status === "closed"}
+                  disabled={!canClose}
                   onClick={() => (actions.close(c.id), close())}
                 >
                   Encerrar atendimento
@@ -257,19 +297,36 @@ export function ChatPanel({
       </AnimatePresence>
       </div>
 
-      {!lockedByOther && <div className="border-t border-line bg-panel px-4 py-1 text-[11.5px] text-muted">{banner}</div>}
+      {send.isError && (
+        <div className="border-t border-line bg-panel px-3 pt-2">
+          <Alert>
+            <span className="flex items-start justify-between gap-3">
+              {errorMessage(send.error)}
+              <button type="button" className="shrink-0 font-medium underline-offset-2 hover:underline" onClick={() => send.reset()}>
+                Fechar
+              </button>
+            </span>
+          </Alert>
+        </div>
+      )}
+      {!lockedByOther && !closed && (
+        <div className="border-t border-line bg-panel px-4 py-1 text-[11.5px] text-muted">{banner}</div>
+      )}
       <Composer
-        key={c.id}
+        key={`${c.id}:${composerKey}`}
         conversationId={c.id}
-        disabled={lockedByOther || !capabilities.send}
+        disabled={lockedByOther || closed || !capabilities.send}
         disabledReason={
           !capabilities.send
             ? capabilities.sendUnavailableReason
-            : lockedByOther
-              ? `${c.assignee?.name} está atendendo esta conversa.`
-              : undefined
+            : closed
+              ? "Atendimento encerrado. Uma nova mensagem do cliente abre um novo atendimento."
+              : lockedByOther
+                ? `${c.assignee?.name} está atendendo esta conversa.${canClose ? "" : ""}`
+                : undefined
         }
-        onSend={(d) => send.mutate({ msg: buildOutgoing(c.id, actions.me.name, d) })}
+        mediaDisabledReason={capabilities.media ? undefined : capabilities.mediaUnavailableReason}
+        onSend={submit}
       />
     </section>
   );

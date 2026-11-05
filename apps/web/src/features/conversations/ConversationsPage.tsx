@@ -1,6 +1,6 @@
 import { safeStorage } from "@/lib/storage";
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
 import { AnimatePresence, motion } from "motion/react";
 import { MessageSquareText } from "lucide-react";
 import { Group, Panel, useDefaultLayout } from "react-resizable-panels";
@@ -42,7 +42,9 @@ export function ConversationsPage() {
   const layout = useDefaultLayout({ id: "chathm-conversations", storage: safeStorage, panelIds });
 
   const conversation = data?.find((c) => c.id === id);
-  const select = (cid: string) => navigate(`/conversas/${cid}`);
+  // Mantém o filtro de fila (?fila=) ao abrir e fechar conversas.
+  const { search } = useLocation();
+  const select = (cid: string) => navigate({ pathname: `/conversas/${cid}`, search });
   const toggleContact = () => setContactOpen((o) => !o);
 
   // Telas pequenas: uma coluna por vez (lista → chat → contato).
@@ -61,7 +63,7 @@ export function ConversationsPage() {
             conversation={conversation}
             contactOpen={contactOpen}
             onToggleContact={toggleContact}
-            onBack={() => navigate("/conversas")}
+            onBack={() => navigate({ pathname: "/conversas", search })}
           />
         </motion.div>
         <AnimatePresence>

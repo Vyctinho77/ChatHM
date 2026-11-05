@@ -1,12 +1,15 @@
 import type { Message } from "./types";
 
-/** O que a fase atual permite fazer pela interface. */
+/** O que a implementação atual permite fazer pela interface. */
 export type Capabilities = {
   send: boolean;
   tags: boolean;
   close: boolean;
+  /** Envio de áudio, imagens e documentos. */
+  media: boolean;
   /** Explicação exibida quando o envio está indisponível. */
   sendUnavailableReason?: string;
+  mediaUnavailableReason?: string;
 };
 
 export type OutgoingDraft =

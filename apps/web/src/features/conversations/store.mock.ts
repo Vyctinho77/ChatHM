@@ -6,7 +6,7 @@ import { buildMock } from "./mock";
 import type { Capabilities } from "./store.types";
 import type { Conversation, Message } from "./types";
 
-export const capabilities: Capabilities = { send: true, tags: true, close: true };
+export const capabilities: Capabilities = { send: true, tags: true, close: true, media: true };
 
 type DB = ReturnType<typeof buildMock>;
 let db: DB | null = null;

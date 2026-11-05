@@ -1,6 +1,7 @@
 // API simulada em memória para a versão de demonstração (VITE_DEMO=1).
 // Reproduz as regras principais do backend: perfis, visibilidade por equipe,
 // validações e o último admin. Nada é persistido.
+import { classify, normalize, type DemoKeyword } from "./classify";
 import type { Theme } from "./theme";
 
 type Role = "admin" | "agent";
@@ -23,6 +24,35 @@ const users: U[] = [
 ];
 const teams: T[] = ["Clientes novos", "Emissão de notas", "Folha de pagamento"].map((name) => ({ id: uid(), name, description: "", createdAt: now() }));
 const members = new Set<string>([`${teams[2]!.id}:${users[1]!.id}`, `${teams[1]!.id}:${users[2]!.id}`]);
+
+// --- Segmentos e etiquetas (mesmos padrões do backend) ----------------------
+type DKeyword = { id: string; phrase: string; normalized: string; priority: number };
+type DSegment = { id: string; key: string; name: string; teamId: string | null; isActive: boolean; keywords: DKeyword[] };
+
+const seg = (key: string, name: string, teamIdx: number, phrases: string[]): DSegment => ({
+  id: uid(), key, name, teamId: teams[teamIdx]!.id, isActive: true,
+  keywords: phrases.map((phrase) => ({ id: uid(), phrase, normalized: normalize(phrase), priority: 0 })),
+});
+const segmentsDb: DSegment[] = [
+  seg("clientes_novos", "Clientes novos", 0, ["orçamento", "orçar", "proposta", "contratar", "contratação", "novo cliente", "abrir empresa", "abrir mei", "quanto custa", "honorários", "trocar de contador"]),
+  seg("folha", "Folha de pagamento", 2, ["folha", "folha de pagamento", "férias", "13º salário", "décimo terceiro", "rescisão", "admissão", "demissão", "holerite", "contracheque", "esocial", "fgts"]),
+  seg("notas", "Emissão de notas", 1, ["emitir nota", "emissão de nota", "nota fiscal", "nfe", "nfse", "cancelar nota", "gerar nota"]),
+];
+const tagsDb: { id: string; name: string }[] = ["PENDENTE", "URGENTE", "PGDAS", "CERTIFICADO", "ACOMPANHAMENTO"].map((name) => ({ id: uid(), name }));
+
+const segmentView = (s: DSegment, withKeywords: boolean) => ({
+  id: s.id, key: s.key, name: s.name, teamId: s.teamId,
+  teamName: teams.find((t) => t.id === s.teamId)?.name ?? "",
+  isActive: s.isActive,
+  ...(withKeywords ? { keywords: [...s.keywords].sort((a, b) => b.priority - a.priority || a.phrase.localeCompare(b.phrase)).map(({ id, phrase, priority }) => ({ id, phrase, priority })) } : {}),
+});
+const slug = (n: string) =>
+  n.toLowerCase().normalize("NFKD").replace(/\p{M}/gu, "").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 36) || "segmento";
+const findSegment = (id: string | undefined) => {
+  const s = segmentsDb.find((x) => x.id === id);
+  if (!s) throw new DemoError(404, "not_found", "Segmento não encontrado.");
+  return s;
+};
 
 let session: U | null = null;
 
@@ -132,6 +162,117 @@ export async function demoApi(method: string, path: string, body: Body = {}): Pr
       wa = { state: "disconnected", phone: "", displayName: "" };
       return waView(true);
 
+    case "GET /segments": {
+      const admin = requireSession().role === "admin";
+      return { segments: segmentsDb.map((s) => segmentView(s, admin)) };
+    }
+    case "POST /segments": {
+      requireAdmin();
+      const name = String(body.name ?? "").trim();
+      if (!name) throw invalid({ name: "Informe um nome de até 80 caracteres." });
+      if (segmentsDb.some((s) => s.name.toLowerCase() === name.toLowerCase())) throw invalid({ name: "Já existe um segmento com esse nome." });
+      const teamId = (body.teamId as string | null) ?? null;
+      if (teamId && !teams.some((t) => t.id === teamId)) throw invalid({ teamId: "Equipe não encontrada." });
+      let key = slug(name);
+      for (let i = 2; segmentsDb.some((s) => s.key === key); i++) key = `${slug(name)}_${i}`;
+      const s: DSegment = { id: uid(), key, name, teamId, isActive: true, keywords: [] };
+      segmentsDb.push(s);
+      return segmentView(s, true);
+    }
+    case "POST /segments/classify": {
+      requireAdmin();
+      const kws: DemoKeyword[] = segmentsDb.filter((s) => s.isActive).flatMap((s) =>
+        s.keywords.map((k) => ({ segmentId: s.id, segmentKey: s.key, phrase: k.phrase, normalized: k.normalized, priority: k.priority })),
+      );
+      return classify(String(body.text ?? ""), kws);
+    }
+    case "PATCH /segments/:id": {
+      requireAdmin();
+      const s = findSegment(id);
+      if (typeof body.name === "string") {
+        const name = body.name.trim();
+        if (!name) throw invalid({ name: "Informe um nome de até 80 caracteres." });
+        if (segmentsDb.some((x) => x.id !== s.id && x.name.toLowerCase() === name.toLowerCase())) throw invalid({ name: "Já existe um segmento com esse nome." });
+        s.name = name;
+      }
+      if (typeof body.isActive === "boolean") s.isActive = body.isActive;
+      return segmentView(s, true);
+    }
+    case "PUT /segments/:id/team": {
+      requireAdmin();
+      const s = findSegment(id);
+      const teamId = (body.teamId as string | null) ?? null;
+      if (teamId && !teams.some((t) => t.id === teamId)) throw invalid({ teamId: "Equipe não encontrada." });
+      s.teamId = teamId;
+      return segmentView(s, true);
+    }
+    case "DELETE /segments/:id": {
+      requireAdmin();
+      segmentsDb.splice(segmentsDb.indexOf(findSegment(id)), 1);
+      return undefined;
+    }
+    case "POST /segments/:id/keywords": {
+      requireAdmin();
+      const s = findSegment(id);
+      const phrase = String(body.phrase ?? "").trim();
+      const priority = Number(body.priority ?? 0);
+      const norm = normalize(phrase);
+      if (!phrase || phrase.length > 120) throw invalid({ phrase: "Informe uma palavra ou expressão de até 120 caracteres." });
+      if (!norm) throw invalid({ phrase: 'Use ao menos uma palavra com significado (palavras como "de", "uma" e "para" são ignoradas).' });
+      if (!(priority >= 0 && priority <= 100)) throw invalid({ priority: "Prioridade deve ficar entre 0 e 100." });
+      if (s.keywords.some((k) => k.normalized === norm)) throw invalid({ phrase: "Essa palavra já está cadastrada neste segmento." });
+      const k = { id: uid(), phrase, normalized: norm, priority };
+      s.keywords.push(k);
+      return { id: k.id, phrase, priority };
+    }
+    case "PATCH /segments/:id/keywords/:id": {
+      requireAdmin();
+      const k = findSegment(id).keywords.find((x) => x.id === sub);
+      if (!k) throw new DemoError(404, "keyword_not_found", "Palavra-chave não encontrada.");
+      const priority = Number(body.priority);
+      if (!(priority >= 0 && priority <= 100)) throw invalid({ priority: "Prioridade deve ficar entre 0 e 100." });
+      k.priority = priority;
+      return undefined;
+    }
+    case "DELETE /segments/:id/keywords/:id": {
+      requireAdmin();
+      const s = findSegment(id);
+      const i = s.keywords.findIndex((x) => x.id === sub);
+      if (i < 0) throw new DemoError(404, "keyword_not_found", "Palavra-chave não encontrada.");
+      s.keywords.splice(i, 1);
+      return undefined;
+    }
+
+    case "GET /tags":
+      requireSession();
+      return { tags: [...tagsDb].sort((a, b) => a.name.localeCompare(b.name)).map((t) => ({ ...t, inUse: 0 })) };
+    case "POST /tags": {
+      requireAdmin();
+      const name = String(body.name ?? "").trim().replace(/\s+/g, " ").toUpperCase();
+      if (!name || name.length > 30) throw invalid({ name: "Informe um nome de até 30 caracteres." });
+      if (tagsDb.some((t) => t.name === name)) throw invalid({ name: "Já existe uma etiqueta com esse nome." });
+      const t = { id: uid(), name };
+      tagsDb.push(t);
+      return { ...t, inUse: 0 };
+    }
+    case "PATCH /tags/:id": {
+      requireAdmin();
+      const t = tagsDb.find((x) => x.id === id);
+      if (!t) throw notFound("Etiqueta");
+      const name = String(body.name ?? "").trim().replace(/\s+/g, " ").toUpperCase();
+      if (!name || name.length > 30) throw invalid({ name: "Informe um nome de até 30 caracteres." });
+      if (tagsDb.some((x) => x.id !== t.id && x.name === name)) throw invalid({ name: "Já existe uma etiqueta com esse nome." });
+      t.name = name;
+      return { ...t, inUse: 0 };
+    }
+    case "DELETE /tags/:id": {
+      requireAdmin();
+      const i = tagsDb.findIndex((x) => x.id === id);
+      if (i < 0) throw notFound("Etiqueta");
+      tagsDb.splice(i, 1);
+      return undefined;
+    }
+
     case "GET /users":
       requireAdmin();
       return { users: users.map(userView).sort((a, b) => a.name.localeCompare(b.name)) };
@@ -201,6 +342,9 @@ export async function demoApi(method: string, path: string, body: Body = {}): Pr
     }
     case "DELETE /teams/:id": {
       requireAdmin();
+      if (segmentsDb.some((s) => s.teamId === id)) {
+        throw new DemoError(409, "team_in_use", "Esta equipe está vinculada a segmentos (filas). Desvincule-os em Filas / Segmentos antes de excluir.");
+      }
       const i = teams.findIndex((t) => t.id === id);
       if (i < 0) throw notFound("Equipe");
       teams.splice(i, 1);

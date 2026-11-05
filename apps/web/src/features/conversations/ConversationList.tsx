@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 import { AnimatePresence, motion } from "motion/react";
 import { CheckCheck, EllipsisVertical, ListFilter, Search, SquarePen } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
@@ -7,9 +8,9 @@ import { Badge, IconButton, Spinner } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { formatListTime } from "@/lib/format";
 import { MessagePreview } from "./preview";
-import { useConversationActions, useConversations } from "./store";
+import { useConversationActions, useConversations, useSegmentOptions } from "./store";
 import { Ticks } from "./Ticks";
-import { segments, type Conversation, type SegmentKey } from "./types";
+import type { Conversation, SegmentKey, SegmentOption } from "./types";
 
 type Filter = "all" | "unread" | "mine" | "general";
 
@@ -19,7 +20,21 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
   const { data, isPending } = useConversations();
   const actions = useConversationActions();
   const [filter, setFilter] = useState<Filter>("all");
-  const [segment, setSegment] = useState<SegmentKey | null>(null);
+  // O filtro de fila fica na URL (?fila=folha): a tela Filas / Segmentos abre a lista já filtrada.
+  const [params, setParams] = useSearchParams();
+  const segment: SegmentKey | null = params.get("fila");
+  const setSegment = (k: SegmentKey | null) =>
+    setParams(
+      (p) => {
+        const next = new URLSearchParams(p);
+        if (k) next.set("fila", k);
+        else next.delete("fila");
+        return next;
+      },
+      { replace: true },
+    );
+  const { data: segmentData } = useSegmentOptions();
+  const segmentOptions: SegmentOption[] = [...(segmentData ?? []), { key: "geral", name: "Geral" }];
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -82,9 +97,9 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
               <MenuItem active={!segment} onClick={() => (setSegment(null), close())}>
                 Todos os segmentos
               </MenuItem>
-              {(Object.keys(segments) as SegmentKey[]).map((k) => (
-                <MenuItem key={k} active={segment === k} onClick={() => (setSegment(k), close())}>
-                  {segments[k].label}
+              {segmentOptions.map((o) => (
+                <MenuItem key={o.key} active={segment === o.key} onClick={() => (setSegment(o.key), close())}>
+                  {o.name}
                 </MenuItem>
               ))}
             </>
@@ -151,7 +166,7 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
 
       {segment && (
         <div className="px-4 pb-2 text-[11.5px] text-muted">
-          Segmento: <span className="font-medium text-fg">{segments[segment].label}</span>{" "}
+          Segmento: <span className="font-medium text-fg">{segmentOptions.find((o) => o.key === segment)?.name ?? segment}</span>{" "}
           <button className="text-accent hover:underline" onClick={() => setSegment(null)}>
             limpar
           </button>

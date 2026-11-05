@@ -4,8 +4,8 @@ import { Avatar } from "@/components/Avatar";
 import { Menu, MenuItem } from "@/components/Menu";
 import { IconButton } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { capabilities, useConversationActions } from "./store";
-import { segments, tagCatalog, type Conversation } from "./types";
+import { capabilities, useConversationActions, useTagCatalog } from "./store";
+import { segmentClass, segmentLabel, type Conversation } from "./types";
 
 const statusLabel = { new: "Aguardando", in_progress: "Em atendimento", closed: "Encerrado" } as const;
 
@@ -14,7 +14,8 @@ export function ContactPanel({ conversation: c, onClose }: { conversation: Conve
   const actions = useConversationActions();
   const [note, setNote] = useState(c.contact.note);
 
-  const available = tagCatalog.filter((t) => !c.tags.includes(t));
+  const { data: catalog = [] } = useTagCatalog();
+  const available = catalog.filter((t) => !c.tags.includes(t.name));
 
   return (
     <aside aria-label="Dados do contato" className="flex h-full min-w-0 flex-col bg-panel">
@@ -38,8 +39,8 @@ export function ContactPanel({ conversation: c, onClose }: { conversation: Conve
           <div>
             <dt className="text-xs text-muted">Segmento atual</dt>
             <dd className="mt-1">
-              <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", segments[c.segment].className)}>
-                {segments[c.segment].label}
+              <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", segmentClass(c.segment))}>
+                {segmentLabel(c)}
               </span>
             </dd>
           </div>
@@ -63,8 +64,8 @@ export function ContactPanel({ conversation: c, onClose }: { conversation: Conve
             >
               {(close) =>
                 available.map((t) => (
-                  <MenuItem key={t} onClick={() => (actions.setTags(c.id, [...c.tags, t]), close())}>
-                    {t}
+                  <MenuItem key={t.id} onClick={() => (actions.setTags(c.id, [...c.tags, t.name]), close())}>
+                    {t.name}
                   </MenuItem>
                 ))
               }

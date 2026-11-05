@@ -49,7 +49,8 @@ Os testes em `wameow/store_test.go` verificam que nenhum segredo aparece em clar
 - Uma conversa aberta por contato (índice único parcial). Após o encerramento, a próxima mensagem abre uma nova
   conversa (que poderá ser reclassificada na Fase 3).
 - Mensagens enviadas pelo próprio celular do escritório entram como `out`, sem contar como não lidas.
-- Fase 2: todas as conversas ficam na **fila geral**, visível a todos os usuários autenticados (regra 3).
+- A partir da Fase 3 a mensagem do cliente é classificada e a conversa vai para a fila do segmento (ou fica na fila
+  geral). Ver [`queues.md`](queues.md).
 
 ## Limitações conhecidas
 
@@ -61,7 +62,10 @@ Os testes em `wameow/store_test.go` verificam que nenhum segredo aparece em clar
 - **Ignorados nesta fase**: grupos, status, canais, reações, edições e mensagens apagadas, histórico antigo
   sincronizado ao parear (só mensagens novas entram), vídeos/figurinhas/contatos/enquetes (exibidos como
   "não suportado").
-- **Envio** pelo ChatHM chega na Fase 3, junto com a atribuição atômica ao primeiro atendente que responder.
+- **Envio**: texto (Fase 3). O ID da mensagem é gerado antes do envio e reaproveitado em tentativas, então o
+  WhatsApp descarta duplicatas. Áudio, imagens e documentos chegam na Fase 4. Ver [`queues.md`](queues.md).
+- **Recibos**: entrega e leitura chegam como eventos de recibo; contatos que desativam a confirmação de leitura
+  permanecem em "entregue".
 - **Contatos por LID**: quando o WhatsApp não informa o telefone, o contato é identificado pelo LID até o número
   ser conhecido.
 

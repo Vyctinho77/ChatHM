@@ -58,11 +58,14 @@ export function Composer({
   conversationId,
   disabled,
   disabledReason,
+  mediaDisabledReason,
   onSend,
 }: {
   conversationId: string;
   disabled?: boolean;
   disabledReason?: string;
+  /** Quando definido, anexos e gravação de áudio ficam desativados com esta explicação. */
+  mediaDisabledReason?: string;
   onSend: (d: OutgoingDraft) => void;
 }) {
   const [text, setText] = useState(() => getDraft(conversationId));
@@ -182,7 +185,11 @@ export function Composer({
             align="left"
             placement="top"
             trigger={({ toggle }) => (
-              <IconButton label="Anexar" onClick={toggle}>
+              <IconButton
+                label={mediaDisabledReason ?? "Anexar"}
+                disabled={!!mediaDisabledReason}
+                onClick={toggle}
+              >
                 <Paperclip className="size-5" />
               </IconButton>
             )}
@@ -227,8 +234,11 @@ export function Composer({
                 </IconButton>
               ) : (
                 <IconButton
-                  label={recorder.supported ? "Gravar áudio" : "Gravação de áudio indisponível neste navegador"}
-                  disabled={!recorder.supported}
+                  label={
+                    mediaDisabledReason ??
+                    (recorder.supported ? "Gravar áudio" : "Gravação de áudio indisponível neste navegador")
+                  }
+                  disabled={!recorder.supported || !!mediaDisabledReason}
                   onClick={() => recorder.start().catch(() => setError("Permissão de microfone negada."))}
                   className={cn(recorder.recording && "text-danger")}
                 >

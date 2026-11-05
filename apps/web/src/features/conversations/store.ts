@@ -11,5 +11,9 @@ export const useMessages = impl.useMessages;
 export const useConversationActions = impl.useConversationActions;
 export const useSendMessage = impl.useSendMessage;
 
+// Segmentos e etiquetas vêm da API tanto no app quanto na demonstração (que simula a API).
+export { useSegmentOptions } from "@/features/queues/api";
+export { useTagCatalog } from "@/features/tags/api";
+
 export { buildOutgoing } from "./store.types";
 export type { Capabilities, OutgoingDraft } from "./store.types";

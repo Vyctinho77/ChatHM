@@ -81,6 +81,11 @@ export const patch = <T>(path: string, body: unknown) => api<T>("PATCH", path, b
 export const put = <T>(path: string) => api<T>("PUT", path);
 export const del = <T>(path: string) => api<T>("DELETE", path);
 
+/** O servidor recusou a ação (permissão, conflito, validação ou indisponibilidade): nada foi feito. */
+export function isRejection(err: unknown) {
+  return err instanceof ApiError && [403, 404, 409, 422, 503].includes(err.status);
+}
+
 export function errorMessage(err: unknown): string {
   if (err instanceof ApiError) return err.message;
   return "Não foi possível conectar ao servidor.";

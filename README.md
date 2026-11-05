@@ -25,7 +25,8 @@ classificação automática de mensagens e distribuição por equipe.
 │   │   ├── users/  teams/   # usuários, perfis, equipes
 │   │   ├── audit/           # audit_logs
 │   │   ├── conversations/   # contatos, conversas, mensagens, atribuição
-│   │   ├── segments/        # segmentos, palavras-chave, classificador
+│   │   ├── segments/        # segmentos, palavras-chave, classificador determinístico
+│   │   ├── tags/            # catálogo de etiquetas
 │   │   ├── realtime/        # WebSocket (eventos para o navegador)
 │   │   ├── whatsapp/        # WhatsAppProvider, Manager, adaptadores wameow (whatsmeow) e fake
 │   │   └── storage/         # anexos em S3 privado
@@ -69,6 +70,7 @@ Verificação rápida: `curl localhost:8080/healthz` e `curl localhost:8080/read
 
 1. ✅ **Fundação e acesso seguro** — login, sessões, perfis, equipes, MFA de admin (backend).
 2. ✅ **WhatsApp** — QR Code, sessão criptografada, recepção de mensagens em tempo real ([`docs/whatsapp.md`](docs/whatsapp.md)).
-3. **Segmentação e filas** — classificador determinístico, fila geral, atribuição atômica.
+3. ✅ **Segmentação e filas** — classificador determinístico, filas por equipe, atribuição atômica, etiquetas
+   ([`docs/queues.md`](docs/queues.md)).
 4. **Chat completo** — layout em painéis, mídias, temas.
 5. **Validação e piloto** — E2E, backups, LGPD, operação.

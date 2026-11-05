@@ -26,7 +26,8 @@ jobs:
       - run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
       - run: go vet ./...
       - run: go run ./cmd/migrate up
-      - run: go run ./cmd/migrate down && go run ./cmd/migrate down && go run ./cmd/migrate up
+      # Ciclo completo: desce todas as migrações (4) e sobe de novo.
+      - run: for i in 1 2 3 4; do go run ./cmd/migrate down; done && go run ./cmd/migrate up
       - run: go test -race ./...
 
   web:

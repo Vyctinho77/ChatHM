@@ -1,13 +1,23 @@
-// Modelos do domínio de atendimento. Espelham o que a API da Fase 2/3 vai expor.
+// Modelos do domínio de atendimento (espelham a API).
 
-export type SegmentKey = "clientes_novos" | "folha" | "notas" | "geral";
+/** Chave do segmento ("geral" = fila geral). Os segmentos são configuráveis pelo admin. */
+export type SegmentKey = string;
 
-export const segments: Record<SegmentKey, { label: string; className: string }> = {
+export type SegmentOption = { key: SegmentKey; name: string };
+export type TagInfo = { id: string; name: string; inUse?: number };
+
+// Cores dos segmentos iniciais; segmentos criados depois usam a cor padrão.
+const segmentStyles: Record<string, { label: string; className: string }> = {
   clientes_novos: { label: "Clientes novos", className: "bg-violet-500/15 text-violet-600 dark:text-violet-300" },
   folha: { label: "Folha de pagamento", className: "bg-amber-500/15 text-amber-700 dark:text-amber-300" },
   notas: { label: "Emissão de notas", className: "bg-sky-500/15 text-sky-700 dark:text-sky-300" },
   geral: { label: "Geral", className: "bg-zinc-500/15 text-muted" },
 };
+const defaultSegmentClass = "bg-teal-500/15 text-teal-700 dark:text-teal-300";
+
+export const segmentClass = (key: SegmentKey) => segmentStyles[key]?.className ?? defaultSegmentClass;
+export const segmentLabel = (c: { segment: SegmentKey; segmentName?: string }) =>
+  c.segmentName ?? segmentStyles[c.segment]?.label ?? c.segment;
 
 export type ConversationStatus = "new" | "in_progress" | "closed";
 
@@ -48,6 +58,9 @@ export type Conversation = {
   id: string;
   contact: Contact;
   segment: SegmentKey;
+  segmentName?: string;
+  /** Como a fila foi definida: palavra-chave, conflito entre segmentos ou sem correspondência. */
+  classification?: "none" | "keyword" | "conflict";
   status: ConversationStatus;
   assignee?: { id: string; name: string };
   unreadCount: number;
@@ -55,4 +68,3 @@ export type Conversation = {
   lastMessage: Message;
 };
 
-export const tagCatalog = ["PENDENTE", "URGENTE", "PGDAS", "CERTIFICADO", "ACOMPANHAMENTO"] as const;

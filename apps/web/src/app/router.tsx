@@ -1,9 +1,11 @@
 import { createBrowserRouter, createMemoryRouter, Navigate, type RouteObject } from "react-router";
 import { DEMO } from "@/lib/env";
-import { Contact, Layers, Tag } from "lucide-react";
+import { Contact } from "lucide-react";
 import { ConversationsPage } from "@/features/conversations/ConversationsPage";
 import { ComingSoon } from "@/features/placeholder/ComingSoon";
+import { QueuesPage } from "@/features/queues/QueuesPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
+import { TagsPage } from "@/features/tags/TagsPage";
 import { TeamPage } from "@/features/team/TeamPage";
 import { WhatsAppPage } from "@/features/whatsapp/WhatsAppPage";
 import { AdminOnly, Root } from "./Root";
@@ -15,17 +17,7 @@ const routes: RouteObject[] = [
     children: [
       { index: true, element: <Navigate to="/conversas" replace /> },
       { path: "conversas/:id?", element: <ConversationsPage /> },
-      {
-        path: "filas",
-        element: (
-          <ComingSoon
-            icon={Layers}
-            title="Filas / Segmentos"
-            description="Acompanhe as filas de Clientes novos, Folha de pagamento, Emissão de notas e Geral, com o que está aguardando e em atendimento."
-            phase="Fase 3 — segmentação e filas automáticas"
-          />
-        ),
-      },
+      { path: "filas", element: <QueuesPage /> },
       {
         path: "clientes",
         element: (
@@ -37,17 +29,7 @@ const routes: RouteObject[] = [
           />
         ),
       },
-      {
-        path: "etiquetas",
-        element: (
-          <ComingSoon
-            icon={Tag}
-            title="Etiquetas"
-            description="Catálogo de etiquetas (PENDENTE, URGENTE, PGDAS, CERTIFICADO…). Atendentes aplicam; administradores gerenciam."
-            phase="Fase 3"
-          />
-        ),
-      },
+      { path: "etiquetas", element: <TagsPage /> },
       { path: "equipe", element: <TeamPage /> },
       {
         element: <AdminOnly />,

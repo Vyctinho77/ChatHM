@@ -1,4 +1,4 @@
-# API (Fases 1 e 2)
+# API (Fases 1 a 3)
 
 Base: `/api/v1`. Todas as respostas são JSON. Erros seguem o formato:
 
@@ -119,25 +119,69 @@ type Connection = {
 };
 ```
 
-## Conversas (Fase 2: fila geral, visível a todos os usuários autenticados)
+## Conversas
+
+Todas as rotas respeitam a visibilidade por equipe ([`queues.md`](queues.md)); o que o usuário não pode ver responde `404`.
 
 | Método | Rota | Corpo | Resposta |
 |---|---|---|---|
 | GET | `/conversations` | — | `200 {conversations: Conversation[]}` (até 300, mais recentes primeiro) |
 | GET | `/conversations/{id}` | — | `200 Conversation` · `404` |
 | GET | `/conversations/{id}/messages` | — | `200 {messages: Message[]}` (até 300 mais recentes, em ordem cronológica) |
+| POST | `/conversations/{id}/messages` | `{id?: uuid, text}` | `201 Message` (nova) · `200 Message` (repetição) · `409 conversation_taken` · `409 conversation_closed` · `409 id_conflict` · `422` · `503 whatsapp_unavailable` |
 | POST | `/conversations/{id}/read` | — | `204` |
+| POST | `/conversations/{id}/close` | — | `204` (responsável ou admin; idempotente) · `403` |
+| PUT | `/conversations/{id}/tags/{tagId}` | — | `204` (idempotente) · `404 tag_not_found` |
+| DELETE | `/conversations/{id}/tags/{tagId}` | — | `204` |
 | PATCH | `/contacts/{id}` | `{name?, company?, note?}` | `204` · `422` |
 
-`Conversation` e `Message` seguem os tipos de `apps/web/src/features/conversations/types.ts`.
+`POST .../messages` **assume o atendimento** quando a conversa não tem responsável. Envie o `id` (UUID gerado no
+cliente): repetir a requisição não duplica. A resposta pode trazer `status: "failed"` se o WhatsApp recusou; reenviar
+com o mesmo `id` tenta de novo.
+
+`Conversation` e `Message` seguem os tipos de `apps/web/src/features/conversations/types.ts`. Campos novos:
+`segment` (chave; `"geral"` = fila geral), `segmentName`, `classification` (`keyword` | `conflict` | `none`),
+`tags` (nomes) e, nas mensagens enviadas, `deliveredAt`, `readAt`, `authorName`.
+
+## Segmentos (filas)
+
+| Método | Rota | Acesso | Corpo | Resposta |
+|---|---|---|---|---|
+| GET | `/segments` | completo | — | `200 {segments}` (palavras-chave só para admin) |
+| POST | `/segments` | admin | `{name, teamId?}` | `201 Segment` · `422` |
+| PATCH | `/segments/{id}` | admin | `{name?, isActive?}` | `200 Segment` |
+| PUT | `/segments/{id}/team` | admin | `{teamId: uuid \| null}` | `200 Segment` (null = sem equipe, visível a todos) |
+| DELETE | `/segments/{id}` | admin | — | `204` (conversas voltam à fila geral) |
+| POST | `/segments/{id}/keywords` | admin | `{phrase, priority?}` | `201 Keyword` · `422` (vazia, só palavras de ligação, duplicada, prioridade fora de 0–100) |
+| PATCH | `/segments/{id}/keywords/{kid}` | admin | `{priority}` | `204` |
+| DELETE | `/segments/{id}/keywords/{kid}` | admin | — | `204` |
+| POST | `/segments/classify` | admin | `{text}` | `200 {segmentKey?, reason, matches[]}` |
+
+```ts
+type Segment = { id: string; key: string; name: string; teamId: string | null; teamName?: string;
+                 isActive: boolean; keywords?: { id: string; phrase: string; priority: number }[] };
+```
+
+Excluir uma equipe vinculada a segmentos responde `409 team_in_use`.
+
+## Etiquetas
+
+| Método | Rota | Acesso | Corpo | Resposta |
+|---|---|---|---|---|
+| GET | `/tags` | completo | — | `200 {tags: {id, name, inUse}[]}` |
+| POST | `/tags` | admin | `{name}` (vira MAIÚSCULAS) | `201` · `422` (duplicada) |
+| PATCH | `/tags/{id}` | admin | `{name}` | `200` |
+| DELETE | `/tags/{id}` | admin | — | `204` |
 
 ## Tempo real
 
 `GET /api/v1/ws` (WebSocket; exige sessão completa e origem permitida). Mensagens do servidor:
 
 ```ts
-{ type: "conversation.updated", data: Conversation }
+{ type: "conversation.updated", data: Conversation }   // só para quem pode ver a conversa
+{ type: "conversation.removed", data: { id: string } } // perdeu o acesso: remover da lista
 { type: "message.created",      data: Message }
+{ type: "message.updated",      data: Message }        // recibos e falhas de envio
 { type: "whatsapp.status",      data: Omit<Connection, "qr" | "simulator"> }
 { type: "whatsapp.qr",          data: { code, expiresAt } | null }   // somente admin
 ```
