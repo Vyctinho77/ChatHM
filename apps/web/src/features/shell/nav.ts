@@ -1,4 +1,4 @@
-import { Contact, Layers, MessageSquareText, Settings, Smartphone, Tag, UsersRound, type LucideIcon } from "lucide-react";
+import { CalendarDays, Contact, Layers, MessageSquareText, Settings, Smartphone, Tag, UsersRound, type LucideIcon } from "lucide-react";
 import type { Role } from "@/features/auth/api";
 
 export type NavItem = { to: string; label: string; icon: LucideIcon; roles?: Role[] };
@@ -7,6 +7,8 @@ export const mainNav: NavItem[] = [
   { to: "/conversas", label: "Conversas", icon: MessageSquareText },
   { to: "/filas", label: "Filas / Segmentos", icon: Layers },
   { to: "/clientes", label: "Clientes", icon: Contact },
+  // Protótipo: só existe na versão de demonstração até a agenda ter backend.
+  ...(import.meta.env.VITE_DEMO === "1" ? [{ to: "/agenda", label: "Agenda", icon: CalendarDays }] : []),
   { to: "/etiquetas", label: "Etiquetas", icon: Tag },
 ];
 

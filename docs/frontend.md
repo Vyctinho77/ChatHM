@@ -61,6 +61,11 @@ src/
   `conversation.removed`). Falha de envio mantém a bolha com "Tentar de novo".
 - Balões com imagem: borda fina, imagem de ponta a ponta, legenda e autor abaixo, hora sobre a imagem sem legenda.
 
+## Agenda (protótipo, só na demonstração)
+
+Calendário mensal com card flutuante por item; compromissos e prazos; visibilidade por equipe. Detalhes e plano de
+backend em [`agenda.md`](agenda.md).
+
 ## Tipografia
 
 Inter (variável, empacotada com o app via `@fontsource-variable/inter`, sem chamadas externas), corpo em 13,5px.

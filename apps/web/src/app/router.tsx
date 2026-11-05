@@ -3,6 +3,7 @@ import { DEMO } from "@/lib/env";
 import { Contact } from "lucide-react";
 import { ConversationsPage } from "@/features/conversations/ConversationsPage";
 import { ComingSoon } from "@/features/placeholder/ComingSoon";
+import { AgendaPage } from "@/features/agenda/AgendaPage";
 import { QueuesConfigPage } from "@/features/queues/QueuesConfigPage";
 import { QueuesPage } from "@/features/queues/QueuesPage";
 import { SegmentDetailPage } from "@/features/queues/SegmentDetailPage";
@@ -20,6 +21,8 @@ const routes: RouteObject[] = [
       { index: true, element: <Navigate to="/conversas" replace /> },
       { path: "conversas/:id?", element: <ConversationsPage /> },
       { path: "filas", element: <QueuesPage /> },
+      // Protótipo da agenda: só na demonstração (o bundle normal não inclui a página).
+      ...(import.meta.env.VITE_DEMO === "1" ? [{ path: "agenda", element: <AgendaPage /> }] : []),
       {
         path: "clientes",
         element: (
