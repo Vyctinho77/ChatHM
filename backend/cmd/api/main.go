@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/vyctinho77/chathm/backend/internal/app"
+	"github.com/vyctinho77/chathm/backend/internal/auth"
 	"github.com/vyctinho77/chathm/backend/internal/config"
 	"github.com/vyctinho77/chathm/backend/internal/httpapi"
 	"github.com/vyctinho77/chathm/backend/internal/platform/database"
@@ -48,9 +50,18 @@ func run() error {
 		}
 	}
 
+	svcs, err := app.NewServices(cfg, pool, auth.NewHasher())
+	if err != nil {
+		return err
+	}
+	go svcs.Auth.RunJanitor(ctx, time.Hour)
+
 	srv := &http.Server{
-		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewRouter(cfg, logger, pool),
+		Addr: cfg.HTTPAddr,
+		Handler: httpapi.NewRouter(httpapi.Deps{
+			Config: cfg, Logger: logger, DB: pool,
+			Auth: svcs.Auth, Users: svcs.Users, Teams: svcs.Teams,
+		}),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,

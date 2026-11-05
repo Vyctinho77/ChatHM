@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/vyctinho77/chathm/backend/internal/config"
 	"github.com/vyctinho77/chathm/backend/migrations"
 )
 
@@ -31,13 +30,13 @@ func main() {
 		return
 	}
 
-	cfg, err := config.Load()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		fmt.Fprintln(os.Stderr, "DATABASE_URL é obrigatório")
 		os.Exit(1)
 	}
 
-	if err := migrations.Run(context.Background(), cfg.DatabaseURL, cmd); err != nil {
+	if err := migrations.Run(context.Background(), dsn, cmd); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

@@ -4,13 +4,14 @@ SHELL := /bin/bash
 -include .env
 export
 
-.PHONY: help setup up down logs api web migrate-up migrate-down migrate-status migrate-new test lint fmt build
+.PHONY: help setup up down logs api web migrate-up migrate-down migrate-status migrate-new create-admin test lint fmt build
 
 help: ## Lista os comandos
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-16s\033[0m %s\n",$$1,$$2}'
 
-setup: ## Instala dependências e cria .env
+setup: ## Instala dependências e cria .env (com ENCRYPTION_KEY aleatória)
 	@test -f .env || cp .env.example .env
+	@grep -q '^ENCRYPTION_KEY=' .env || echo "ENCRYPTION_KEY=$$(openssl rand -base64 32)" >> .env
 	pnpm install
 	cd backend && go mod download
 
@@ -41,8 +42,13 @@ migrate-status: ## Status das migrações
 migrate-new: ## Cria migração: make migrate-new name=create_users
 	cd backend && go run ./cmd/migrate create $(name)
 
-test: ## Testes (Go + web)
-	cd backend && go test -race ./...
+create-admin: ## Cria administrador: make create-admin email=... name="..."
+	cd backend && go run ./cmd/admin create-admin -email "$(email)" -name "$(name)"
+
+TEST_DATABASE_URL ?= postgres://chathm:chathm@localhost:5432/chathm?sslmode=disable
+
+test: ## Testes (Go + web); integração usa o Postgres do docker compose
+	cd backend && TEST_DATABASE_URL="$(TEST_DATABASE_URL)" go test -race ./...
 	pnpm test
 
 lint: ## Lint e typecheck

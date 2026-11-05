@@ -23,11 +23,16 @@ type Config struct {
 
 	// Sessão
 	SessionCookieName string
-	SessionTTL        time.Duration
+	SessionTTL        time.Duration // validade absoluta da sessão
+	SessionIdle       time.Duration // expira após inatividade
 	CookieSecure      bool
+	RequireAdminMFA   bool
 
-	// Chave AES-256 (base64, 32 bytes) para material de sessão do WhatsApp.
-	// Guardada fora do banco; obrigatória em produção.
+	// Confiar em X-Forwarded-For/X-Real-IP (somente atrás de proxy reverso controlado).
+	TrustProxyHeaders bool
+
+	// Chave AES-256 (base64, 32 bytes) para segredos em repouso (MFA, sessão do WhatsApp).
+	// Guardada fora do banco.
 	EncryptionKey string
 
 	// Armazenamento S3 compatível (anexos).
@@ -50,6 +55,8 @@ func Load() (Config, error) {
 		AllowedOrigins:    splitList(getenv("ALLOWED_ORIGINS", "http://localhost:5173")),
 		SessionCookieName: getenv("SESSION_COOKIE_NAME", "chathm_session"),
 		CookieSecure:      getbool("COOKIE_SECURE", true),
+		RequireAdminMFA:   getbool("REQUIRE_ADMIN_MFA", true),
+		TrustProxyHeaders: getbool("TRUST_PROXY_HEADERS", false),
 		EncryptionKey:     os.Getenv("ENCRYPTION_KEY"),
 		S3Endpoint:        os.Getenv("S3_ENDPOINT"),
 		S3Region:          getenv("S3_REGION", "us-east-1"),
@@ -67,6 +74,12 @@ func Load() (Config, error) {
 	}
 	cfg.SessionTTL = ttl
 
+	idle, err := time.ParseDuration(getenv("SESSION_IDLE_TIMEOUT", "2h"))
+	if err != nil {
+		errs = append(errs, fmt.Errorf("SESSION_IDLE_TIMEOUT inválido: %w", err))
+	}
+	cfg.SessionIdle = idle
+
 	if err := cfg.LogLevel.UnmarshalText([]byte(getenv("LOG_LEVEL", "info"))); err != nil {
 		errs = append(errs, fmt.Errorf("LOG_LEVEL inválido: %w", err))
 	}
@@ -75,12 +88,16 @@ func Load() (Config, error) {
 		errs = append(errs, errors.New("DATABASE_URL é obrigatório"))
 	}
 
+	if cfg.EncryptionKey == "" {
+		errs = append(errs, errors.New("ENCRYPTION_KEY é obrigatório (gere com: openssl rand -base64 32)"))
+	}
+
 	if !cfg.IsDevelopment() {
 		if !cfg.CookieSecure {
 			errs = append(errs, errors.New("COOKIE_SECURE deve ser true fora de development"))
 		}
-		if cfg.EncryptionKey == "" {
-			errs = append(errs, errors.New("ENCRYPTION_KEY é obrigatório fora de development"))
+		if !cfg.RequireAdminMFA {
+			errs = append(errs, errors.New("REQUIRE_ADMIN_MFA deve ser true fora de development"))
 		}
 	}
 

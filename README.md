@@ -4,7 +4,7 @@ Central web de atendimento para escritórios contábeis, conectada ao WhatsApp, 
 classificação automática de mensagens e distribuição por equipe.
 
 > MVP de um escritório, com arquitetura preparada para evolução.
-> Blueprint completo: [`docs/blueprint.md`](docs/blueprint.md) · Arquitetura: [`docs/architecture.md`](docs/architecture.md)
+> Blueprint completo: [`docs/blueprint.md`](docs/blueprint.md) · Arquitetura: [`docs/architecture.md`](docs/architecture.md) · API: [`docs/api.md`](docs/api.md)
 
 ## Estrutura
 
@@ -17,9 +17,10 @@ classificação automática de mensagens e distribuição por equipe.
 │   │   ├── api/             # servidor HTTP/WebSocket
 │   │   └── migrate/         # CLI de migrações (goose)
 │   ├── internal/
+│   │   ├── app/             # montagem dos serviços
 │   │   ├── config/          # variáveis de ambiente
 │   │   ├── httpapi/         # roteador, middlewares transversais
-│   │   ├── platform/        # infraestrutura (database, ...)
+│   │   ├── platform/        # database, httpx, secretbox (AES-GCM), testdb
 │   │   ├── auth/            # login, sessões, Argon2id, CSRF, MFA
 │   │   ├── users/  teams/   # usuários, perfis, equipes
 │   │   ├── audit/           # audit_logs
@@ -42,8 +43,9 @@ classificação automática de mensagens e distribuição por equipe.
 ## Primeiros passos
 
 ```bash
-make setup        # pnpm install, go mod download, cria .env
+make setup        # pnpm install, go mod download, cria .env com ENCRYPTION_KEY
 make up           # Postgres (5432) e MinIO (9000 / console 9001)
+make create-admin email=admin@escritorio.com.br name="Admin"   # pede a senha (mín. 12)
 make api          # API em http://localhost:8080 (AUTO_MIGRATE=true aplica migrações)
 make web          # Frontend em http://localhost:5173 (proxy /api → :8080)
 ```
@@ -54,7 +56,7 @@ Verificação rápida: `curl localhost:8080/healthz` e `curl localhost:8080/read
 
 | Comando | O que faz |
 |---|---|
-| `make test` | Testes Go (`-race`) e web (Vitest) |
+| `make test` | Testes Go (`-race`, integração no Postgres do compose) e web (Vitest) |
 | `make lint` | `go vet`, ESLint, typecheck |
 | `make migrate-up` / `migrate-down` / `migrate-status` | Migrações |
 | `make migrate-new name=create_users` | Nova migração SQL |
@@ -63,7 +65,7 @@ Verificação rápida: `curl localhost:8080/healthz` e `curl localhost:8080/read
 
 ## Roadmap
 
-1. **Fundação e acesso seguro** — login, sessões, perfis, equipes.
+1. ✅ **Fundação e acesso seguro** — login, sessões, perfis, equipes, MFA de admin (backend).
 2. **WhatsApp** — QR Code, sessão criptografada, recepção de mensagens.
 3. **Segmentação e filas** — classificador determinístico, fila geral, atribuição atômica.
 4. **Chat completo** — layout em painéis, mídias, temas.
