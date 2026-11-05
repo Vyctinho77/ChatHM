@@ -4,7 +4,7 @@ Central web de atendimento para escritórios contábeis, conectada ao WhatsApp, 
 classificação automática de mensagens e distribuição por equipe.
 
 > MVP de um escritório, com arquitetura preparada para evolução.
-> Blueprint completo: [`docs/blueprint.md`](docs/blueprint.md) · Arquitetura: [`docs/architecture.md`](docs/architecture.md) · API: [`docs/api.md`](docs/api.md)
+> Blueprint completo: [`docs/blueprint.md`](docs/blueprint.md) · Arquitetura: [`docs/architecture.md`](docs/architecture.md) · API: [`docs/api.md`](docs/api.md) · Frontend: [`docs/frontend.md`](docs/frontend.md)
 
 ## Estrutura
 
@@ -67,6 +67,7 @@ Verificação rápida: `curl localhost:8080/healthz` e `curl localhost:8080/read
 
 1. ✅ **Fundação e acesso seguro** — login, sessões, perfis, equipes, MFA de admin (backend).
 2. **WhatsApp** — QR Code, sessão criptografada, recepção de mensagens.
+   - Interface base pronta (layout, login/MFA, Equipe, Configurações); conversas ainda com dados fictícios.
 3. **Segmentação e filas** — classificador determinístico, fila geral, atribuição atômica.
 4. **Chat completo** — layout em painéis, mídias, temas.
 5. **Validação e piloto** — E2E, backups, LGPD, operação.

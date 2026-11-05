@@ -3,12 +3,102 @@
 /* Tema por classe .dark no <html> (claro / escuro / sistema). */
 @custom-variant dark (&:where(.dark, .dark *));
 
-@theme {
-  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+/* Tokens semânticos: os componentes usam bg-panel, text-muted etc. e o tema troca os valores. */
+:root {
+  --c-app: #eef1f5;
+  --c-panel: #ffffff;
+  --c-chat: #f4f1ec;
+  --c-elevated: #ffffff;
+  --c-hover: #f1f4f8;
+  --c-border: #e2e7ee;
+  --c-text: #111827;
+  --c-muted: #667085;
+  --c-accent: #1f7aec;
+  --c-accent-fg: #ffffff;
+  --c-selected: #e3eefc;
+  --c-brand: #12a150;
+  --c-out: #d7f8cf;
+  --c-out-text: #0b2a17;
+  --c-in: #ffffff;
+  --c-unread: #1fb855;
+  --c-read: #2b9be0;
+  --c-danger: #dc2626;
+  --c-warning: #b7791f;
+  --chat-dot: rgb(0 0 0 / 0.035);
+}
+
+.dark {
+  --c-app: #0a0e14;
+  --c-panel: #0d1219;
+  --c-chat: #080b10;
+  --c-elevated: #18202b;
+  --c-hover: #151c26;
+  --c-border: #1c2430;
+  --c-text: #e8edf3;
+  --c-muted: #8d98a7;
+  --c-accent: #2b8cff;
+  --c-accent-fg: #ffffff;
+  --c-selected: #15253b;
+  --c-brand: #3ddc84;
+  --c-out: #0f5537;
+  --c-out-text: #e9fbf0;
+  --c-in: #1a222d;
+  --c-unread: #22c55e;
+  --c-read: #53bdeb;
+  --c-danger: #f87171;
+  --c-warning: #f5c542;
+  --chat-dot: rgb(255 255 255 / 0.025);
+}
+
+@theme inline {
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --color-app: var(--c-app);
+  --color-panel: var(--c-panel);
+  --color-chat: var(--c-chat);
+  --color-elevated: var(--c-elevated);
+  --color-hover: var(--c-hover);
+  --color-line: var(--c-border);
+  --color-fg: var(--c-text);
+  --color-muted: var(--c-muted);
+  --color-accent: var(--c-accent);
+  --color-accent-fg: var(--c-accent-fg);
+  --color-selected: var(--c-selected);
+  --color-brand: var(--c-brand);
+  --color-out: var(--c-out);
+  --color-out-fg: var(--c-out-text);
+  --color-in: var(--c-in);
+  --color-unread: var(--c-unread);
+  --color-read: var(--c-read);
+  --color-danger: var(--c-danger);
+  --color-warning: var(--c-warning);
 }
 
 html,
 body,
 #root {
   height: 100%;
+}
+
+body {
+  background: var(--c-app);
+  color: var(--c-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Fundo discreto da área de chat (pontilhado leve, como papel de parede). */
+.chat-wallpaper {
+  background-color: var(--c-chat);
+  background-image: radial-gradient(var(--chat-dot) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+/* Barras de rolagem finas. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-border) transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
 }

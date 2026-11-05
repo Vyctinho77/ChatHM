@@ -31,8 +31,8 @@ const (
 )
 
 var (
-	ErrPasswordTooShort = fmt.Errorf("a senha deve ter pelo menos %d caracteres", MinPasswordLen)
-	ErrPasswordTooLong  = fmt.Errorf("a senha deve ter no máximo %d caracteres", MaxPasswordLen)
+	ErrPasswordTooShort = fmt.Errorf("A senha deve ter pelo menos %d caracteres.", MinPasswordLen)
+	ErrPasswordTooLong  = fmt.Errorf("A senha deve ter no máximo %d caracteres.", MaxPasswordLen)
 	errInvalidHash      = errors.New("hash de senha em formato inválido")
 )
 
