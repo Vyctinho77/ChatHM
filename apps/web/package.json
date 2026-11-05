@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "lint": "eslint .",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "build:demo": "tsc -b && VITE_DEMO=1 vite build --base ./ --outDir dist-demo"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.106.1",

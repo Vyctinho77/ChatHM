@@ -1,4 +1,5 @@
-import { createBrowserRouter, Navigate } from "react-router";
+import { createBrowserRouter, createMemoryRouter, Navigate, type RouteObject } from "react-router";
+import { DEMO } from "@/lib/env";
 import { Contact, Layers, Smartphone, Tag } from "lucide-react";
 import { ConversationsPage } from "@/features/conversations/ConversationsPage";
 import { ComingSoon } from "@/features/placeholder/ComingSoon";
@@ -6,7 +7,7 @@ import { SettingsPage } from "@/features/settings/SettingsPage";
 import { TeamPage } from "@/features/team/TeamPage";
 import { AdminOnly, Root } from "./Root";
 
-export const router = createBrowserRouter([
+const routes: RouteObject[] = [
   {
     path: "/",
     element: <Root />,
@@ -67,4 +68,7 @@ export const router = createBrowserRouter([
       { path: "*", element: <Navigate to="/conversas" replace /> },
     ],
   },
-]);
+];
+
+// Na demonstração (página publicada em iframe) a navegação fica em memória.
+export const router = DEMO ? createMemoryRouter(routes, { initialEntries: ["/conversas"] }) : createBrowserRouter(routes);

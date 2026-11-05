@@ -1,3 +1,4 @@
+import { safeStorage } from "@/lib/storage";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { MessageSquareText } from "lucide-react";
@@ -29,7 +30,7 @@ export function ConversationsPage() {
   const wide = useMediaQuery("(min-width: 768px)");
   const roomy = useMediaQuery("(min-width: 1280px)");
   const panelIds = contactOpen && roomy ? ["list", "chat", "contact"] : ["list", "chat"];
-  const layout = useDefaultLayout({ id: "chathm-conversations", storage: localStorage, panelIds });
+  const layout = useDefaultLayout({ id: "chathm-conversations", storage: safeStorage, panelIds });
 
   const conversation = data?.find((c) => c.id === id);
   const select = (cid: string) => navigate(`/conversas/${cid}`);

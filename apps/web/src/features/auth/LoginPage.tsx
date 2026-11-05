@@ -1,13 +1,14 @@
 import { useState, type FormEvent } from "react";
 import { Alert, Button, Field } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
+import { DEMO } from "@/lib/env";
 import { login, useSetMe } from "./api";
 import { AuthLayout } from "./AuthLayout";
 
 export function LoginPage() {
   const setMe = useSetMe();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState(DEMO ? "admin@hm.com.br" : "");
+  const [password, setPassword] = useState(DEMO ? "demo" : "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -28,6 +29,12 @@ export function LoginPage() {
   return (
     <AuthLayout title="Entrar" subtitle="Central de atendimento do escritório">
       <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
+        {DEMO && (
+          <Alert tone="info">
+            <strong>Demonstração.</strong> Senha <code>demo</code> para <code>admin@hm.com.br</code> (admin),{" "}
+            <code>heliton@hm.com.br</code> ou <code>paula@hm.com.br</code> (atendentes). Nada é salvo.
+          </Alert>
+        )}
         {error && <Alert>{error}</Alert>}
         <Field
           label="E-mail"

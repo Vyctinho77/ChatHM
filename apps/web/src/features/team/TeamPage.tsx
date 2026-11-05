@@ -340,6 +340,7 @@ function TeamsTab({ isAdmin }: { isAdmin: boolean }) {
 function TeamCard({ team, isAdmin }: { team: Team; isAdmin: boolean }) {
   const members = useMembers(team.id);
   const remove = useDeleteTeam();
+  const [confirming, setConfirming] = useState(false);
   return (
     <article className="rounded-xl border border-line bg-panel p-4">
       <header className="flex items-start gap-2">
@@ -353,14 +354,25 @@ function TeamCard({ team, isAdmin }: { team: Team; isAdmin: boolean }) {
         {isAdmin && (
           <IconButton
             label={`Excluir equipe ${team.name}`}
-            onClick={() => {
-              if (confirm(`Excluir a equipe "${team.name}"? Os vínculos dos membros serão removidos.`)) remove.mutate(team.id);
-            }}
+            onClick={() => setConfirming(true)}
           >
             <Trash2 className="size-4" />
           </IconButton>
         )}
       </header>
+      <Modal open={confirming} onClose={() => setConfirming(false)} title="Excluir equipe">
+        <p className="text-sm">
+          Excluir a equipe <strong>{team.name}</strong>? Os vínculos dos membros serão removidos.
+        </p>
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setConfirming(false)}>
+            Cancelar
+          </Button>
+          <Button variant="danger" loading={remove.isPending} onClick={() => remove.mutate(team.id, { onSuccess: () => setConfirming(false) })}>
+            Excluir
+          </Button>
+        </div>
+      </Modal>
       <ul className="mt-3 flex flex-col gap-2">
         {members.data?.map((m) => (
           <li key={m.userId} className="flex items-center gap-2 text-sm">

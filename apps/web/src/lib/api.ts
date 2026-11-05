@@ -28,7 +28,22 @@ export function setUnauthorizedHandler(fn: () => void) {
 
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
+async function demoCall<T>(method: Method, path: string, body?: unknown): Promise<T> {
+  const { demoApi, DemoError } = await import("./demo-api");
+  try {
+    return (await demoApi(method, path, body as Record<string, unknown>)) as T;
+  } catch (e) {
+    if (e instanceof DemoError) {
+      if (e.status === 401 && !path.startsWith("/auth/login")) onUnauthorized?.();
+      throw new ApiError(e.status, e.code, e.message, e.fields);
+    }
+    throw e;
+  }
+}
+
 export async function api<T>(method: Method, path: string, body?: unknown): Promise<T> {
+  // Condição inline para o bundler remover a demo do build normal.
+  if (import.meta.env.VITE_DEMO === "1") return demoCall<T>(method, path, body);
   const headers: Record<string, string> = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (method !== "GET" && csrfToken) headers["X-CSRF-Token"] = csrfToken;

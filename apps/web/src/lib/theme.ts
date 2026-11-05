@@ -19,6 +19,7 @@ const media = () => window.matchMedia("(prefers-color-scheme: dark)");
 export function applyTheme(theme: Theme) {
   const dark = theme === "dark" || (theme === "system" && media().matches);
   document.documentElement.classList.toggle("dark", dark);
+  document.documentElement.style.colorScheme = dark ? "dark" : "light";
   try {
     localStorage.setItem(KEY, theme);
   } catch {

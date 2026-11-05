@@ -49,3 +49,10 @@ filtros Todas / Não lidas / Minhas / Gerais e filtro por segmento.
 
 Ligação e chamada de vídeo não aparecem no cabeçalho do chat: o blueprint não as inclui e o adaptador
 WhatsApp não as oferece.
+
+## Build de demonstração
+
+`pnpm --filter @chathm/web build:demo` gera `apps/web/dist-demo/`, uma versão estática com a API simulada
+no navegador (`src/lib/demo-api.ts`) e navegação em memória, para mostrar a interface sem backend.
+Contas: `admin@hm.com.br`, `heliton@hm.com.br`, `paula@hm.com.br`, todas com a senha `demo`.
+O build normal não inclui esse código (a condição `import.meta.env.VITE_DEMO` é eliminada pelo bundler).

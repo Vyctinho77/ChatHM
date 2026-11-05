@@ -1,8 +1,10 @@
+import { safeStorage } from "@/lib/storage";
 import { useState } from "react";
 import { Outlet } from "react-router";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { useMediaQuery } from "@/lib/theme";
 import type { Me } from "@/features/auth/api";
+import { DEMO } from "@/lib/env";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 
@@ -19,7 +21,7 @@ export function ResizeHandle() {
 export function AppShell({ me }: { me: Me }) {
   const desktop = useMediaQuery("(min-width: 1024px)");
   const [drawer, setDrawer] = useState(false);
-  const layout = useDefaultLayout({ id: "chathm-shell", storage: localStorage });
+  const layout = useDefaultLayout({ id: "chathm-shell", storage: safeStorage });
 
   return (
     <div className="flex h-full flex-col bg-app">
@@ -62,6 +64,7 @@ export function AppShell({ me }: { me: Me }) {
 
       <footer className="hidden h-8 shrink-0 items-center border-t border-line bg-app px-5 text-xs text-muted lg:flex">
         ChatHM {APP_VERSION}
+        {DEMO && <span className="ml-3">· Demonstração com dados fictícios; nada é salvo ao recarregar.</span>}
       </footer>
     </div>
   );
