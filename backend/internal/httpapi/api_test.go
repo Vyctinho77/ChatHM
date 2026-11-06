@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -46,6 +47,8 @@ type env struct {
 }
 
 type opts struct {
+	sessionTTL      time.Duration
+	sessionIdle     time.Duration
 	requireAdminMFA bool
 	waSession       bool // provedor já com sessão salva (simula reinício)
 	selfRegister    bool // habilita POST /auth/register
@@ -75,6 +78,12 @@ func setup(t *testing.T, o ...opts) *env {
 	var op opts
 	if len(o) > 0 {
 		op = o[0]
+	}
+	if op.sessionTTL > 0 {
+		cfg.SessionTTL = op.sessionTTL
+	}
+	if op.sessionIdle > 0 {
+		cfg.SessionIdle = op.sessionIdle
 	}
 	cfg.RequireAdminMFA = op.requireAdminMFA
 	cfg.AllowSelfRegister = op.selfRegister
@@ -408,6 +417,40 @@ func TestSessionIdleExpiry(t *testing.T) {
 	c := e.client().mustLogin("eva@x.com")
 	expect(t, c.do("GET", "/api/v1/auth/me", nil), 200)
 	_, _ = e.pool.Exec(context.Background(), `UPDATE sessions SET last_seen_at = now() - interval '31 minutes'`)
+	expect(t, c.do("GET", "/api/v1/auth/me", nil), 401)
+}
+
+func TestPersistentLogin(t *testing.T) {
+	e := setup(t, opts{sessionTTL: 30 * 24 * time.Hour, sessionIdle: 30 * 24 * time.Hour})
+	e.createUser("remember@x.com", auth.RoleAgent)
+	c := e.client()
+	r := c.login("remember@x.com", password)
+	expect(t, r, 200)
+	response := http.Response{Header: r.header}
+	cookies := response.Cookies()
+	if len(cookies) != 1 || cookies[0].MaxAge != 30*24*60*60 || cookies[0].Expires.Before(time.Now().Add(29*24*time.Hour)) {
+		t.Fatalf("expected persistent 30-day cookie")
+	}
+	// A new client restores only the browser cookie, without resubmitting credentials.
+	reopened := e.client()
+	baseURL, err := url.Parse(e.srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened.hc.Jar.SetCookies(baseURL, cookies)
+	_, err = e.pool.Exec(context.Background(), `UPDATE sessions SET last_seen_at = now() - interval '7 days'`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect(t, reopened.do("GET", "/api/v1/auth/me", nil), 200)
+	// Logout still revokes the saved credential, even if another client retains it.
+	expect(t, c.do("POST", "/api/v1/auth/logout", nil), 204)
+	expect(t, reopened.do("GET", "/api/v1/auth/me", nil), 401)
+	c.mustLogin("remember@x.com")
+	_, err = e.pool.Exec(context.Background(), `UPDATE sessions SET expires_at = now() - interval '1 second'`)
+	if err != nil {
+		t.Fatal(err)
+	}
 	expect(t, c.do("GET", "/api/v1/auth/me", nil), 401)
 }
 

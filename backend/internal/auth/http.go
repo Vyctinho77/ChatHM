@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -153,6 +154,7 @@ func (s *Service) setCookie(w http.ResponseWriter, token string) {
 		Value:    token,
 		Path:     "/",
 		MaxAge:   int(s.cfg.SessionTTL.Seconds()),
+		Expires:  time.Now().Add(s.cfg.SessionTTL),
 		HttpOnly: true,
 		Secure:   s.cfg.CookieSecure,
 		SameSite: http.SameSiteStrictMode,

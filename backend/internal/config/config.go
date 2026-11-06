@@ -105,13 +105,13 @@ func Load() (Config, error) {
 
 	var errs []error
 
-	ttl, err := time.ParseDuration(getenv("SESSION_TTL", "12h"))
+	ttl, err := time.ParseDuration(getenv("SESSION_TTL", "720h"))
 	if err != nil {
 		errs = append(errs, fmt.Errorf("SESSION_TTL inválido: %w", err))
 	}
 	cfg.SessionTTL = ttl
 
-	idle, err := time.ParseDuration(getenv("SESSION_IDLE_TIMEOUT", "2h"))
+	idle, err := time.ParseDuration(getenv("SESSION_IDLE_TIMEOUT", "720h"))
 	if err != nil {
 		errs = append(errs, fmt.Errorf("SESSION_IDLE_TIMEOUT inválido: %w", err))
 	}
