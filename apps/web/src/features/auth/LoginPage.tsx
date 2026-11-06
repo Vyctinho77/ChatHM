@@ -2,11 +2,13 @@ import { useState, type FormEvent } from "react";
 import { Alert, Button, Field } from "@/components/ui";
 import { errorMessage, fieldErrors, type FieldErrors } from "@/lib/api";
 import { DEMO } from "@/lib/env";
-import { login, register, useSetMe } from "./api";
+import { login, register, useAuthOptions, useSetMe } from "./api";
 import { AuthLayout } from "./AuthLayout";
 
 export function LoginPage() {
   const setMe = useSetMe();
+  const canRegister = useAuthOptions().data?.selfRegister === true;
+  const [requested, setRequested] = useState(false);
   const [email, setEmail] = useState(DEMO ? "admin@hm.com.br" : "");
   const [password, setPassword] = useState(DEMO ? "demo" : "");
   const [error, setError] = useState("");
@@ -36,7 +38,12 @@ export function LoginPage() {
     }
     setLoading(true);
     try {
-      setMe(await (creating ? register(name, email, password) : login(email, password)));
+      if (creating) {
+        await register(name, email, password);
+        setRequested(true);
+      } else {
+        setMe(await login(email, password));
+      }
     } catch (err) {
       setError(errorMessage(err));
       setFields(fieldErrors(err));
@@ -44,6 +51,28 @@ export function LoginPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (requested) {
+    return (
+      <AuthLayout title="Cadastro enviado" subtitle="Falta só a aprovação do administrador.">
+        <Alert tone="info">
+          Sua conta foi criada, mas só poderá entrar depois que um administrador aprovar o acesso. Avise a pessoa responsável
+          pelo escritório e volte aqui em seguida.
+        </Alert>
+        <Button
+          type="button"
+          variant="secondary"
+          className="mt-4 h-10 w-full"
+          onClick={() => {
+            setRequested(false);
+            switchMode();
+          }}
+        >
+          Voltar para a entrada
+        </Button>
+      </AuthLayout>
+    );
   }
 
   return (
@@ -88,17 +117,19 @@ export function LoginPage() {
           <input type="checkbox" checked={showPassword} onChange={(e) => setShowPassword(e.target.checked)} />
           Mostrar senha
         </label>
-        {creating && <p className="text-xs text-muted">Sua conta será criada como atendente. O administrador gerencia as equipes e permissões.</p>}
+        {creating && <p className="text-xs text-muted">Sua conta será criada como atendente e só ficará ativa depois que o administrador aprovar.</p>}
         <Button type="submit" loading={loading} className="mt-2 h-10">
-          {creating ? "Criar conta e entrar" : "Entrar"}
+          {creating ? "Solicitar acesso" : "Entrar"}
         </Button>
       </form>
+      {canRegister && (
       <div className="mt-6 border-t border-line pt-5 text-center">
         <p className="mb-2 text-sm text-muted">{creating ? "Já tem uma conta?" : "Ainda não tem uma conta?"}</p>
         <Button type="button" variant="secondary" className="h-10 w-full" disabled={loading} onClick={switchMode}>
-          {creating ? "Entrar na minha conta" : "Criar minha conta"}
+          {creating ? "Entrar na minha conta" : "Solicitar acesso"}
         </Button>
       </div>
+      )}
     </AuthLayout>
   );
 }

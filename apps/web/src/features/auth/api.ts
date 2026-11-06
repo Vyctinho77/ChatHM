@@ -36,7 +36,19 @@ export function useSetMe() {
 }
 
 export const login = (email: string, password: string) => post<Me>("/auth/login", { email, password });
-export const register = (name: string, email: string, password: string) => post<Me>("/auth/register", { name, email, password });
+/** Cadastro por conta própria: a conta nasce inativa e o administrador precisa aprová-la. */
+export const register = (name: string, email: string, password: string) =>
+  post<{ pending: true }>("/auth/register", { name, email, password });
+
+/** Opções públicas da tela de entrada (o cadastro próprio vem desligado por padrão). */
+export function useAuthOptions() {
+  return useQuery({
+    queryKey: ["auth", "options"] as const,
+    queryFn: () => get<{ selfRegister: boolean }>("/auth/options"),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+}
 export const verifyMfa = (code: string) => post<Me>("/auth/mfa/verify", { code });
 export const setupMfa = () => post<{ secret: string; otpauthUrl: string }>("/auth/mfa/setup");
 export const enableMfa = (code: string) => post<Me>("/auth/mfa/enable", { code });

@@ -131,11 +131,11 @@ export async function demoApi(method: string, path: string, body: Body = {}): Pr
       if ([...password].length < 12 || [...password].length > 128) fields.password = "Use de 12 a 128 caracteres.";
       if (Object.keys(fields).length) throw invalid(fields);
       if (users.some((u) => u.email === email)) throw new DemoError(409, "email_unavailable", "Não foi possível usar este e-mail. Entre com sua conta ou use outro endereço.");
-      const u: U = { id: uid(), name, email, password, role: "agent", isActive: true, mfaEnabled: false, theme: "system", lastLoginAt: now(), createdAt: now() };
-      users.push(u);
-      session = u;
-      return me(u);
+      users.push({ id: uid(), name, email, password, role: "agent", isActive: false, mfaEnabled: false, theme: "system", lastLoginAt: null, createdAt: now() });
+      return { pending: true };
     }
+    case "GET /auth/options":
+      return { selfRegister: true };
     case "GET /auth/me":
       return me(requireSession());
     case "POST /auth/login": {

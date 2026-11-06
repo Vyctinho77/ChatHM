@@ -201,6 +201,9 @@ func (s *Service) me(sess *Session) MeResponse {
 func (s *Service) PublicRoutes(r chi.Router) {
 	r.With(s.CheckOrigin).Post("/auth/login", s.handleLogin)
 	r.With(s.CheckOrigin).Post("/auth/register", s.handleRegister)
+	r.Get("/auth/options", func(w http.ResponseWriter, _ *http.Request) {
+		httpx.JSON(w, http.StatusOK, map[string]any{"selfRegister": s.cfg.AllowSelfRegister})
+	})
 }
 
 // SessionRoutes: rotas disponíveis mesmo com MFA pendente / não configurado.

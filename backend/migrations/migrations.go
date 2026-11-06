@@ -80,5 +80,6 @@ func Run(ctx context.Context, dsn, command string) error {
 
 // Create gera um novo arquivo SQL vazio em dir (uso em desenvolvimento).
 func Create(dir, name string) error {
+	goose.SetSequential(true) // 00008_nome.sql, mantendo a ordem numérica das migrações existentes
 	return goose.Create(nil, dir, name, "sql")
 }

@@ -113,7 +113,12 @@ function PeopleTab() {
             </div>
             <div className="flex flex-wrap gap-1.5 pl-14 text-xs md:justify-end md:pl-0">
               <span className="rounded-full bg-hover px-2 py-0.5">{roleLabel[u.role]}</span>
-              {!u.isActive && <span className="rounded-full bg-danger/15 px-2 py-0.5 text-danger">Inativo</span>}
+              {!u.isActive &&
+                (u.lastLoginAt ? (
+                  <span className="rounded-full bg-danger/15 px-2 py-0.5 text-danger">Inativo</span>
+                ) : (
+                  <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-700 dark:text-amber-300">Aguardando aprovação</span>
+                ))}
               {u.teams.map((t) => (
                 <span key={t.id} className="rounded-full border border-line px-2 py-0.5">
                   {t.name}

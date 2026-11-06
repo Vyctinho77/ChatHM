@@ -37,6 +37,8 @@ type Config struct {
 	IdleTimeout     time.Duration // expira sem atividade
 	RequireAdminMFA bool
 	AllowedOrigins  []string
+	// AllowSelfRegister habilita POST /auth/register (contas nascem inativas, aguardando o administrador).
+	AllowSelfRegister bool
 }
 
 const (

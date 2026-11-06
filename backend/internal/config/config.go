@@ -51,8 +51,10 @@ type Config struct {
 	StorageDir    string
 	MaxAttachment int64 // bytes
 	ClamAVAddr    string
-	FFmpegBin     string // FFMPEG_BIN: caminho do ffmpeg (vazio = PATH)
-	FFprobeBin    string // FFPROBE_BIN: caminho do ffprobe (vazio = PATH)
+	// Cadastro por conta própria (padrão desligado). Ligado, a conta nasce INATIVA e só entra após aprovação do admin.
+	AllowSelfRegister bool
+	FFmpegBin         string // FFMPEG_BIN: caminho do ffmpeg (vazio = PATH)
+	FFprobeBin        string // FFPROBE_BIN: caminho do ffprobe (vazio = PATH)
 }
 
 func (c Config) IsDevelopment() bool { return c.Env == "development" }
@@ -79,6 +81,7 @@ func Load() (Config, error) {
 		StorageDriver:     getenv("STORAGE_DRIVER", "fs"),
 		StorageDir:        getenv("STORAGE_DIR", "./data/attachments"),
 		ClamAVAddr:        os.Getenv("CLAMAV_ADDR"),
+		AllowSelfRegister: getbool("ALLOW_SELF_REGISTER", false),
 		FFmpegBin:         os.Getenv("FFMPEG_BIN"),
 		FFprobeBin:        os.Getenv("FFPROBE_BIN"),
 	}

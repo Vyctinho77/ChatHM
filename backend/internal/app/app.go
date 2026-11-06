@@ -57,12 +57,13 @@ func NewServices(ctx context.Context, cfg config.Config, db *pgxpool.Pool, opt O
 		return nil, err
 	}
 	authSvc, err := auth.NewService(db, auth.Config{
-		CookieName:      cfg.SessionCookieName,
-		CookieSecure:    cfg.CookieSecure,
-		SessionTTL:      cfg.SessionTTL,
-		IdleTimeout:     cfg.SessionIdle,
-		RequireAdminMFA: cfg.RequireAdminMFA,
-		AllowedOrigins:  cfg.AllowedOrigins,
+		CookieName:        cfg.SessionCookieName,
+		CookieSecure:      cfg.CookieSecure,
+		SessionTTL:        cfg.SessionTTL,
+		IdleTimeout:       cfg.SessionIdle,
+		RequireAdminMFA:   cfg.RequireAdminMFA,
+		AllowedOrigins:    cfg.AllowedOrigins,
+		AllowSelfRegister: cfg.AllowSelfRegister,
 	}, opt.Hasher, box)
 	if err != nil {
 		return nil, err

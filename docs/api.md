@@ -14,10 +14,11 @@ Base: `/api/v1`. Todas as respostas são JSON. Erros seguem o formato:
 - **Content-Type**: corpos devem ser `application/json` (caso contrário, `415`).
 - **Expiração**: sessão expira após `SESSION_TTL` (padrão 12h) ou `SESSION_IDLE_TIMEOUT` sem uso (padrão 2h). Qualquer `401 unauthenticated` → redirecionar para o login.
 
-O cadastro público (`POST /auth/register`) cria uma conta ativa de atendente, sem
-equipe, e já devolve a sessão. Não aceita perfil nem equipes no corpo. Exige senha
-de 12 a 128 caracteres e permite até cinco tentativas por IP a cada 15 minutos,
-incluindo dados inválidos e e-mails duplicados. Não exige confirmação de e-mail.
+O cadastro por conta própria (`POST /auth/register`) vem **desligado** (`ALLOW_SELF_REGISTER=false`; responde `404 registration_disabled`).
+Ligado, cria um atendente **inativo**, sem equipe e **sem sessão** (`202 {pending: true}`): a pessoa só consegue entrar
+depois que um administrador ativar a conta em Equipe. Não aceita perfil nem equipes no corpo. Exige senha de 12 a 128
+caracteres e permite até cinco tentativas por IP a cada 15 minutos. `GET /auth/options` (público) informa `{selfRegister}`
+para a tela de entrada mostrar ou esconder "Solicitar acesso". O caminho normal é o administrador criar o acesso (`POST /users`).
 As permissões existentes de atendente se aplicam imediatamente, incluindo filas
 gerais ou sem equipe; o cadastro não cria um escritório separado.
 
@@ -36,7 +37,7 @@ Enquanto um desses estados estiver pendente, as demais rotas respondem `403` com
 | Método | Rota | Acesso | Corpo | Resposta |
 |---|---|---|---|---|
 | POST | `/auth/login` | público | `{email, password}` | `200 Me` · `401 invalid_credentials` · `429 too_many_attempts` |
-| POST | `/auth/register` | público | `{name, email, password}` | `201 Me` + cookie de sessão · `409 email_unavailable` · `422 validation_failed` · `429 too_many_attempts` |
+| POST | `/auth/register` | público (se habilitado) | `{name, email, password}` | `202 {pending}` · `404 registration_disabled` · `409 email_unavailable` · `422 validation_failed` · `429 too_many_attempts` |
 | GET | `/auth/me` | sessão | — | `200 Me` |
 | POST | `/auth/logout` | sessão | — | `204` |
 | POST | `/auth/mfa/setup` | sessão | — | `200 {secret, otpauthUrl}` · `409 mfa_already_enabled` |

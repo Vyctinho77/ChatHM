@@ -46,6 +46,7 @@ type env struct {
 type opts struct {
 	requireAdminMFA bool
 	waSession       bool // provedor já com sessão salva (simula reinício)
+	selfRegister    bool // habilita POST /auth/register
 }
 
 func setup(t *testing.T, o ...opts) *env {
@@ -71,6 +72,7 @@ func setup(t *testing.T, o ...opts) *env {
 		op = o[0]
 	}
 	cfg.RequireAdminMFA = op.requireAdminMFA
+	cfg.AllowSelfRegister = op.selfRegister
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	var wa *fake.Provider
 	svcs, err := app.NewServices(context.Background(), cfg, pool, app.Options{
