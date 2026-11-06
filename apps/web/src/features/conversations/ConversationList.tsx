@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { AnimatePresence, motion } from "motion/react";
 import { CheckCheck, EllipsisVertical, ListFilter, Search, SquarePen } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
@@ -8,15 +8,17 @@ import { Badge, IconButton, Spinner } from "@/components/ui";
 import { useMe } from "@/features/auth/api";
 import { cn } from "@/lib/cn";
 import { formatListTime } from "@/lib/format";
+import { matches } from "@/lib/search";
+import { useDebounced } from "@/lib/useDebounced";
+import { NewConversationModal } from "./NewConversation";
 import { MessagePreview } from "./preview";
-import { useConversationActions, useConversations, useSegmentOptions } from "./store";
+import { SearchResults } from "./SearchResults";
+import { useContactOpener, useConversationActions, useConversations, useMessageSearch, useSegmentOptions } from "./store";
 import { Ticks } from "./Ticks";
 import { TransferMenu } from "./TransferMenu";
-import type { Conversation, SegmentKey, SegmentOption } from "./types";
+import type { ContactRecord, Conversation, MessageHit, SegmentKey, SegmentOption } from "./types";
 
 type Filter = "mine" | "general" | "all";
-
-const normalize = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
 export function ConversationList({ selectedId, onSelect }: { selectedId?: string; onSelect: (id: string) => void }) {
   const { data, isPending } = useConversations();
@@ -41,6 +43,11 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
   const { data: segmentData } = useSegmentOptions();
   const segmentOptions: SegmentOption[] = [...(segmentData ?? []), { key: "geral", name: "Geral" }];
   const [query, setQuery] = useState("");
+  const [newOpen, setNewOpen] = useState(false);
+  const navigate = useNavigate();
+  const opener = useContactOpener();
+  const debounced = useDebounced(query.trim(), 250);
+  const server = useMessageSearch(debounced);
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -58,19 +65,36 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
   const all = useMemo(() => (data ?? []).filter((c) => c.status !== "closed"), [data]);
 
   const visible = useMemo(() => {
-    const q = normalize(query.trim());
+    const q = query.trim();
     return all.filter((c) => {
       if (filter === "mine" && c.assignee?.id !== actions.me.id) return false;
       if (filter === "general" && c.segment !== "geral") return false;
       if (segment && c.segment !== segment) return false;
       if (!q) return true;
-      const hay = normalize(
-        [c.contact.name, c.contact.phone, c.contact.company ?? "", c.lastMessage.kind === "text" ? c.lastMessage.text : ""].join(" "),
-      );
-      const digits = q.replace(/\D/g, "");
-      return hay.includes(q) || (digits.length >= 3 && c.contact.phone.replace(/\D/g, "").includes(digits));
+      const last = c.lastMessage;
+      const text = last?.kind === "text" ? last.text : last?.kind === "document" ? last.fileName : "";
+      return matches(`${c.contact.name} ${c.contact.phone} ${c.contact.company ?? ""} ${text}`, q);
     });
   }, [all, filter, segment, query, actions.me.id]);
+
+  async function openContact(ct: ContactRecord) {
+    try {
+      const id = ct.conversationId ?? (await opener.openContact(ct.id)).id;
+      navigate({ pathname: `/conversas/${id}` });
+    } catch {
+      /* o aviso aparece ao abrir pela lista de Clientes; aqui só não navega */
+    }
+  }
+
+  async function openHit(h: MessageHit) {
+    try {
+      // Mensagem de um atendimento encerrado: o histórico aparece no atendimento aberto do cliente.
+      const id = h.closed ? (h.openConversationId ?? (await opener.openContact(h.contactId)).id) : h.conversationId;
+      navigate({ pathname: `/conversas/${id}`, search: `?msg=${h.id}` });
+    } catch {
+      /* sem acesso: nada a abrir */
+    }
+  }
 
   const chips: { key: Filter; label: string }[] = [
     { key: "mine", label: "Minhas" },
@@ -83,7 +107,7 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
     <section aria-label="Conversas" className="flex h-full min-w-0 flex-col bg-panel">
       <div className="flex items-center gap-0.5 px-3 pt-3">
         <h1 className="mr-auto pl-1 text-base font-semibold">Conversas</h1>
-        <IconButton label="Nova conversa (disponível após conectar o WhatsApp)" disabled>
+        <IconButton label="Nova conversa" onClick={() => setNewOpen(true)}>
           <SquarePen className="size-5" />
         </IconButton>
         <Menu
@@ -169,7 +193,7 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
 
       <motion.div layoutScroll className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
         {isPending && <Spinner className="mx-auto mt-8" />}
-        {!isPending && visible.length === 0 && (
+        {!isPending && visible.length === 0 && !(debounced.length >= 2 && debounced === query.trim() && ((server.data?.messages.length ?? 0) > 0 || (server.data?.contacts.length ?? 0) > 0 || server.isFetching)) && (
           <p className="px-4 py-10 text-center text-sm text-muted">Nenhuma conversa encontrada.</p>
         )}
         <ul className="flex flex-col">
@@ -189,7 +213,18 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
             ))}
           </AnimatePresence>
         </ul>
+        {debounced.length >= 2 && debounced === query.trim() && (
+          <SearchResults
+            term={debounced}
+            loading={server.isFetching}
+            contacts={(server.data?.contacts ?? []).filter((ct) => !visible.some((c) => c.contact.id === ct.id))}
+            messages={server.data?.messages ?? []}
+            onOpenMessage={openHit}
+            onOpenContact={openContact}
+          />
+        )}
       </motion.div>
+      <NewConversationModal open={newOpen} onClose={() => setNewOpen(false)} />
       {ctx && ctxConv && (
         <TransferMenu
           conversation={ctxConv}
@@ -253,14 +288,16 @@ function ConversationRow({
         <div className="relative min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
             <span className="truncate text-[13.5px] font-medium">{c.contact.name}</span>
-            <span className={cn("ml-auto shrink-0 text-[11px] tabular-nums", unread ? "font-semibold text-unread" : "text-muted")}>
-              {formatListTime(last.sentAt)}
-            </span>
+            {last && (
+              <span className={cn("ml-auto shrink-0 text-[11px] tabular-nums", unread ? "font-semibold text-unread" : "text-muted")}>
+                {formatListTime(last.sentAt)}
+              </span>
+            )}
           </div>
           <div className="mt-px flex items-center gap-1 text-[12.5px] text-muted">
-            {last.direction === "out" && <Ticks status={last.status} />}
+            {last?.direction === "out" && <Ticks status={last.status} />}
             <span className="flex min-w-0 items-center gap-1">
-              <MessagePreview m={last} />
+              {last ? <MessagePreview m={last} /> : <span className="italic">Nova conversa — escreva a primeira mensagem</span>}
             </span>
             <AnimatePresence initial={false}>
               {!unread && c.assignee && c.assignee.id !== myId && (

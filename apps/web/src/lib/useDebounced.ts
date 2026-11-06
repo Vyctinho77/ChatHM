@@ -1,0 +1,11 @@
+import { useEffect, useState } from "react";
+
+/** Valor com atraso: evita uma busca no servidor a cada tecla. */
+export function useDebounced<T>(value: T, ms = 250): T {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return v;
+}

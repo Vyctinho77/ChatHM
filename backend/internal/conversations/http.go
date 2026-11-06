@@ -9,6 +9,7 @@ import (
 	"math"
 	"mime"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,6 +32,9 @@ func viewer(r *http.Request) Viewer {
 // Routes: usuários autenticados. A visibilidade por equipe é aplicada em cada consulta.
 func (h *Handler) Routes(r chi.Router) {
 	r.Get("/contacts", h.contacts)
+	r.Get("/search", h.search)
+	r.Post("/contacts/{id}/conversation", h.openForContact)
+	r.Post("/conversations/open", h.openByPhone)
 	r.Get("/conversations", h.list)
 	r.Get("/conversations/{id}", h.get)
 	r.Get("/conversations/{id}/messages", h.messages)
@@ -72,7 +76,8 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) messages(w http.ResponseWriter, r *http.Request) {
-	ms, err := h.svc.Messages(r.Context(), viewer(r), chi.URLParam(r, "id"))
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	ms, err := h.svc.Messages(r.Context(), viewer(r), chi.URLParam(r, "id"), limit)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -339,4 +344,53 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	default:
 		httpx.Internal(w, r, err)
 	}
+}
+
+func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
+	res, err := h.svc.Search(r.Context(), viewer(r), r.URL.Query().Get("q"))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, res)
+}
+
+// openForContact: inicia o atendimento de um cliente da lista de contatos (200 com a conversa).
+func (h *Handler) openForContact(w http.ResponseWriter, r *http.Request) {
+	c, err := h.svc.OpenForContact(r.Context(), viewer(r), chi.URLParam(r, "id"))
+	if err != nil {
+		writeOpenError(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, c)
+}
+
+// openByPhone: inicia o atendimento por número de telefone ({phone, name?}); cria o contato se for novo.
+func (h *Handler) openByPhone(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Phone string `json:"phone"`
+		Name  string `json:"name"`
+	}
+	if !httpx.Decode(w, r, &in) {
+		return
+	}
+	c, err := h.svc.OpenByPhone(r.Context(), viewer(r), in.Phone, in.Name)
+	if err != nil {
+		writeOpenError(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, c)
+}
+
+func writeOpenError(w http.ResponseWriter, r *http.Request, err error) {
+	var taken *TakenError
+	if errors.As(err, &taken) {
+		msg := "Este cliente já está sendo atendido por outra pessoa."
+		if taken.Assignee != "" {
+			msg = taken.Assignee + " já está atendendo este cliente."
+		}
+		httpx.Error(w, http.StatusConflict, "conversation_taken", msg)
+		return
+	}
+	writeError(w, r, err)
 }

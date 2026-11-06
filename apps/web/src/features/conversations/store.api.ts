@@ -1,11 +1,11 @@
 // Implementação real: API REST + atualizações via WebSocket (ver features/realtime).
 import { useMemo } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { del, get, isRejection, post, put, patch } from "@/lib/api";
 import { useMe } from "@/features/auth/api";
 import { pendingFiles, type Capabilities } from "./store.types";
 import { tagsKey } from "@/features/tags/api";
-import type { Conversation, Message, TagInfo } from "./types";
+import type { Conversation, Message, SearchResult, TagInfo } from "./types";
 
 export const capabilities: Capabilities = {
   send: true,
@@ -32,6 +32,33 @@ export function useMessages(conversationId: string | undefined) {
     enabled: !!conversationId,
     queryFn: async () => (await get<{ messages: Message[] }>(`/conversations/${conversationId}/messages`)).messages,
   });
+}
+
+/** Busca no servidor: contatos e o conteúdo de todas as mensagens que a pessoa pode ver. */
+export function useMessageSearch(q: string) {
+  const term = q.trim();
+  return useQuery({
+    queryKey: ["search", term],
+    enabled: term.length >= 2,
+    staleTime: 15_000,
+    placeholderData: keepPreviousData,
+    queryFn: () => get<SearchResult>(`/search?q=${encodeURIComponent(term)}`),
+  });
+}
+
+/** Inicia o atendimento de um cliente (da lista de Clientes ou por telefone). */
+export function useContactOpener() {
+  const qc = useQueryClient();
+  return useMemo(() => {
+    const add = (c: Conversation) => {
+      qc.setQueryData<Conversation[]>(conversationKeys.list, (old) => (old ? [c, ...old.filter((x) => x.id !== c.id)] : old));
+      return c;
+    };
+    return {
+      openContact: async (contactId: string) => add(await post<Conversation>(`/contacts/${contactId}/conversation`)),
+      openPhone: async (phone: string, name = "") => add(await post<Conversation>("/conversations/open", { phone, name })),
+    };
+  }, [qc]);
 }
 
 export function useConversationActions() {
@@ -87,6 +114,12 @@ export function useConversationActions() {
         if (!c) return;
         patchConv(id, (x) => ({ ...x, contact: { ...x.contact, note } }));
         patch(`/contacts/${c.contact.id}`, { note }).catch(resync);
+      },
+      /** Carrega o histórico completo (a busca pode apontar para mensagens além das 300 mais recentes). */
+      async loadAllMessages(id: string) {
+        const all = (await get<{ messages: Message[] }>(`/conversations/${id}/messages?limit=5000`)).messages;
+        qc.setQueryData<Message[]>(conversationKeys.messages(id), all);
+        return all;
       },
       me: { id: myId, name: myName },
     };

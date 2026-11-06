@@ -13,9 +13,12 @@ func (s *Service) ListContacts(ctx context.Context, v Viewer) ([]ContactRecord, 
 	rows, err := s.db.Query(ctx, `SELECT ct.id,ct.name,ct.phone,ct.wa_id,ct.company,ct.note,lc.id::text
  FROM contacts ct LEFT JOIN LATERAL (
   SELECT c.id FROM conversations c LEFT JOIN segments s ON s.id=c.segment_id
-  WHERE c.contact_id=ct.id AND `+forViewer+`
+  WHERE c.contact_id=ct.id AND c.status <> 'closed' AND `+forViewer+`
   ORDER BY c.last_message_at DESC LIMIT 1
- ) lc ON true WHERE ($2::boolean OR lc.id IS NOT NULL)
+ ) lc ON true LEFT JOIN LATERAL (
+  SELECT c.id FROM conversations c LEFT JOIN segments s ON s.id=c.segment_id
+  WHERE c.contact_id=ct.id AND `+forViewer+` LIMIT 1
+ ) la ON true WHERE ($2::boolean OR la.id IS NOT NULL)
  ORDER BY lower(coalesce(nullif(ct.name,''),nullif(ct.phone,''),ct.wa_id)),ct.id`, v.ID, v.Admin)
 	if err != nil {
 		return nil, err

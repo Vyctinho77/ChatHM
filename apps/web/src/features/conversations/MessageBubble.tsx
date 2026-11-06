@@ -4,6 +4,7 @@ import { cn } from "@/lib/cn";
 import { formatBytes, formatTime } from "@/lib/format";
 import { AudioPlayer } from "./AudioPlayer";
 import { receiptDetails } from "./receipts";
+import { Highlight } from "@/components/Highlight";
 import { Ticks } from "./Ticks";
 import type { Message } from "./types";
 
@@ -44,10 +45,12 @@ function ImageBody({
   m,
   showAuthor,
   onOpen,
+  term,
 }: {
   m: Extract<Message, { kind: "image" }>;
   showAuthor: boolean;
   onOpen?: (id: string) => void;
+  term?: string;
 }) {
   const author = m.direction === "out" && showAuthor && m.authorName ? m.authorName : "";
   const hasText = !!m.caption || !!author;
@@ -88,7 +91,11 @@ function ImageBody({
         <div className="w-0 min-w-full px-2 pb-1 pt-1.5">
           {author && <p className="text-[12.5px] font-semibold">{author}:</p>}
           <div className="flex flex-wrap items-end">
-            {m.caption && <p className="whitespace-pre-wrap break-words">{m.caption}</p>}
+            {m.caption && (
+              <p className="whitespace-pre-wrap break-words">
+                <Highlight text={m.caption} term={term} />
+              </p>
+            )}
             <Meta m={m} />
           </div>
         </div>
@@ -97,7 +104,7 @@ function ImageBody({
   );
 }
 
-function DocumentCard({ m, onOpen }: { m: Extract<Message, { kind: "document" }>; onOpen?: (id: string) => void }) {
+function DocumentCard({ m, onOpen, term }: { m: Extract<Message, { kind: "document" }>; onOpen?: (id: string) => void; term?: string }) {
   const isPdf = m.mimeType === "application/pdf";
   const openable = isPdf && !!m.url && !!onOpen;
   const ext = m.fileName.split(".").pop()?.toUpperCase() ?? "ARQ";
@@ -129,7 +136,9 @@ function DocumentCard({ m, onOpen }: { m: Extract<Message, { kind: "document" }>
         {isPdf ? "PDF" : <FileText className="size-5" />}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="break-all text-[13px] font-medium leading-snug">{m.fileName}</p>
+        <p className="break-all text-[13px] font-medium leading-snug">
+          <Highlight text={m.fileName} term={term} />
+        </p>
         <p className="text-[11px] opacity-70">
           {isPdf ? "PDF" : ext} • {formatBytes(m.sizeBytes)}
           {!m.url && ` • ${m.historical ? "arquivo do histórico não importado" : m.mediaState === "blocked" ? "bloqueado por segurança" : m.mediaState === "failed" ? "download falhou" : "baixando…"}`}
@@ -179,12 +188,18 @@ export function MessageBubble({
   animateIn,
   onOpenImage,
   onOpenPdf,
+  term,
+  emphasis,
 }: {
   m: Message;
   showAuthor: boolean;
   animateIn?: boolean;
   onOpenImage?: (id: string) => void;
   onOpenPdf?: (id: string) => void;
+  /** Trecho buscado, destacado no texto. */
+  term?: string;
+  /** Mensagem em foco (resultado atual da busca ou destino de um link). */
+  emphasis?: boolean;
 }) {
   const out = m.direction === "out";
   return (
@@ -196,7 +211,8 @@ export function MessageBubble({
         transition={{ type: "spring", stiffness: 480, damping: 32, mass: 0.8 }}
         style={{ transformOrigin: out ? "100% 100%" : "0% 100%" }}
         className={cn(
-          "relative max-w-[min(32rem,80%)] rounded-lg text-[13.5px] leading-[1.4] shadow-sm",
+          "relative max-w-[min(32rem,80%)] rounded-lg text-[13.5px] leading-[1.4] shadow-sm transition-shadow duration-300",
+          emphasis && "ring-2 ring-accent ring-offset-2 ring-offset-transparent",
           m.kind === "image" ? "p-[3px]" : "px-2.5 py-1.5",
           out ? "rounded-tr-sm bg-out text-out-fg" : "rounded-tl-sm bg-in text-fg",
           m.status === "failed" && "ring-1 ring-danger",
@@ -208,7 +224,9 @@ export function MessageBubble({
 
         {m.kind === "text" && (
           <div className="flex flex-wrap items-end">
-            <p className="whitespace-pre-wrap break-words">{m.text}</p>
+            <p className="whitespace-pre-wrap break-words">
+              <Highlight text={m.text} term={term} />
+            </p>
             <Meta m={m} />
           </div>
         )}
@@ -225,12 +243,12 @@ export function MessageBubble({
 
         {m.kind === "document" && (
           <div className="flex flex-col gap-1 pt-1">
-            <DocumentCard m={m} onOpen={onOpenPdf} />
+            <DocumentCard m={m} onOpen={onOpenPdf} term={term} />
             <Meta m={m} />
           </div>
         )}
 
-        {m.kind === "image" && <ImageBody m={m} showAuthor={showAuthor} onOpen={onOpenImage} />}
+        {m.kind === "image" && <ImageBody m={m} showAuthor={showAuthor} onOpen={onOpenImage} term={term} />}
 
         {m.kind === "unsupported" && (
           <div className="flex flex-wrap items-end">

@@ -10,6 +10,8 @@ export const useConversations = impl.useConversations;
 export const useMessages = impl.useMessages;
 export const useConversationActions = impl.useConversationActions;
 export const useSendMessage = impl.useSendMessage;
+export const useMessageSearch = impl.useMessageSearch;
+export const useContactOpener = impl.useContactOpener;
 
 // Segmentos e etiquetas vêm da API tanto no app quanto na demonstração (que simula a API).
 export { useSegmentOptions } from "@/features/queues/api";

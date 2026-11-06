@@ -206,6 +206,26 @@ com o mesmo `id` tenta de novo.
 `segment` (chave; `"geral"` = fila geral), `segmentName`, `classification` (`keyword` | `conflict` | `none`),
 `tags` (nomes) e, nas mensagens enviadas, `deliveredAt`, `readAt`, `authorName`.
 
+## Busca e início de conversa
+
+| Método | Rota | Corpo | Resposta |
+|---|---|---|---|
+| GET | `/search?q=` | — | `200 {contacts: ContactRecord[], messages: MessageHit[]}` (mín. 2 caracteres) |
+| POST | `/contacts/{id}/conversation` | — | `200 Conversation` · `409 conversation_taken` · `404` |
+| POST | `/conversations/open` | `{phone, name?}` | `200 Conversation` · `409 conversation_taken` · `422` (telefone inválido) |
+| GET | `/conversations/{id}/messages?limit=` | — | até `limit` (padrão 300, máx. 5000) mensagens mais recentes |
+
+`/search` ignora acentos e maiúsculas, procura em nome/empresa/telefone dos contatos (3+ dígitos casam pedaços do número) e no
+**conteúdo de todas as mensagens** (texto, legendas e nomes de arquivo) de atendimentos que a pessoa pode ver — a mesma regra de visibilidade
+das conversas. Cada `MessageHit` traz `snippet`, `conversationId`, `contactId`, `closed` e `openConversationId` (o atendimento aberto do cliente,
+onde o histórico aparece quando o atendimento do resultado já foi encerrado). Até 20 contatos e 40 mensagens, mais recentes primeiro.
+
+Iniciar atendimento (`/contacts/{id}/conversation`, `/conversations/open`): quem pede vira o **responsável** e a conversa fica privada para a pessoa
+e administradores até ela enviar a primeira mensagem ou encerrar (a conversa nasce sem mensagens, sem `lastMessage`). O destino do envio sai
+do identificador do contato. Se o cliente já tem atendimento aberto, a chamada devolve o mesmo (idempotente); se é de outra pessoa que o requisitante
+não vê, `409 conversation_taken`. `phone` aceita máscara; sem `+`, 10–11 dígitos ganham o `55`. A resposta do cliente cai na mesma conversa.
+`GET /contacts` agora devolve `conversationId` só para atendimento **aberto** (clientes sem atendimento aberto mostram "Conversar").
+
 ## Segmentos (filas)
 
 | Método | Rota | Acesso | Corpo | Resposta |

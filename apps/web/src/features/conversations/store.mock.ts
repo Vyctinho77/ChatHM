@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMe } from "@/features/auth/api";
 import { buildMock } from "./mock";
 import type { Capabilities } from "./store.types";
-import type { Conversation, Message } from "./types";
+import type { Conversation, Message, SearchResult } from "./types";
+import { fold, matches } from "@/lib/search";
 
 export const capabilities: Capabilities = { send: true, tags: true, close: true, media: true };
 
@@ -36,7 +37,7 @@ export function useConversations() {
     queryFn: async () => {
       await delay(150);
       return getDB(who.id, who.name).conversations.filter((c) => c.status !== "closed").sort((a, b) =>
-        b.lastMessage.sentAt.localeCompare(a.lastMessage.sentAt),
+        (b.lastMessage?.sentAt ?? "9").localeCompare(a.lastMessage?.sentAt ?? "9"), // sem mensagens (nova conversa) fica no topo
       );
     },
   });
@@ -57,6 +58,71 @@ export function useMessages(conversationId: string | undefined) {
 function patchConversation(id: string, fn: (c: Conversation) => Conversation) {
   if (!db) return;
   db.conversations = db.conversations.map((c) => (c.id === id ? fn(c) : c));
+}
+
+/** Demonstração: busca local nos dados fictícios. */
+export function useMessageSearch(q: string) {
+  const who = useIdentity();
+  const term = q.trim();
+  return useQuery({
+    queryKey: ["search", term, db?.conversations.length ?? 0],
+    enabled: term.length >= 2 && !!who.id,
+    queryFn: async (): Promise<SearchResult> => {
+      const d = getDB(who.id, who.name);
+      const f = fold(term);
+      const messages = d.conversations
+        .filter((c) => c.status !== "closed")
+        .flatMap((c) =>
+          (d.messages[c.id] ?? []).flatMap((m) => {
+            const text = m.kind === "text" ? m.text : m.kind === "document" ? m.fileName : m.kind === "image" ? (m.caption ?? "") : "";
+            if (!text || !fold(text).includes(f)) return [];
+            const i = fold(text).indexOf(f);
+            const snippet = (i > 50 ? "…" : "") + text.slice(Math.max(0, i - 50), i + f.length + 110) + (text.length > i + f.length + 110 ? "…" : "");
+            return [{ id: m.id, conversationId: c.id, contactId: c.contact.id, openConversationId: c.id, contactName: c.contact.name, direction: m.direction, kind: m.kind, snippet, sentAt: m.sentAt, closed: false }];
+          }),
+        )
+        .sort((a, b) => b.sentAt.localeCompare(a.sentAt))
+        .slice(0, 40);
+      const contacts = d.conversations
+        .filter((c) => c.status !== "closed" && matches(`${c.contact.name} ${c.contact.phone} ${c.contact.company ?? ""}`, term))
+        .map((c) => ({ ...c.contact, conversationId: c.id }))
+        .slice(0, 20);
+      return { contacts, messages };
+    },
+  });
+}
+
+export function useContactOpener() {
+  const qc = useQueryClient();
+  const who = useIdentity();
+  return useMemo(() => {
+    const open = (c: Conversation) => {
+      void qc.invalidateQueries({ queryKey: keys.list });
+      return c;
+    };
+    const create = (contact: Conversation["contact"]) => {
+      const d = getDB(who.id, who.name);
+      const c: Conversation = { id: `n${Date.now()}`, contact, segment: "geral", segmentName: "Geral", status: "in_progress", assignee: { id: who.id, name: who.name }, unreadCount: 0, tags: [] };
+      d.conversations = [c, ...d.conversations];
+      d.messages[c.id] = [];
+      return open(c);
+    };
+    return {
+      async openContact(contactId: string) {
+        const d = getDB(who.id, who.name);
+        const found = d.conversations.find((c) => c.contact.id === contactId);
+        if (found && found.status !== "closed") return open(found);
+        return create(found?.contact ?? { id: contactId, name: "Contato", phone: "", note: "" });
+      },
+      async openPhone(phone: string, name = "") {
+        const digits = phone.replace(/\D/g, "");
+        if (digits.length < 10) throw new Error("Informe o telefone com DDD.");
+        const found = getDB(who.id, who.name).conversations.find((c) => c.contact.phone.replace(/\D/g, "").endsWith(digits.slice(-10)));
+        if (found && found.status !== "closed") return open(found);
+        return create({ id: `p${Date.now()}`, name: name || `+55 ${digits}`, phone: `+55 ${digits}`, note: "" });
+      },
+    };
+  }, [qc, who.id, who.name]);
 }
 
 export function useConversationActions() {
@@ -91,6 +157,9 @@ export function useConversationActions() {
       patchConversation(id, (x) => ({ ...x, contact: { ...x.contact, note } }));
       refresh();
     },
+    async loadAllMessages(id: string) {
+      return [...(getDB(who.id, who.name).messages[id] ?? [])];
+    },
     me: who,
   }), [qc, who.id, who.name]); // eslint-disable-line react-hooks/exhaustive-deps
 }
@@ -104,7 +173,7 @@ function patchMessage(
   const apply = (m: Message) => (m.id === messageId ? ({ ...m, ...patch } as Message) : m);
   if (db) {
     db.messages[conversationId] = (db.messages[conversationId] ?? []).map(apply);
-    patchConversation(conversationId, (c) => (c.lastMessage.id === messageId ? { ...c, lastMessage: apply(c.lastMessage) } : c));
+    patchConversation(conversationId, (c) => (c.lastMessage?.id === messageId ? { ...c, lastMessage: apply(c.lastMessage) } : c));
   }
   qc.setQueryData<Message[]>(keys.messages(conversationId), (old = []) => old.map(apply));
   void qc.invalidateQueries({ queryKey: keys.list });

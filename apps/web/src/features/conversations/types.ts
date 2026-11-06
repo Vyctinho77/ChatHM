@@ -68,6 +68,24 @@ export type Conversation = {
   assignee?: { id: string; name: string };
   unreadCount: number;
   tags: string[];
-  lastMessage: Message;
+  /** Ausente em atendimento recém-iniciado por nós (ainda sem mensagens). */
+  lastMessage?: Message;
 };
+
+/** Resultado de mensagem na busca. */
+export type MessageHit = {
+  id: string;
+  conversationId: string;
+  contactId: string;
+  openConversationId?: string;
+  contactName: string;
+  direction: "in" | "out";
+  kind: string;
+  snippet: string;
+  sentAt: string;
+  closed: boolean;
+};
+
+export type ContactRecord = Contact & { conversationId?: string };
+export type SearchResult = { contacts: ContactRecord[]; messages: MessageHit[] };
 

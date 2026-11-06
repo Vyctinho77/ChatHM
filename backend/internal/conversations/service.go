@@ -563,7 +563,10 @@ func (s *Service) Get(ctx context.Context, v Viewer, id string) (Conversation, e
 // Messages devolve as mensagens mais recentes (até 300) em ordem cronológica. Inclui as de
 // atendimentos anteriores do mesmo contato, mas só os que o viewer poderia ver: quem
 // atende o cliente que volta enxerga o histórico, sem expor conversas de outras equipes.
-func (s *Service) Messages(ctx context.Context, v Viewer, conversationID string) ([]Message, error) {
+func (s *Service) Messages(ctx context.Context, v Viewer, conversationID string, limit int) ([]Message, error) {
+	if limit < 1 || limit > 5000 {
+		limit = 300
+	}
 	if _, err := s.Get(ctx, v, conversationID); err != nil {
 		return nil, err
 	}
@@ -573,8 +576,8 @@ func (s *Service) Messages(ctx context.Context, v Viewer, conversationID string)
 		      JOIN conversations c ON c.id = m.conversation_id
 		      LEFT JOIN segments s ON s.id = c.segment_id
 		     WHERE c.contact_id = (SELECT contact_id FROM conversations WHERE id = $3) AND `+forViewer+`
-		     ORDER BY m.sent_at DESC, m.created_at DESC LIMIT 300) x
-		 ORDER BY sent_at, created_at`, v.ID, v.Admin, conversationID)
+		     ORDER BY m.sent_at DESC, m.created_at DESC LIMIT $4) x
+		 ORDER BY sent_at, created_at`, v.ID, v.Admin, conversationID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -775,19 +778,20 @@ func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInpu
 			status, assigneeName string
 			assignee             *string
 			segID, teamID        *string
-			lastJID              string
+			lastJID, contactWAID string
 		)
 		// Uma ida ao banco só: o chat_jid da última mensagem vem junto (cada consulta
 		// custa uma viagem de rede inteira até o Postgres).
 		err := tx.QueryRow(ctx, `
 			SELECT c.status, c.assignee_id, coalesce(u.name, ''), c.segment_id, s.team_id,
 			       coalesce((SELECT m.chat_jid FROM messages m WHERE m.conversation_id = c.id
-			                  ORDER BY m.sent_at DESC, m.created_at DESC LIMIT 1), '')
+			                  ORDER BY m.sent_at DESC, m.created_at DESC LIMIT 1), ''),
+			       (SELECT ct.wa_id FROM contacts ct WHERE ct.id = c.contact_id)
 			  FROM conversations c
 			  LEFT JOIN segments s ON s.id = c.segment_id
 			  LEFT JOIN users u ON u.id = c.assignee_id
 			 WHERE c.id = $3 AND `+forViewer+`
-			 FOR UPDATE OF c`, v.ID, v.Admin, convID).Scan(&status, &assignee, &assigneeName, &segID, &teamID, &lastJID)
+			 FOR UPDATE OF c`, v.ID, v.Admin, convID).Scan(&status, &assignee, &assigneeName, &segID, &teamID, &lastJID, &contactWAID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -843,7 +847,11 @@ func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInpu
 			if !s.sender.Connected() {
 				return ErrUnavailable
 			}
+			// Conversa iniciada por nós (sem mensagens ainda): o destino vem do identificador do contato.
 			if chatJID = lastJID; chatJID == "" {
+				chatJID = jidOf(contactWAID)
+			}
+			if chatJID == "" {
 				return pgx.ErrNoRows
 			}
 			if assignee == nil {

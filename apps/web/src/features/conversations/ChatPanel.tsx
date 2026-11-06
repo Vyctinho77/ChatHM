@@ -1,6 +1,8 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowDown, ArrowLeft, CheckCheck, CircleCheck, EllipsisVertical, PanelRight, Search, UserRoundPlus, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, CheckCheck, ChevronDown, ChevronUp, CircleCheck, EllipsisVertical, PanelRight, Search, UserRoundPlus, X } from "lucide-react";
+import { useSearchParams } from "react-router";
+import { fold, matches } from "@/lib/search";
 import { Avatar } from "@/components/Avatar";
 import { Menu, MenuItem } from "@/components/Menu";
 import { Alert, IconButton, Spinner } from "@/components/ui";
@@ -20,8 +22,6 @@ import { TransferMenu } from "./TransferMenu";
 import { buildOutgoing, capabilities, useConversationActions, useMessages, useSendMessage, type OutgoingDraft } from "./store";
 import { statusLabel } from "./receipts";
 import { segmentClass, segmentLabel, type Conversation, type Message } from "./types";
-
-const normalize = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
 export function ChatPanel({
   conversation: c,
@@ -43,6 +43,13 @@ export function ChatPanel({
   const [composerKey, setComposerKey] = useState(0);
   const scroller = useRef<HTMLDivElement>(null);
   const [search, setSearch] = useState<string | null>(null);
+  // Posição escolhida na lista de ocorrências; vale só para o termo atual (ao digitar de novo volta para a mais recente).
+  const [nav, setNav] = useState<{ term: string; idx: number }>({ term: "", idx: -1 });
+  const [flashDone, setFlashDone] = useState<string | null>(null);
+  const [params] = useSearchParams();
+  const targetMsg = params.get("msg");
+  const handledTarget = useRef<string | null>(null);
+  const loadedAll = useRef(false);
   // Mensagens com horário posterior à abertura da conversa entram animadas.
   // (O componente é remontado a cada conversa: ver key no ConversationsPage.)
   const [openedAt] = useState(() => Date.now());
@@ -94,17 +101,51 @@ export function ChatPanel({
     return undefined;
   }, [messages]);
 
-  const shown = useMemo(() => {
-    if (!messages || !search?.trim()) return messages ?? [];
-    const q = normalize(search.trim());
-    return messages.filter(
-      (m) =>
-        (m.kind === "text" && normalize(m.text).includes(q)) ||
-        (m.kind === "document" && normalize(m.fileName).includes(q)) ||
-        (m.kind === "image" && normalize(m.caption ?? "").includes(q)) ||
-        (m.kind === "unsupported" && normalize(m.text ?? "").includes(q)),
-    );
-  }, [messages, search]);
+  // A busca destaca e navega entre as ocorrências, sem esconder o resto da conversa.
+  const term = search?.trim() ?? "";
+  const shown = messages ?? [];
+  const matchIds = useMemo(() => {
+    if (term.length < 1 || !messages) return [];
+    return messages
+      .filter((m) => {
+        const text = m.kind === "text" ? m.text : m.kind === "document" ? m.fileName : m.kind === "image" ? (m.caption ?? "") : m.kind === "unsupported" ? (m.text ?? "") : "";
+        return !!text && (fold(text).includes(fold(term)) || matches(text, term));
+      })
+      .map((m) => m.id);
+  }, [messages, term]);
+  const matchIdx = matchIds.length ? (nav.term === term && nav.idx >= 0 ? Math.min(nav.idx, matchIds.length - 1) : matchIds.length - 1) : 0;
+  const currentMatch = matchIds.length ? matchIds[matchIdx] : undefined;
+
+  const scrollToMessage = useCallback((id: string) => {
+    requestAnimationFrame(() => document.getElementById(`msg-${id}`)?.scrollIntoView({ block: "center", behavior: "smooth" }));
+  }, []);
+
+  useEffect(() => {
+    if (currentMatch) scrollToMessage(currentMatch);
+  }, [currentMatch, scrollToMessage]);
+
+  function step(dir: 1 | -1) {
+    if (!matchIds.length) return;
+    setNav({ term, idx: (matchIdx + dir + matchIds.length) % matchIds.length });
+  }
+
+  // Link para uma mensagem (?msg=): rola até ela e a destaca por alguns segundos; se estiver além das mais recentes,
+  // carrega o histórico todo.
+  const targetLoaded = !!targetMsg && !!messages?.some((m) => m.id === targetMsg);
+  const flashId = targetLoaded && flashDone !== targetMsg ? targetMsg : null;
+  useEffect(() => {
+    if (!targetMsg || !messages || handledTarget.current === targetMsg) return;
+    if (targetLoaded) {
+      handledTarget.current = targetMsg;
+      scrollToMessage(targetMsg);
+      const t = setTimeout(() => setFlashDone(targetMsg), 3500);
+      return () => clearTimeout(t);
+    }
+    if (!loadedAll.current) {
+      loadedAll.current = true;
+      void actions.loadAllMessages(c.id);
+    }
+  }, [targetMsg, messages, targetLoaded, actions, c.id, scrollToMessage]);
 
   const mine = c.assignee?.id === actions.me.id;
   const closed = c.status === "closed";
@@ -262,12 +303,30 @@ export function ChatPanel({
             autoFocus
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => e.key === "Escape" && setSearch(null)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setSearch(null);
+              if (e.key === "Enter") {
+                e.preventDefault();
+                step(e.shiftKey ? -1 : 1);
+              }
+            }}
             placeholder="Pesquisar mensagens"
             aria-label="Pesquisar mensagens"
             className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
           />
-          {search && <span className="text-xs text-muted">{shown.length} resultado(s)</span>}
+          {term && (
+            <>
+              <span className="text-xs tabular-nums text-muted">
+                {matchIds.length ? `${matchIdx + 1} de ${matchIds.length}` : "Nenhum resultado"}
+              </span>
+              <IconButton label="Resultado anterior" onClick={() => step(-1)} disabled={matchIds.length < 2} className="size-7">
+                <ChevronUp className="size-4" />
+              </IconButton>
+              <IconButton label="Próximo resultado" onClick={() => step(1)} disabled={matchIds.length < 2} className="size-7">
+                <ChevronDown className="size-4" />
+              </IconButton>
+            </>
+          )}
           <IconButton label="Fechar pesquisa" onClick={() => setSearch(null)} className="size-7">
             <X className="size-4" />
           </IconButton>
@@ -304,11 +363,13 @@ export function ChatPanel({
                     </span>
                   </div>
                 )}
-                <div className={cn(showAuthor || (prev && prev.direction !== m.direction) ? "mt-1.5" : "")}>
+                <div id={`msg-${m.id}`} className={cn(showAuthor || (prev && prev.direction !== m.direction) ? "mt-1.5" : "")}>
                   <MessageBubble
                     m={m}
                     showAuthor={showAuthor}
                     animateIn={new Date(m.sentAt).getTime() > openedAt}
+                    term={term}
+                    emphasis={m.id === flashId || m.id === currentMatch}
                     onOpenImage={setViewerId}
                     onOpenPdf={setPdfId}
                   />
