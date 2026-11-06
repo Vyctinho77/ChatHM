@@ -112,3 +112,17 @@ export function usePeople() {
     queryFn: async () => (await get<{ people: Person[] }>("/people")).people,
   });
 }
+
+export type InviteResult = { user: User; inviteCode: string; expiresAt: string };
+export type InviteInput = { email: string; name: string; role: Role; teamIds: string[] };
+
+export function useInviteUser() {
+  const done = useInvalidateAll();
+  return useMutation({ mutationFn: (i: InviteInput) => post<InviteResult>("/users/invite", i), onSuccess: done });
+}
+
+/** Novo código de acesso; redefine o autenticador da pessoa (celular perdido ou trocado). */
+export function useReinviteUser() {
+  const done = useInvalidateAll();
+  return useMutation({ mutationFn: (id: string) => post<InviteResult>(`/users/${id}/invite`), onSuccess: done });
+}

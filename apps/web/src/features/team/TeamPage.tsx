@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { KeyRound, Pencil, Plus, ShieldCheck, Trash2, UserPlus } from "lucide-react";
+import { Copy, KeyRound, Pencil, Plus, ShieldCheck, Smartphone, Trash2, UserPlus } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { Alert, Button, Field, IconButton, Modal, Spinner } from "@/components/ui";
 import { ApiError, errorMessage, type FieldErrors } from "@/lib/api";
@@ -7,7 +7,9 @@ import { cn } from "@/lib/cn";
 import { useMe, type Role } from "@/features/auth/api";
 import {
   useCreateTeam,
-  useCreateUser,
+  useInviteUser,
+  useReinviteUser,
+  type InviteResult,
   useDeleteTeam,
   useMembers,
   useResetPassword,
@@ -77,6 +79,9 @@ function PeopleTab() {
   const { data: me } = useMe();
   const users = useUsers(true);
   const [creating, setCreating] = useState(false);
+  const [invited, setInvited] = useState<InviteResult | null>(null);
+  const reinvite = useReinviteUser();
+  const [reinviting, setReinviting] = useState<User | null>(null);
   const [editing, setEditing] = useState<User | null>(null);
   const [resetting, setResetting] = useState<User | null>(null);
 
@@ -84,7 +89,7 @@ function PeopleTab() {
     <>
       <div className="mb-4 flex justify-end">
         <Button onClick={() => setCreating(true)}>
-          <UserPlus className="size-4" /> Novo usuário
+          <UserPlus className="size-4" /> Convidar pessoa
         </Button>
       </div>
       {users.isPending && <Spinner className="mx-auto" />}
@@ -106,6 +111,9 @@ function PeopleTab() {
                 <IconButton label={`Editar ${u.name}`} onClick={() => setEditing(u)}>
                   <Pencil className="size-4" />
                 </IconButton>
+                <IconButton label={`Novo código de acesso para ${u.name}`} onClick={() => setReinviting(u)}>
+                  <Smartphone className="size-4" />
+                </IconButton>
                 <IconButton label={`Redefinir senha de ${u.name}`} onClick={() => setResetting(u)}>
                   <KeyRound className="size-4" />
                 </IconButton>
@@ -117,7 +125,7 @@ function PeopleTab() {
                 (u.lastLoginAt ? (
                   <span className="rounded-full bg-danger/15 px-2 py-0.5 text-danger">Inativo</span>
                 ) : (
-                  <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-700 dark:text-amber-300">Aguardando aprovação</span>
+                  <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-700 dark:text-amber-300">Aguardando primeiro acesso</span>
                 ))}
               {u.teams.map((t) => (
                 <span key={t.id} className="rounded-full border border-line px-2 py-0.5">
@@ -129,7 +137,31 @@ function PeopleTab() {
           </li>
         ))}
       </ul>
-      <CreateUserModal open={creating} onClose={() => setCreating(false)} />
+      <InviteUserModal open={creating} onClose={() => setCreating(false)} onInvited={setInvited} />
+      {invited && <InviteCodeModal result={invited} onClose={() => setInvited(null)} />}
+      {reinviting && (
+        <Modal open onClose={() => (reinvite.reset(), setReinviting(null))} title="Novo código de acesso">
+          {reinvite.data ? (
+            <InviteCodeBody result={reinvite.data} onClose={() => (reinvite.reset(), setReinviting(null))} />
+          ) : (
+            <div className="flex flex-col gap-4">
+              <p className="text-sm text-muted">
+                Gera um novo código para <strong className="text-fg">{reinviting.name}</strong> configurar o autenticador de novo. O
+                autenticador atual, os códigos de recuperação e as sessões abertas dela serão <strong>encerrados agora</strong>.
+              </p>
+              {reinvite.isError && <Alert>{errorMessage(reinvite.error)}</Alert>}
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="secondary" onClick={() => setReinviting(null)}>
+                  Cancelar
+                </Button>
+                <Button type="button" variant="danger" loading={reinvite.isPending} onClick={() => reinvite.mutate(reinviting.id)}>
+                  Redefinir e gerar código
+                </Button>
+              </div>
+            </div>
+          )}
+        </Modal>
+      )}
       {editing && <EditUserModal user={editing} onClose={() => setEditing(null)} />}
       {resetting && <ResetPasswordModal user={resetting} onClose={() => setResetting(null)} />}
     </>
@@ -182,49 +214,79 @@ function RoleSelect({ value, onChange }: { value: Role; onChange: (r: Role) => v
   );
 }
 
-function CreateUserModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const create = useCreateUser();
-  const [form, setForm] = useState({ name: "", email: "", password: "", role: "agent" as Role, teamIds: [] as string[] });
-  const fields = fieldsOf(create.error);
+function InviteUserModal({ open, onClose, onInvited }: { open: boolean; onClose: () => void; onInvited: (r: InviteResult) => void }) {
+  const invite = useInviteUser();
+  const [form, setForm] = useState({ name: "", email: "", role: "agent" as Role, teamIds: [] as string[] });
+  const fields = fieldsOf(invite.error);
 
   function close() {
-    create.reset();
-    setForm({ name: "", email: "", password: "", role: "agent", teamIds: [] });
+    invite.reset();
+    setForm({ name: "", email: "", role: "agent", teamIds: [] });
     onClose();
   }
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    await create.mutateAsync(form).then(close, () => undefined);
+    await invite.mutateAsync(form).then((r) => {
+      close();
+      onInvited(r);
+    }, () => undefined);
   }
 
   return (
-    <Modal open={open} onClose={close} title="Novo usuário">
+    <Modal open={open} onClose={close} title="Convidar pessoa">
       <form onSubmit={submit} className="flex flex-col gap-4">
-        {create.isError && Object.keys(fields).length === 0 && <Alert>{errorMessage(create.error)}</Alert>}
+        <p className="text-sm text-muted">
+          Você recebe um código de uso único para passar à pessoa. Ela o digita na tela de entrada, configura o app autenticador e
+          entra já ativa e nas equipes escolhidas. Ninguém precisa de senha.
+        </p>
+        {invite.isError && Object.keys(fields).length === 0 && <Alert>{errorMessage(invite.error)}</Alert>}
         <Field label="Nome" value={form.name} error={fields.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
         <Field label="E-mail" type="email" value={form.email} error={fields.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
-        <Field
-          label="Senha inicial"
-          type="password"
-          autoComplete="new-password"
-          value={form.password}
-          error={fields.password}
-          hint="Mínimo de 12 caracteres. Oriente a pessoa a trocar no primeiro acesso."
-          onChange={(e) => setForm({ ...form, password: e.target.value })}
-          required
-        />
         <RoleSelect value={form.role} onChange={(role) => setForm({ ...form, role })} />
         <TeamCheckboxes value={form.teamIds} onChange={(teamIds) => setForm({ ...form, teamIds })} />
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="secondary" onClick={close}>
             Cancelar
           </Button>
-          <Button type="submit" loading={create.isPending}>
-            Cadastrar
+          <Button type="submit" loading={invite.isPending}>
+            Gerar convite
           </Button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+function InviteCodeBody({ result, onClose }: { result: InviteResult; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const msg = `Seu acesso ao ChatHM: abra o app, toque em "Tenho um convite" e use o e-mail ${result.user.email} com o código ${result.inviteCode}. Vale até ${new Date(result.expiresAt).toLocaleString("pt-BR")}.`;
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-sm text-muted">
+        Passe este código a <strong className="text-fg">{result.user.name}</strong>. Ele aparece só agora e vale por 72 horas, uma única vez.
+      </p>
+      <code className="block rounded-xl border border-line bg-elevated p-3 text-center font-mono text-2xl tracking-widest">{result.inviteCode}</code>
+      <Button
+        type="button"
+        variant="secondary"
+        onClick={() => void navigator.clipboard?.writeText(msg).then(() => setCopied(true))}
+      >
+        <Copy className="size-4" /> {copied ? "Mensagem copiada" : "Copiar mensagem pronta"}
+      </Button>
+      <div className="flex justify-end">
+        <Button type="button" onClick={onClose}>
+          Pronto
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function InviteCodeModal({ result, onClose }: { result: InviteResult; onClose: () => void }) {
+  return (
+    <Modal open onClose={onClose} title="Convite criado">
+      <InviteCodeBody result={result} onClose={onClose} />
     </Modal>
   );
 }

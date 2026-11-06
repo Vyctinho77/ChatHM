@@ -64,6 +64,7 @@ func NewServices(ctx context.Context, cfg config.Config, db *pgxpool.Pool, opt O
 		RequireAdminMFA:   cfg.RequireAdminMFA,
 		AllowedOrigins:    cfg.AllowedOrigins,
 		AllowSelfRegister: cfg.AllowSelfRegister,
+		SetupToken:        cfg.SetupToken,
 	}, opt.Hasher, box)
 	if err != nil {
 		return nil, err

@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { ShieldCheck, ShieldOff } from "lucide-react";
 import { Alert, Button, Field } from "@/components/ui";
 import { ApiError, errorMessage, post } from "@/lib/api";
-import { useMe } from "@/features/auth/api";
+import { regenerateRecoveryCodes, useMe } from "@/features/auth/api";
 import { ThemeSwitcher } from "@/features/shell/ThemeSwitcher";
 
 function Card({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
@@ -55,6 +55,8 @@ export function SettingsPage() {
           </p>
         </Card>
 
+        {me.user.mfaEnabled && <RecoveryCodes />}
+
         <ChangePassword />
 
         <Card title="Notificações" description="Alertas de novas mensagens no navegador.">
@@ -103,6 +105,41 @@ function ChangePassword() {
           Salvar nova senha
         </Button>
       </form>
+    </Card>
+  );
+}
+
+function RecoveryCodes() {
+  const [codes, setCodes] = useState<string[] | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  return (
+    <Card title="Códigos de recuperação" description="Entram uma única vez se você perder o celular. Gerar novos invalida os anteriores.">
+      {error && <Alert>{error}</Alert>}
+      {codes && (
+        <ul className="mb-3 grid grid-cols-2 gap-2 rounded-xl border border-line bg-elevated p-3 font-mono text-[13px]">
+          {codes.map((c) => (
+            <li key={c}>{c}</li>
+          ))}
+        </ul>
+      )}
+      <Button
+        variant="secondary"
+        loading={loading}
+        onClick={async () => {
+          setLoading(true);
+          setError("");
+          try {
+            setCodes((await regenerateRecoveryCodes()).recoveryCodes);
+          } catch (e) {
+            setError(errorMessage(e));
+          } finally {
+            setLoading(false);
+          }
+        }}
+      >
+        {codes ? "Gerar outros códigos" : "Gerar novos códigos"}
+      </Button>
     </Card>
   );
 }

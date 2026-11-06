@@ -40,11 +40,25 @@ export const login = (email: string, password: string) => post<Me>("/auth/login"
 export const register = (name: string, email: string, password: string) =>
   post<{ pending: true }>("/auth/register", { name, email, password });
 
-/** Opções públicas da tela de entrada (o cadastro próprio vem desligado por padrão). */
+/** Entra só com o código do app autenticador (ou um código de recuperação). */
+export const loginWithCode = (email: string, code: string) => post<Me>("/auth/login", { email, code });
+
+export type Enrollment = { secret: string; otpauthUrl: string; token: string; name?: string };
+export type MeWithCodes = Me & { recoveryCodes: string[] };
+
+export const setupStart = (name: string, email: string, installCode?: string) =>
+  post<Enrollment>("/setup/start", { name, email, installCode: installCode ?? "" });
+export const setupFinish = (token: string, code: string) => post<MeWithCodes>("/setup/finish", { token, code });
+export const enrollStart = (email: string, inviteCode: string) => post<Enrollment>("/auth/enroll/start", { email, inviteCode });
+export const enrollFinish = (email: string, inviteCode: string, token: string, code: string) =>
+  post<MeWithCodes>("/auth/enroll/finish", { email, inviteCode, token, code });
+export const regenerateRecoveryCodes = () => post<{ recoveryCodes: string[] }>("/auth/recovery-codes");
+
+/** Opções públicas da tela de entrada. */
 export function useAuthOptions() {
   return useQuery({
     queryKey: ["auth", "options"] as const,
-    queryFn: () => get<{ selfRegister: boolean }>("/auth/options"),
+    queryFn: () => get<{ selfRegister: boolean; needsSetup: boolean; setupCode: boolean }>("/auth/options"),
     staleTime: 5 * 60_000,
     retry: false,
   });

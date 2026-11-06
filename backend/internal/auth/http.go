@@ -201,9 +201,12 @@ func (s *Service) me(sess *Session) MeResponse {
 func (s *Service) PublicRoutes(r chi.Router) {
 	r.With(s.CheckOrigin).Post("/auth/login", s.handleLogin)
 	r.With(s.CheckOrigin).Post("/auth/register", s.handleRegister)
-	r.Get("/auth/options", func(w http.ResponseWriter, _ *http.Request) {
-		httpx.JSON(w, http.StatusOK, map[string]any{"selfRegister": s.cfg.AllowSelfRegister})
-	})
+	r.Get("/auth/options", s.handleOptions)
+	r.Get("/setup/status", s.handleSetupStatus)
+	r.With(s.CheckOrigin).Post("/setup/start", s.handleSetupStart)
+	r.With(s.CheckOrigin).Post("/setup/finish", s.handleSetupFinish)
+	r.With(s.CheckOrigin).Post("/auth/enroll/start", s.handleEnrollStart)
+	r.With(s.CheckOrigin).Post("/auth/enroll/finish", s.handleEnrollFinish)
 }
 
 // SessionRoutes: rotas disponíveis mesmo com MFA pendente / não configurado.
@@ -218,20 +221,36 @@ func (s *Service) SessionRoutes(r chi.Router) {
 // ProtectedRoutes: exigem sessão completa (MFA concluído quando aplicável).
 func (s *Service) ProtectedRoutes(r chi.Router) {
 	r.Post("/auth/password", s.handleChangePassword)
+	r.Post("/auth/recovery-codes", s.handleRecoveryCodes)
 }
 
 func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
+		Code     string `json:"code"` // código do autenticador (ou de recuperação): entra sem senha
 	}
 	if !httpx.Decode(w, r, &in) {
 		return
 	}
-	token, sess, err := s.Login(r.Context(), in.Email, in.Password, ClientFrom(r))
+	var (
+		token string
+		sess  *Session
+		err   error
+	)
+	byCode := in.Password == "" && in.Code != ""
+	if byCode {
+		token, sess, err = s.LoginWithCode(r.Context(), in.Email, in.Code, ClientFrom(r))
+	} else {
+		token, sess, err = s.Login(r.Context(), in.Email, in.Password, ClientFrom(r))
+	}
 	switch {
 	case errors.Is(err, ErrInvalidCredentials):
-		httpx.Error(w, http.StatusUnauthorized, "invalid_credentials", "E-mail ou senha inválidos.")
+		msg := "E-mail ou senha inválidos."
+		if byCode {
+			msg = "E-mail ou código inválidos."
+		}
+		httpx.Error(w, http.StatusUnauthorized, "invalid_credentials", msg)
 	case errors.Is(err, ErrTooManyAttempts):
 		w.Header().Set("Retry-After", "900")
 		httpx.Error(w, http.StatusTooManyRequests, "too_many_attempts", "Muitas tentativas. Tente novamente mais tarde.")

@@ -27,6 +27,8 @@ func (h *Handler) AdminRoutes(r chi.Router) {
 	r.Get("/users/{id}", h.get)
 	r.Patch("/users/{id}", h.update)
 	r.Post("/users/{id}/password", h.resetPassword)
+	r.Post("/users/invite", h.invite)
+	r.Post("/users/{id}/invite", h.reinvite)
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
@@ -132,4 +134,26 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	default:
 		httpx.Internal(w, r, err)
 	}
+}
+
+func (h *Handler) invite(w http.ResponseWriter, r *http.Request) {
+	var in InviteInput
+	if !httpx.Decode(w, r, &in) {
+		return
+	}
+	res, err := h.svc.Invite(r.Context(), auth.MustFromContext(r.Context()).UserID, httpx.ClientIP(r), in)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusCreated, res)
+}
+
+func (h *Handler) reinvite(w http.ResponseWriter, r *http.Request) {
+	res, err := h.svc.Reinvite(r.Context(), auth.MustFromContext(r.Context()).UserID, httpx.ClientIP(r), chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, res)
 }

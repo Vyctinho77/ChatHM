@@ -39,6 +39,8 @@ type Config struct {
 	AllowedOrigins  []string
 	// AllowSelfRegister habilita POST /auth/register (contas nascem inativas, aguardando o administrador).
 	AllowSelfRegister bool
+	// SetupToken (opcional): código de instalação exigido na configuração inicial do primeiro administrador.
+	SetupToken string
 }
 
 const (

@@ -135,12 +135,31 @@ export async function demoApi(method: string, path: string, body: Body = {}): Pr
       return { pending: true };
     }
     case "GET /auth/options":
-      return { selfRegister: true };
+      return { selfRegister: true, needsSetup: false, setupCode: false };
+    case "POST /auth/recovery-codes":
+      requireSession();
+      return { recoveryCodes: Array.from({ length: 8 }, () => `${uid().slice(0, 5)}-${uid().slice(0, 5)}`.toUpperCase()) };
+    case "POST /users/invite": {
+      requireAdmin();
+      const email = String(body.email ?? "").trim().toLowerCase();
+      const name = String(body.name ?? "").trim();
+      const f: Record<string, string> = {};
+      if (!name) f.name = "Informe um nome de até 120 caracteres.";
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) f.email = "E-mail inválido.";
+      else if (users.some((u) => u.email === email)) f.email = "E-mail já cadastrado.";
+      if (Object.keys(f).length) throw invalid(f);
+      const u: U = { id: uid(), name, email, password: uid(), role: body.role === "admin" ? "admin" : "agent", isActive: false, mfaEnabled: false, theme: "system", lastLoginAt: null, createdAt: now() };
+      users.push(u);
+      for (const t of (body.teamIds as string[] | undefined) ?? []) members.add(`${t}:${u.id}`);
+      return { user: userView(u), inviteCode: "DEMO7-K2M9X", expiresAt: new Date(Date.now() + 72 * 3600_000).toISOString() };
+    }
     case "GET /auth/me":
       return me(requireSession());
     case "POST /auth/login": {
       const u = users.find((x) => x.email === String(body.email ?? "").trim().toLowerCase());
-      if (!u || !u.isActive || u.password !== body.password) throw new DemoError(401, "invalid_credentials", "E-mail ou senha inválidos.");
+      // Na demonstração, qualquer código de 6 dígitos vale como código do autenticador.
+      const byCode = !body.password && /^\d{6}$/.test(String(body.code ?? ""));
+      if (!u || !u.isActive || (!byCode && u.password !== body.password)) throw new DemoError(401, "invalid_credentials", body.password ? "E-mail ou senha inválidos." : "E-mail ou código inválidos.");
       u.lastLoginAt = now();
       session = u;
       return me(u);
@@ -327,6 +346,13 @@ export async function demoApi(method: string, path: string, body: Body = {}): Pr
       if (typeof body.isActive === "boolean") u.isActive = body.isActive;
       if (session?.id === u.id && u.role !== "admin") session = u;
       return userView(u);
+    }
+    case "POST /users/:id/invite": {
+      requireAdmin();
+      const u = users.find((x) => x.id === id);
+      if (!u) throw notFound("Usuário");
+      u.mfaEnabled = false;
+      return { user: userView(u), inviteCode: "DEMO7-K2M9X", expiresAt: new Date(Date.now() + 72 * 3600_000).toISOString() };
     }
     case "POST /users/:id/password": {
       requireAdmin();
