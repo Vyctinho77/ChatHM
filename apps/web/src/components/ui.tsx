@@ -7,7 +7,7 @@ import {
   type InputHTMLAttributes,
   type ReactNode,
 } from "react";
-import { LoaderCircle, X } from "lucide-react";
+import { Info, LoaderCircle, TriangleAlert, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -92,16 +92,13 @@ export const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
   );
 });
 
+/** Aviso simples, no estilo do WhatsApp: ícone pequeno e texto colorido, sem caixa, borda ou fundo. */
 export function Alert({ children, tone = "danger" }: { children: ReactNode; tone?: "danger" | "info" }) {
+  const Icon = tone === "danger" ? TriangleAlert : Info;
   return (
-    <div
-      role="alert"
-      className={cn(
-        "rounded-lg border px-3 py-2 text-[13px]",
-        tone === "danger" ? "border-danger/40 bg-danger/10 text-danger" : "border-accent/40 bg-accent/10 text-fg",
-      )}
-    >
-      {children}
+    <div role="alert" className={cn("flex items-start gap-2 text-[13px] leading-snug", tone === "danger" ? "text-danger" : "text-muted")}>
+      <Icon className="mt-px size-4 shrink-0" aria-hidden />
+      <div className="min-w-0">{children}</div>
     </div>
   );
 }

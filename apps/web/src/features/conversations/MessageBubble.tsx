@@ -212,9 +212,10 @@ export function MessageBubble({
         style={{ transformOrigin: out ? "100% 100%" : "0% 100%" }}
         className={cn(
           "relative max-w-[min(32rem,80%)] rounded-lg text-[13.5px] leading-[1.4] shadow-sm transition-shadow duration-300",
-          emphasis && "ring-2 ring-accent ring-offset-2 ring-offset-transparent",
           m.kind === "image" ? "p-[3px]" : "px-2.5 py-1.5",
-          out ? "rounded-tr-sm bg-out text-out-fg" : "rounded-tl-sm bg-in text-fg",
+          out ? "rounded-tr-sm bg-out" : "rounded-tl-sm bg-in",
+          // Mensagem em foco (busca ou link): texto em azul, sem contorno.
+          emphasis ? "text-accent" : out ? "text-out-fg" : "text-fg",
           m.status === "failed" && "ring-1 ring-danger",
         )}
       >

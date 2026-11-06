@@ -49,7 +49,7 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
     <Modal open={open} onClose={close} title="Nova conversa">
       <div className="flex flex-col gap-3">
         {error && <Alert>{fields.phone ?? error}</Alert>}
-        <label className="flex items-center gap-2 rounded-lg border border-line bg-elevated px-3 py-2 text-sm focus-within:border-accent">
+        <label className="flex items-center gap-2 rounded-lg border border-line bg-elevated px-3 py-2 text-sm focus-within:border-muted">
           <Search className="size-4 shrink-0 text-muted" />
           <input
             autoFocus

@@ -90,7 +90,7 @@ export function MfaSetupPage() {
           <details className="text-sm text-muted">
             <summary className="cursor-pointer">Não consegue escanear?</summary>
             <p className="mt-2">Digite esta chave no aplicativo:</p>
-            <code className="mt-1 block break-all rounded-lg bg-elevated p-2 font-mono text-xs text-fg">
+            <code className="mt-1 block break-all font-mono text-xs text-fg">
               {setup.secret}
             </code>
           </details>

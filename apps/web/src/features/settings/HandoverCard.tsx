@@ -43,7 +43,7 @@ export function HandoverCard() {
   }
 
   return (
-    <section className="rounded-xl border border-danger/40 bg-panel p-5">
+    <section className="border-t border-line py-6">
       <h2 className="flex items-center gap-2 font-semibold text-danger">
         <TriangleAlert className="size-4" /> Entregar instância
       </h2>
@@ -64,8 +64,8 @@ export function HandoverCard() {
       <Modal open={open} onClose={close} title="Entregar instância">
         <form onSubmit={submit} className="flex flex-col gap-4">
           <Alert>
-            Isto <strong>apaga tudo e não pode ser desfeito</strong>: usuários, equipes, conversas, contatos, anexos e a sessão do
-            WhatsApp (o aparelho será desvinculado). Faça uma cópia antes, se precisar guardar algo.
+            <strong>Apaga tudo e não pode ser desfeito:</strong> usuários, equipes, conversas, contatos, anexos e a sessão do WhatsApp
+            (o aparelho será desvinculado).
           </Alert>
           {error && <Alert>{error}</Alert>}
           <Field

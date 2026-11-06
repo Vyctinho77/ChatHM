@@ -12,7 +12,7 @@ export function HandoverDone({ result, onClose }: { result: HandoverResult; onCl
     <AuthLayout title="Instância entregue" subtitle="Tudo foi apagado e o WhatsApp foi desconectado.">
       <div className="flex flex-col gap-4">
         <p className="text-sm text-muted">Envie ao novo cliente o endereço e este código. Ele vale uma única vez e não aparece de novo.</p>
-        <div className="rounded-xl border border-line bg-elevated p-3 text-center">
+        <div className="border-y border-line py-4 text-center">
           <p className="text-xs text-muted">{result.url}</p>
           <code className="mt-1 block font-mono text-2xl tracking-widest">{result.code}</code>
         </div>

@@ -16,13 +16,13 @@ function Item({ item, extra, onNavigate }: { item: NavItem; extra?: React.ReactN
       className={({ isActive }) =>
         cn(
           "flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-[13px] transition-colors",
-          isActive ? "bg-accent/15 font-medium text-fg ring-1 ring-accent/30" : "text-fg/85 hover:bg-hover",
+          isActive ? "bg-accent font-medium text-accent-fg" : "text-fg/85 hover:bg-hover",
         )
       }
     >
       {({ isActive }) => (
         <>
-          <Icon className={cn("size-[18px] shrink-0", isActive ? "text-accent" : "text-muted")} />
+          <Icon className={cn("size-[18px] shrink-0", isActive ? "text-accent-fg" : "text-muted")} />
           <span className="truncate">{item.label}</span>
           {extra && <span className="ml-auto">{extra}</span>}
         </>
@@ -48,7 +48,7 @@ export function Sidebar({ me, onNavigate }: { me: Me; onNavigate?: () => void })
             onNavigate={onNavigate}
             extra={
               item.to === "/conversas" && unread > 0 ? (
-                <Badge className="bg-accent text-accent-fg">{unread}</Badge>
+                <Badge className="bg-unread text-white">{unread}</Badge>
               ) : undefined
             }
           />

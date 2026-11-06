@@ -146,7 +146,7 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
       </div>
 
       <div className="px-3 pt-2.5">
-        <label className="flex h-8 items-center gap-2 rounded-lg border border-line bg-elevated px-2.5 focus-within:border-accent">
+        <label className="flex h-8 items-center gap-2 rounded-lg border border-line bg-elevated px-2.5 focus-within:border-muted">
           <Search className="size-3.5 shrink-0 text-muted" />
           <input
             ref={searchRef}
@@ -171,10 +171,8 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
             aria-selected={filter === c.key}
             onClick={() => setFilter(c.key)}
             className={cn(
-              "inline-flex h-7 shrink-0 items-center gap-1 rounded-full border px-2.5 text-xs transition-colors",
-              filter === c.key
-                ? "border-accent bg-accent text-accent-fg"
-                : "border-line text-fg/85 hover:bg-hover",
+              "inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2.5 text-xs transition-colors",
+              filter === c.key ? "font-semibold text-accent" : "text-muted hover:bg-hover hover:text-fg",
             )}
           >
             {c.label}
@@ -277,7 +275,7 @@ function ConversationRow({
         {selected && (
           <motion.span
             layoutId="conversation-selected"
-            className="absolute inset-0 rounded-lg bg-selected"
+            className="absolute inset-0 rounded-lg bg-hover"
             transition={{ type: "spring", stiffness: 500, damping: 40 }}
             aria-hidden
           />

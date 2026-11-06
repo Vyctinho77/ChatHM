@@ -52,7 +52,7 @@ export function TagsPage() {
         <div className="mt-5">
           {tags.isPending && <Spinner className="mx-auto" />}
           {tags.isError && <Alert>{errorMessage(tags.error)}</Alert>}
-          <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-panel">
+          <ul className="divide-y divide-line border-y border-line">
             {tags.data?.length === 0 && <li className="px-4 py-6 text-center text-[13px] text-muted">Nenhuma etiqueta cadastrada.</li>}
             {tags.data?.map((t) => (
               <li key={t.id} className="flex items-center gap-3 px-4 py-2.5">

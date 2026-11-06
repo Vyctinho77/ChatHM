@@ -39,7 +39,7 @@ export function WhatsAppPage() {
         {error && <Alert>{errorMessage(error)}</Alert>}
 
         {conn && (
-          <section className="rounded-xl border border-line bg-panel">
+          <section className="border-y border-line">
             <header className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-3.5">
               <span className={cn("size-2.5 rounded-full", stateDot[conn.state], conn.state === "pending_qr" && "animate-pulse")} />
               <span className="font-medium">{conn.state === "pending_qr" && conn.pairingComplete ? "QR Code lido · Confirmando conexão" : stateLabel[conn.state]}</span>
@@ -133,7 +133,7 @@ export function WhatsAppPage() {
                   {conn.state === "connected" && (
                     <>
                       <p className="text-sm text-muted" role="status">{conn.preparing ? "WhatsApp conectado. Preparando mensagens e sincronização…" : "WhatsApp conectado. Pronto para receber mensagens."}</p>
-                      <div className="rounded-lg border border-line bg-app p-3 text-[13px]" role="status" aria-live="polite">
+                      <div className="text-[13px]" role="status" aria-live="polite">
                         <p className="font-medium">{conn.sync?.state === "syncing" ? "Importando dados do WhatsApp…" : conn.sync?.messages ? "Histórico recebido" : conn.sync?.contacts ? "Contatos sincronizados · aguardando mensagens" : "Aguardando o histórico do WhatsApp…"}</p>
                         {conn.sync && <p className="mt-1 text-muted">{conn.sync.messages} mensagens importadas · {conn.sync.contacts} registros de contato processados</p>}
                         {conn.sync?.state === "partial" && <p className="mt-1 text-danger">Não foi possível importar {conn.sync.failed} registros.</p>}
@@ -179,7 +179,7 @@ export function WhatsAppPage() {
           </section>
         )}
 
-        <div className="flex gap-3 rounded-xl border border-line bg-panel px-5 py-4 text-[12.5px] text-muted">
+        <div className="flex gap-3 border-t border-line px-5 py-4 text-[12.5px] text-muted">
           <ShieldAlert className="mt-0.5 size-4 shrink-0" />
           <p>
             A conexão usa o protocolo do WhatsApp Web (não oficial) e pode ficar instável ou sofrer restrições do
@@ -222,7 +222,7 @@ function Simulator() {
     sim.mutate(form);
   }
   return (
-    <section className="rounded-xl border border-dashed border-line bg-panel px-5 py-4">
+    <section className="border-t border-line px-5 py-4">
       <h2 className="flex items-center gap-2 text-[13.5px] font-semibold">
         <MessageSquarePlus className="size-4" /> Simular mensagem recebida
       </h2>

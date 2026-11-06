@@ -8,7 +8,7 @@ import { HandoverCard } from "./HandoverCard";
 
 function Card({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-line bg-panel p-5">
+    <section className="border-t border-line py-6 first:border-t-0 first:pt-0">
       <h2 className="font-semibold">{title}</h2>
       {description && <p className="mt-0.5 text-sm text-muted">{description}</p>}
       <div className="mt-4">{children}</div>
@@ -21,8 +21,8 @@ export function SettingsPage() {
   if (!me) return null;
   return (
     <div className="h-full overflow-y-auto bg-app">
-      <div className="mx-auto flex max-w-2xl flex-col gap-4 px-4 py-6 sm:px-8">
-        <h1 className="text-xl font-semibold">Configurações</h1>
+      <div className="mx-auto flex max-w-2xl flex-col px-4 py-6 sm:px-8">
+        <h1 className="mb-6 text-xl font-semibold">Configurações</h1>
 
         <Card title="Aparência" description="Claro, escuro ou acompanhar o sistema. Salvo no seu usuário.">
           <ThemeSwitcher className="w-fit" />
@@ -120,7 +120,7 @@ function RecoveryCodes() {
     <Card title="Códigos de recuperação" description="Entram uma única vez se você perder o celular. Gerar novos invalida os anteriores.">
       {error && <Alert>{error}</Alert>}
       {codes && (
-        <ul className="mb-3 grid grid-cols-2 gap-2 rounded-xl border border-line bg-elevated p-3 font-mono text-[13px]">
+        <ul className="mb-3 grid grid-cols-2 gap-x-6 gap-y-1.5 font-mono text-[13px]">
           {codes.map((c) => (
             <li key={c}>{c}</li>
           ))}

@@ -21,7 +21,7 @@ export function QueuesConfigPage() {
       <PageBody>
         {segments.isPending && <Spinner className="mx-auto mt-10" />}
         {segments.data?.length === 0 && (
-          <div className="mx-4 mt-6 rounded-xl border border-dashed border-line p-5 text-sm">
+          <div className="mx-4 mt-6 border-b border-line pb-5 text-sm">
             <p className="font-medium">Nenhum segmento ainda</p>
             <p className="mt-1 text-muted">
               Segmentos organizam as conversas por assunto e as encaminham à equipe certa, por palavras-chave. Até você criar o primeiro,

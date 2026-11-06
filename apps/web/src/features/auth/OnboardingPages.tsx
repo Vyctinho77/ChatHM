@@ -60,7 +60,7 @@ function AuthenticatorStep({
       </div>
       <details className="text-sm text-muted">
         <summary className="cursor-pointer">Não consegue escanear?</summary>
-        <code className="mt-2 block break-all rounded-lg bg-elevated p-2 font-mono text-xs text-fg">{enrollment.secret}</code>
+        <code className="mt-2 block break-all font-mono text-xs text-fg">{enrollment.secret}</code>
       </details>
       <CodeInput value={code} onChange={setCode} error={error} />
       <Button type="submit" loading={busy} className="h-10" disabled={code.length !== 6}>
@@ -77,7 +77,7 @@ function RecoveryStep({ result, onDone }: { result: MeWithCodes; onDone: () => v
   return (
     <AuthLayout title="Guarde seus códigos" subtitle="Se perder o celular, cada código entra uma única vez. Não aparecem de novo.">
       <div className="flex flex-col gap-4">
-        <ul className="grid grid-cols-2 gap-2 rounded-xl border border-line bg-elevated p-3 font-mono text-[13px]">
+        <ul className="grid grid-cols-2 gap-x-6 gap-y-1.5 border-y border-line py-3 font-mono text-[13px]">
           {result.recoveryCodes.map((c) => (
             <li key={c}>{c}</li>
           ))}

@@ -111,7 +111,7 @@ function PeopleTab() {
       </div>
       {users.isPending && <Spinner className="mx-auto" />}
       {users.isError && <Alert>{errorMessage(users.error)}</Alert>}
-      <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-panel">
+      <ul className="divide-y divide-line border-y border-line">
         {users.data?.map((u) => (
           <li key={u.id} className={cn("flex flex-col gap-2 px-4 py-3 md:flex-row md:items-center md:gap-3", !u.isActive && "opacity-60")}>
             <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -283,7 +283,7 @@ function InviteCodeBody({ result, onClose }: { result: InviteResult; onClose: ()
       <p className="text-sm text-muted">
         Passe este código a <strong className="text-fg">{result.user.name}</strong>. Ele aparece só agora e vale por 72 horas, uma única vez.
       </p>
-      <code className="block rounded-xl border border-line bg-elevated p-3 text-center font-mono text-2xl tracking-widest">{result.inviteCode}</code>
+      <code className="block border-y border-line py-4 text-center font-mono text-2xl tracking-widest">{result.inviteCode}</code>
       <Button
         type="button"
         variant="secondary"
@@ -409,7 +409,7 @@ function TeamsTab({ isAdmin }: { isAdmin: boolean }) {
       )}
       {teams.isPending && <Spinner className="mx-auto" />}
       {teams.data?.length === 0 && (
-        <p className="rounded-xl border border-dashed border-line p-8 text-center text-sm text-muted">
+        <p className="py-10 text-center text-sm text-muted">
           {isAdmin
             ? "Nenhuma equipe ainda. Crie a primeira com “Nova equipe” (ex.: Folha de pagamento, Fiscal, Atendimento). As equipes definem quais filas cada pessoa enxerga."
             : "Você ainda não participa de nenhuma equipe."}
@@ -428,7 +428,7 @@ function TeamCard({ team, isAdmin }: { team: Team; isAdmin: boolean }) {
   const remove = useDeleteTeam();
   const [confirming, setConfirming] = useState(false);
   return (
-    <article className="rounded-xl border border-line bg-panel p-4">
+    <article className="border-b border-line pb-4">
       <header className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <h2 className="font-semibold">{team.name}</h2>
@@ -521,7 +521,7 @@ function TeamAccessCard() {
   const fields = fieldsOf(setDomain.error);
 
   return (
-    <section className="mb-6 rounded-xl border border-line bg-panel p-4">
+    <section className="mb-6 border-b border-line pb-6">
       <h2 className="font-semibold">Acesso da equipe</h2>
       <p className="mt-0.5 text-sm text-muted">Envie este token. Quem o usar cria a própria conta e já entra.</p>
       {access.isPending && <Spinner className="mt-3" />}
@@ -529,7 +529,7 @@ function TeamAccessCard() {
       {access.data && (
         <>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <code className="min-w-48 flex-1 rounded-lg border border-line bg-elevated px-3 py-2 text-center font-mono text-lg tracking-widest">
+            <code className="min-w-48 flex-1 border-b border-line py-2 text-center font-mono text-lg tracking-widest">
               {shown ? token : "••••-••••-••••"}
             </code>
             <IconButton label={shown ? "Ocultar token" : "Mostrar token"} onClick={() => setShown(!shown)}>
