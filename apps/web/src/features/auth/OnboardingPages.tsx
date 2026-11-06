@@ -209,7 +209,7 @@ export function SetupPage({ needsInstallCode }: { needsInstallCode: boolean }) {
   // Passo 0 (opcional): código de instalação definido no servidor.
   if (!codeOk) {
     return (
-      <AuthLayout title="Instalação" subtitle="Digite o código de instalação definido no servidor.">
+      <AuthLayout title="Instalação" subtitle="Digite o código de instalação que você recebeu.">
         <form
           onSubmit={(e) => {
             e.preventDefault();

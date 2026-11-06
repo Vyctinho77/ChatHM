@@ -15,10 +15,17 @@ func (s *Service) handleOptions(w http.ResponseWriter, r *http.Request) {
 		httpx.Internal(w, r, err)
 		return
 	}
+	code := false
+	if needs {
+		if code, err = s.installCodeRequired(r.Context()); err != nil {
+			httpx.Internal(w, r, err)
+			return
+		}
+	}
 	httpx.JSON(w, http.StatusOK, map[string]any{
 		"selfRegister": s.cfg.AllowSelfRegister,
 		"needsSetup":   needs,
-		"setupCode":    needs && s.cfg.SetupToken != "", // a tela pede o código de instalação
+		"setupCode":    code, // a tela pede o código de instalação
 	})
 }
 

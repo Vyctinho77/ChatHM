@@ -209,8 +209,8 @@ func (s *Service) SetupStart(ctx context.Context, name, email, installCode strin
 	if !needs {
 		return Enrollment{}, ErrSetupDone
 	}
-	if s.cfg.SetupToken != "" && subtle.ConstantTimeCompare([]byte(strings.TrimSpace(installCode)), []byte(s.cfg.SetupToken)) != 1 {
-		return Enrollment{}, ErrSetupForbidden
+	if err := s.checkInstallCode(ctx, installCode, c.IP); err != nil {
+		return Enrollment{}, err
 	}
 	if s.waConnected != nil && !s.waConnected() {
 		return Enrollment{}, ErrSetupNeedsWhatsApp
@@ -265,6 +265,9 @@ func (s *Service) SetupFinish(ctx context.Context, token, code string, c Client)
 			return err
 		}
 		if codes, err = insertRecoveryCodes(ctx, tx, id); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE install_codes SET used_at = now() WHERE used_at IS NULL`); err != nil { // código de entrega: uso único
 			return err
 		}
 		if _, err := s.storeNewOfficeToken(ctx, tx, false); err != nil { // token do escritório nasce com o administrador

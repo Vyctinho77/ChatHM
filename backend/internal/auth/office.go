@@ -139,8 +139,8 @@ func (s *Service) SetAllowedDomain(ctx context.Context, actorID, ip, domain stri
 // ---------------------------------------------------------------------------
 // Instalação inicial (QR do WhatsApp) — só enquanto não há administrador
 
-// CheckSetupOpen: a instalação inicial está aberta (sem administrador) e, se exigido, o código de instalação confere.
-func (s *Service) CheckSetupOpen(ctx context.Context, installCode string) error {
+// CheckSetupOpen: a instalação inicial está aberta (sem administrador) e o código de instalação confere.
+func (s *Service) CheckSetupOpen(ctx context.Context, installCode, ip string) error {
 	needs, err := s.NeedsSetup(ctx)
 	if err != nil {
 		return err
@@ -148,10 +148,7 @@ func (s *Service) CheckSetupOpen(ctx context.Context, installCode string) error 
 	if !needs {
 		return ErrSetupDone
 	}
-	if s.cfg.SetupToken != "" && subtle.ConstantTimeCompare([]byte(strings.TrimSpace(installCode)), []byte(s.cfg.SetupToken)) != 1 {
-		return ErrSetupForbidden
-	}
-	return nil
+	return s.checkInstallCode(ctx, installCode, ip)
 }
 
 // ---------------------------------------------------------------------------

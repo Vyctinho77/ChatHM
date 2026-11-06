@@ -20,7 +20,7 @@ import (
 type HTTPHandler struct {
 	m *Manager
 	// gate libera o pareamento da instalação inicial (sem administrador) e confere o código de instalação.
-	gate func(ctx context.Context, installCode string) error
+	gate func(ctx context.Context, installCode, ip string) error
 	mu   sync.Mutex
 	key  string // chave da tela que iniciou o pareamento: só ela vê o QR
 	// sim permite simular mensagens recebidas (somente provedor fake em desenvolvimento).
@@ -148,7 +148,9 @@ func (h *HTTPHandler) simulate(w http.ResponseWriter, r *http.Request) {
 }
 
 // SetSetupGate liga a instalação inicial por QR (auth.Service.CheckSetupOpen).
-func (h *HTTPHandler) SetSetupGate(g func(ctx context.Context, installCode string) error) { h.gate = g }
+func (h *HTTPHandler) SetSetupGate(g func(ctx context.Context, installCode, ip string) error) {
+	h.gate = g
+}
 
 // PublicRoutes: pareamento da instalação inicial, sem sessão. Só funciona enquanto o escritório não tem
 // administrador; depois disso responde 409 (o QR da tela de entrada some e o backend recusa).
@@ -168,6 +170,9 @@ func (h *HTTPHandler) setupGateError(w http.ResponseWriter, r *http.Request, err
 		httpx.Error(w, http.StatusConflict, "setup_done", "O escritório já tem um administrador. Entre com sua conta.")
 	case errors.Is(err, auth.ErrSetupForbidden):
 		httpx.Error(w, http.StatusForbidden, "setup_forbidden", "Código de instalação inválido.")
+	case errors.Is(err, auth.ErrTooManyAttempts):
+		w.Header().Set("Retry-After", "900")
+		httpx.Error(w, http.StatusTooManyRequests, "too_many_attempts", "Muitas tentativas. Tente novamente mais tarde.")
 	default:
 		httpx.Internal(w, r, err)
 	}
@@ -181,7 +186,7 @@ func (h *HTTPHandler) setupConnect(w http.ResponseWriter, r *http.Request) {
 	if !httpx.Decode(w, r, &in) {
 		return
 	}
-	if h.setupGateError(w, r, h.gate(r.Context(), in.InstallCode)) {
+	if h.setupGateError(w, r, h.gate(r.Context(), in.InstallCode, httpx.ClientIP(r))) {
 		return
 	}
 	b := make([]byte, 16)
@@ -206,7 +211,7 @@ func (h *HTTPHandler) setupStatus(w http.ResponseWriter, r *http.Request) {
 	if !httpx.Decode(w, r, &in) {
 		return
 	}
-	if h.setupGateError(w, r, h.gate(r.Context(), in.InstallCode)) {
+	if h.setupGateError(w, r, h.gate(r.Context(), in.InstallCode, httpx.ClientIP(r))) {
 		return
 	}
 	h.mu.Lock()

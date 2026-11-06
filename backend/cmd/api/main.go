@@ -75,7 +75,7 @@ func run() error {
 			Config: cfg, Logger: logger, DB: pool,
 			Auth: svcs.Auth, Users: svcs.Users, Teams: svcs.Teams,
 			Hub: svcs.Hub, Conversations: svcs.Conversations, Segments: svcs.Segments, Tags: svcs.Tags,
-			WhatsApp: svcs.WhatsApp, Simulate: svcs.Simulate,
+			WhatsApp: svcs.WhatsApp, Instance: svcs.Instance, Simulate: svcs.Simulate,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,

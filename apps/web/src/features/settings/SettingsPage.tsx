@@ -4,6 +4,7 @@ import { Alert, Button, Field } from "@/components/ui";
 import { ApiError, errorMessage, post } from "@/lib/api";
 import { regenerateRecoveryCodes, useMe } from "@/features/auth/api";
 import { ThemeSwitcher } from "@/features/shell/ThemeSwitcher";
+import { HandoverCard } from "./HandoverCard";
 
 function Card({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
   return (
@@ -59,8 +60,10 @@ export function SettingsPage() {
 
         <ChangePassword />
 
+        {me.user.role === "admin" && <HandoverCard />}
+
         <Card title="Notificações" description="Alertas de novas mensagens no navegador.">
-          <p className="text-sm text-muted">Disponível quando as conversas reais chegarem (Fase 3).</p>
+          <p className="text-sm text-muted">Em breve.</p>
         </Card>
       </div>
     </div>

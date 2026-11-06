@@ -149,6 +149,12 @@ export async function demoApi(method: string, path: string, body: Body = {}): Pr
       session = u;
       return { ...me(u), recoveryCodes: Array.from({ length: 8 }, () => `${uid().slice(0, 5)}-${uid().slice(0, 5)}`.toUpperCase()) };
     }
+    case "POST /office/handover": {
+      requireAdmin();
+      if (String(body.confirm ?? "").trim().toUpperCase() !== "ENTREGAR") throw invalid({ confirm: "Digite ENTREGAR para confirmar." });
+      session = null;
+      return { installCode: "DEMO7-K2M9X" };
+    }
     case "GET /office/access":
       requireAdmin();
       return { token: "DEMO-K2M9-X7QP", allowedDomain: "" };

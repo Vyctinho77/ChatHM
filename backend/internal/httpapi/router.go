@@ -16,6 +16,7 @@ import (
 	"github.com/vyctinho77/chathm/backend/internal/auth"
 	"github.com/vyctinho77/chathm/backend/internal/config"
 	"github.com/vyctinho77/chathm/backend/internal/conversations"
+	"github.com/vyctinho77/chathm/backend/internal/instance"
 	"github.com/vyctinho77/chathm/backend/internal/platform/httpx"
 	"github.com/vyctinho77/chathm/backend/internal/realtime"
 	"github.com/vyctinho77/chathm/backend/internal/segments"
@@ -38,6 +39,7 @@ type Deps struct {
 	Segments      *segments.Service
 	Tags          *tags.Service
 	WhatsApp      *whatsapp.Manager
+	Instance      *instance.Service
 	// Simulate habilita POST /dev/whatsapp/inbound (provedor fake em development).
 	Simulate func(whatsapp.InboundMessage)
 }
@@ -122,6 +124,9 @@ func NewRouter(d Deps) http.Handler {
 				r.Use(auth.RequireAdmin)
 				usersH.AdminRoutes(r)
 				d.Auth.AdminRoutes(r)
+				if d.Instance != nil {
+					instance.NewHandler(d.Instance, d.Auth).Routes(r)
+				}
 			})
 		})
 

@@ -82,6 +82,12 @@ var phoneSeq atomic.Int64
 
 func init() { phoneSeq.Store(5511900000000) }
 
+func (e *env) receiveName(name, text string) string {
+	p := itoa(int(phoneSeq.Add(1)))
+	e.wa.Receive(inbound("M-"+p, p, name, text))
+	return name
+}
+
 // receive entrega uma mensagem de um cliente novo (telefone distinto por nome).
 func (w *world) receive(name, text string) string {
 	p := itoa(int(phoneSeq.Add(1)))

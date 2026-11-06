@@ -159,6 +159,9 @@ func (s *Service) setCookie(w http.ResponseWriter, token string) {
 	})
 }
 
+// ClearCookie remove o cookie de sessão do navegador.
+func (s *Service) ClearCookie(w http.ResponseWriter) { s.clearCookie(w) }
+
 func (s *Service) clearCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
 		Name: s.cfg.CookieName, Value: "", Path: "/", MaxAge: -1,

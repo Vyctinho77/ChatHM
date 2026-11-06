@@ -206,6 +206,13 @@ com o mesmo `id` tenta de novo.
 `segment` (chave; `"geral"` = fila geral), `segmentName`, `classification` (`keyword` | `conflict` | `none`),
 `tags` (nomes) e, nas mensagens enviadas, `deliveredAt`, `readAt`, `authorName`.
 
+## Entrega da instância
+
+`POST /office/handover {confirm: "ENTREGAR", code}` (admin com autenticador; `code` = código atual do app) desconecta o WhatsApp, apaga todos os dados
+e os anexos, encerra todas as sessões e responde `{installCode}` (uso único, mostrado só aqui). `422` sem a confirmação ou com código inválido,
+`409 mfa_not_enabled` sem autenticador. Depois, `GET /auth/options` volta a `needsSetup: true, setupCode: true` e só o código de entrega libera
+`/setup/*` (o `SETUP_TOKEN` do servidor é ignorado enquanto houver um código pendente); o código é consumido ao concluir a instalação.
+
 ## Busca e início de conversa
 
 | Método | Rota | Corpo | Resposta |

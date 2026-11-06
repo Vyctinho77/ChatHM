@@ -12,6 +12,7 @@ import (
 	"github.com/vyctinho77/chathm/backend/internal/auth"
 	"github.com/vyctinho77/chathm/backend/internal/config"
 	"github.com/vyctinho77/chathm/backend/internal/conversations"
+	"github.com/vyctinho77/chathm/backend/internal/instance"
 	"github.com/vyctinho77/chathm/backend/internal/media"
 	"github.com/vyctinho77/chathm/backend/internal/platform/secretbox"
 	"github.com/vyctinho77/chathm/backend/internal/realtime"
@@ -34,6 +35,7 @@ type Services struct {
 	Segments      *segments.Service
 	Tags          *tags.Service
 	WhatsApp      *whatsapp.Manager
+	Instance      *instance.Service
 	// Simulate entrega mensagens fictícias (somente provedor fake em development).
 	Simulate func(whatsapp.InboundMessage)
 }
@@ -133,6 +135,7 @@ func NewServices(ctx context.Context, cfg config.Config, db *pgxpool.Pool, opt O
 	s.WhatsApp.SetReceiptHandler(convs.ApplyReceipt)
 	s.WhatsApp.SetHistoryContactHandler(convs.ImportContact)
 	convs.SetSender(s.WhatsApp)
+	s.Instance = instance.NewService(db, authSvc, s.WhatsApp, store, opt.Logger)
 	authSvc.SetWhatsAppGate(s.WhatsApp.Connected) // a instalação inicial exige o WhatsApp do escritório conectado
 	return s, nil
 }

@@ -50,3 +50,13 @@ precisa abrir portas (serve até para um computador em casa, desde que fique lig
 copie o token para `TUNNEL_TOKEN` e, em *Public hostname*, aponte seu domínio para `http://app:8080`. O servidor Go precisa estar sempre ligado
 para manter o WhatsApp conectado — por isso não roda em Workers. **Cloudflare Containers** é possível, mas as instâncias podem dormir e reiniciar
 (o disco é temporário), o que derruba a sessão do WhatsApp; use só se aceitar isso, com anexos no R2 (`STORAGE_DRIVER=s3`).
+
+## Vender para outros escritórios (uma instância por cliente)
+Cada cliente tem o **próprio servidor, banco e número de WhatsApp**, isolados. Para reaproveitar uma instância (ou preparar uma nova) use
+**Configurações → Entregar instância** (só administrador, com o código do autenticador e digitando ENTREGAR):
+1. desvincula o WhatsApp atual e remove a sessão;
+2. apaga **todos** os dados (usuários, equipes, conversas, contatos, anexos, registros) — não dá para desfazer;
+3. devolve a instalação ao início e mostra **uma única vez** um **código de instalação** (`XXXXX-XXXXX`, uso único).
+Envie ao cliente o endereço e o código. Ele abre o endereço, digita o código, escaneia o QR com o WhatsApp do escritório dele e vira o
+administrador. Enquanto o código não for usado, **só ele** libera a instalação (o `SETUP_TOKEN` do servidor deixa de valer). Para uma instância
+nova, suba outro servidor com o mesmo `docker-compose` (outro domínio e outro banco/projeto Supabase) e use o `SETUP_TOKEN` na primeira instalação.

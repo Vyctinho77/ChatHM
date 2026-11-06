@@ -6,6 +6,8 @@ import { login, loginWithCode, useAuthOptions, useSetMe } from "./api";
 import { AuthLayout } from "./AuthLayout";
 import { CodeInput } from "./CodeInput";
 import { InvitePage, JoinPage, SetupPage } from "./OnboardingPages";
+import { setHandover, useHandover } from "./handover";
+import { HandoverDone } from "./HandoverDone";
 
 type View = "login" | "join" | "personal";
 
@@ -16,6 +18,7 @@ type View = "login" | "join" | "personal";
 export function LoginPage() {
   const setMe = useSetMe();
   const options = useAuthOptions().data;
+  const handover = useHandover();
   const [view, setView] = useState<View>("login");
   const [email, setEmail] = useState(DEMO ? "admin@hm.com.br" : "");
   const [code, setCode] = useState("");
@@ -26,6 +29,7 @@ export function LoginPage() {
   const [fields, setFields] = useState<FieldErrors>({});
   const [loading, setLoading] = useState(false);
 
+  if (handover) return <HandoverDone result={handover} onClose={() => setHandover(null)} />;
   if (options?.needsSetup) return <SetupPage needsInstallCode={options.setupCode} />;
   if (view === "join") return <JoinPage onBack={() => setView("login")} onPersonalCode={() => setView("personal")} />;
   if (view === "personal") return <InvitePage onBack={() => setView("join")} />;

@@ -41,6 +41,8 @@ type env struct {
 	pool *pgxpool.Pool
 	svcs *app.Services
 	wa   *fake.Provider // provedor WhatsApp simulado
+	// storageDir: pasta dos anexos (cifrados) deste ambiente de teste.
+	storageDir string
 }
 
 type opts struct {
@@ -58,6 +60,7 @@ func setup(t *testing.T, o ...opts) *env {
 
 	key := make([]byte, 32)
 	_, _ = rand.Read(key)
+	storageDir := t.TempDir()
 	cfg := config.Config{
 		Env:               "development",
 		AllowedOrigins:    []string{origin},
@@ -66,7 +69,7 @@ func setup(t *testing.T, o ...opts) *env {
 		SessionIdle:       30 * time.Minute,
 		EncryptionKey:     base64.StdEncoding.EncodeToString(key),
 		StorageDriver:     "fs",
-		StorageDir:        t.TempDir(),
+		StorageDir:        storageDir,
 		MaxAttachment:     5 << 20,
 	}
 	var op opts
@@ -104,10 +107,10 @@ func setup(t *testing.T, o ...opts) *env {
 	srv := httptest.NewServer(NewRouter(Deps{
 		Config: cfg, Logger: logger, DB: pool,
 		Auth: svcs.Auth, Users: svcs.Users, Teams: svcs.Teams,
-		Hub: svcs.Hub, Conversations: svcs.Conversations, Segments: svcs.Segments, Tags: svcs.Tags, WhatsApp: svcs.WhatsApp,
+		Hub: svcs.Hub, Conversations: svcs.Conversations, Segments: svcs.Segments, Tags: svcs.Tags, WhatsApp: svcs.WhatsApp, Instance: svcs.Instance,
 	}))
 	t.Cleanup(srv.Close)
-	return &env{t: t, srv: srv, pool: pool, svcs: svcs, wa: wa}
+	return &env{t: t, srv: srv, pool: pool, svcs: svcs, wa: wa, storageDir: storageDir}
 }
 
 func (e *env) createUser(email string, role auth.Role, teamIDs ...string) users.User {
