@@ -126,3 +126,26 @@ export function useReinviteUser() {
   const done = useInvalidateAll();
   return useMutation({ mutationFn: (id: string) => post<InviteResult>(`/users/${id}/invite`), onSuccess: done });
 }
+
+export type OfficeAccess = { token: string; allowedDomain: string };
+const officeKey = ["office", "access"] as const;
+
+export function useOfficeAccess(enabled: boolean) {
+  return useQuery({ queryKey: officeKey, enabled, queryFn: () => get<OfficeAccess>("/office/access") });
+}
+
+export function useRotateOfficeToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => post<OfficeAccess>("/office/access/rotate"),
+    onSuccess: (a) => qc.setQueryData(officeKey, a),
+  });
+}
+
+export function useSetAllowedDomain() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (allowedDomain: string) => patch<OfficeAccess>("/office/access", { allowedDomain }),
+    onSuccess: (a) => qc.setQueryData(officeKey, a),
+  });
+}

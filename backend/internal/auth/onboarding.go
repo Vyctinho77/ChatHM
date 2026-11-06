@@ -182,8 +182,9 @@ func (s *Service) RegenerateRecoveryCodes(ctx context.Context, sess *Session, c 
 // Configuração inicial (primeiro administrador)
 
 func (s *Service) NeedsSetup(ctx context.Context) (bool, error) {
+	// A instalação inicial está aberta enquanto o escritório não tem administrador.
 	var any bool
-	err := s.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM users)`).Scan(&any)
+	err := s.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM users WHERE role = 'admin')`).Scan(&any)
 	return !any, err
 }
 
@@ -210,6 +211,9 @@ func (s *Service) SetupStart(ctx context.Context, name, email, installCode strin
 	}
 	if s.cfg.SetupToken != "" && subtle.ConstantTimeCompare([]byte(strings.TrimSpace(installCode)), []byte(s.cfg.SetupToken)) != 1 {
 		return Enrollment{}, ErrSetupForbidden
+	}
+	if s.waConnected != nil && !s.waConnected() {
+		return Enrollment{}, ErrSetupNeedsWhatsApp
 	}
 	name, email, err = validateIdentity(name, email)
 	if err != nil {
@@ -241,7 +245,7 @@ func (s *Service) SetupFinish(ctx context.Context, token, code string, c Client)
 			return err
 		}
 		var exists bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM users)`).Scan(&exists); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM users WHERE role = 'admin')`).Scan(&exists); err != nil {
 			return err
 		}
 		if exists {
@@ -261,6 +265,9 @@ func (s *Service) SetupFinish(ctx context.Context, token, code string, c Client)
 			return err
 		}
 		if codes, err = insertRecoveryCodes(ctx, tx, id); err != nil {
+			return err
+		}
+		if _, err := s.storeNewOfficeToken(ctx, tx, false); err != nil { // token do escritório nasce com o administrador
 			return err
 		}
 		if token2, err = s.createSession(ctx, tx, id, true, c); err != nil {

@@ -136,6 +136,28 @@ export async function demoApi(method: string, path: string, body: Body = {}): Pr
     }
     case "GET /auth/options":
       return { selfRegister: true, needsSetup: false, setupCode: false };
+    case "POST /auth/join/start": {
+      const email = String(body.email ?? "").trim().toLowerCase();
+      if (String(body.officeToken ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase() !== "DEMOK2M9X7QP") throw new DemoError(401, "invalid_token", "Token inválido. Peça o token atual ao administrador.");
+      if (users.some((u) => u.email === email)) throw new DemoError(409, "email_unavailable", "Não foi possível usar este e-mail. Entre com sua conta ou use outro endereço.");
+      return { secret: "JBSWY3DPEHPK3PXP", otpauthUrl: "otpauth://totp/ChatHM:demo?secret=JBSWY3DPEHPK3PXP&issuer=ChatHM", token: JSON.stringify({ name: body.name, email }), name: body.name };
+    }
+    case "POST /auth/join/finish": {
+      const c = JSON.parse(String(body.token)) as { name: string; email: string };
+      const u: U = { id: uid(), name: c.name, email: c.email, password: uid(), role: "agent", isActive: true, mfaEnabled: true, theme: "system", lastLoginAt: now(), createdAt: now() };
+      users.push(u);
+      session = u;
+      return { ...me(u), recoveryCodes: Array.from({ length: 8 }, () => `${uid().slice(0, 5)}-${uid().slice(0, 5)}`.toUpperCase()) };
+    }
+    case "GET /office/access":
+      requireAdmin();
+      return { token: "DEMO-K2M9-X7QP", allowedDomain: "" };
+    case "POST /office/access/rotate":
+      requireAdmin();
+      return { token: "NOVO-T0KE-N123", allowedDomain: "" };
+    case "PATCH /office/access":
+      requireAdmin();
+      return { token: "DEMO-K2M9-X7QP", allowedDomain: String(body.allowedDomain ?? "") };
     case "POST /auth/recovery-codes":
       requireSession();
       return { recoveryCodes: Array.from({ length: 8 }, () => `${uid().slice(0, 5)}-${uid().slice(0, 5)}`.toUpperCase()) };

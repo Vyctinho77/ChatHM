@@ -79,6 +79,7 @@ func NewRouter(d Deps) http.Handler {
 	segmentsH := segments.NewHandler(d.Segments)
 	tagsH := tags.NewHandler(d.Tags)
 	waH := whatsapp.NewHTTPHandler(d.WhatsApp, d.Simulate)
+	waH.SetSetupGate(d.Auth.CheckSetupOpen)
 	agendaH := agenda.NewHandler(agenda.NewService(d.DB, d.Conversations))
 
 	// O WebSocket revalida a sessão periodicamente (logout/desativação encerram a conexão).
@@ -96,6 +97,7 @@ func NewRouter(d Deps) http.Handler {
 
 		// Sem sessão.
 		d.Auth.PublicRoutes(r)
+		waH.PublicRoutes(r, d.Auth.CheckOrigin)
 
 		// Sessão (MFA pode estar pendente).
 		r.Group(func(r chi.Router) {
@@ -119,6 +121,7 @@ func NewRouter(d Deps) http.Handler {
 			r.Group(func(r chi.Router) {
 				r.Use(auth.RequireAdmin)
 				usersH.AdminRoutes(r)
+				d.Auth.AdminRoutes(r)
 			})
 		})
 

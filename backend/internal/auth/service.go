@@ -91,11 +91,12 @@ type Client struct {
 }
 
 type Service struct {
-	db        *pgxpool.Pool
-	cfg       Config
-	hasher    Hasher
-	box       *secretbox.Box
-	dummyHash string
+	db          *pgxpool.Pool
+	cfg         Config
+	waConnected func() bool
+	hasher      Hasher
+	box         *secretbox.Box
+	dummyHash   string
 }
 
 func NewService(db *pgxpool.Pool, cfg Config, hasher Hasher, box *secretbox.Box) (*Service, error) {

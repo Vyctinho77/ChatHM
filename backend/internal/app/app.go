@@ -133,5 +133,6 @@ func NewServices(ctx context.Context, cfg config.Config, db *pgxpool.Pool, opt O
 	s.WhatsApp.SetReceiptHandler(convs.ApplyReceipt)
 	s.WhatsApp.SetHistoryContactHandler(convs.ImportContact)
 	convs.SetSender(s.WhatsApp)
+	authSvc.SetWhatsAppGate(s.WhatsApp.Connected) // a instalação inicial exige o WhatsApp do escritório conectado
 	return s, nil
 }

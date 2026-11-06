@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router";
-import { Copy, KeyRound, Pencil, Plus, ShieldCheck, Smartphone, Trash2, UserPlus } from "lucide-react";
+import { Copy, Eye, EyeOff, KeyRound, Pencil, Plus, RefreshCw, ShieldCheck, Smartphone, Trash2, UserPlus } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { Alert, Button, Field, IconButton, Modal, Spinner } from "@/components/ui";
 import { ApiError, errorMessage, type FieldErrors } from "@/lib/api";
@@ -9,6 +9,9 @@ import { useMe, type Role } from "@/features/auth/api";
 import {
   useCreateTeam,
   useInviteUser,
+  useOfficeAccess,
+  useRotateOfficeToken,
+  useSetAllowedDomain,
   useReinviteUser,
   type InviteResult,
   useDeleteTeam,
@@ -51,7 +54,13 @@ export function TeamPage() {
         </p>
 
         {isAdmin && (
-          <div role="tablist" className="mt-6 flex gap-1 border-b border-line">
+          <div className="mt-6">
+            <TeamAccessCard />
+          </div>
+        )}
+
+        {isAdmin && (
+          <div role="tablist" className="flex gap-1 border-b border-line">
             {(
               [
                 ["members", "Pessoas"],
@@ -96,8 +105,8 @@ function PeopleTab() {
   return (
     <>
       <div className="mb-4 flex justify-end">
-        <Button onClick={() => setCreating(true)}>
-          <UserPlus className="size-4" /> Convidar pessoa
+        <Button variant="secondary" onClick={() => setCreating(true)}>
+          <UserPlus className="size-4" /> Convite pessoal
         </Button>
       </div>
       {users.isPending && <Spinner className="mx-auto" />}
@@ -495,5 +504,86 @@ function CreateTeamModal({ open, onClose }: { open: boolean; onClose: () => void
         </div>
       </form>
     </Modal>
+  );
+}
+
+/** Token do escritório: a equipe cria a própria conta com ele (sem QR). Só administradores. */
+function TeamAccessCard() {
+  const access = useOfficeAccess(true);
+  const rotate = useRotateOfficeToken();
+  const setDomain = useSetAllowedDomain();
+  const [shown, setShown] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [domain, setDomainText] = useState<string | null>(null);
+  const token = access.data?.token ?? "";
+  const domainValue = domain ?? access.data?.allowedDomain ?? "";
+  const fields = fieldsOf(setDomain.error);
+
+  return (
+    <section className="mb-6 rounded-xl border border-line bg-panel p-4">
+      <h2 className="font-semibold">Acesso da equipe</h2>
+      <p className="mt-0.5 text-sm text-muted">Envie este token. Quem o usar cria a própria conta e já entra.</p>
+      {access.isPending && <Spinner className="mt-3" />}
+      {access.isError && <Alert>{errorMessage(access.error)}</Alert>}
+      {access.data && (
+        <>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <code className="min-w-48 flex-1 rounded-lg border border-line bg-elevated px-3 py-2 text-center font-mono text-lg tracking-widest">
+              {shown ? token : "••••-••••-••••"}
+            </code>
+            <IconButton label={shown ? "Ocultar token" : "Mostrar token"} onClick={() => setShown(!shown)}>
+              {shown ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+            </IconButton>
+            <IconButton
+              label="Copiar token"
+              onClick={() => void navigator.clipboard?.writeText(token).then(() => (setCopied(true), setTimeout(() => setCopied(false), 1500)))}
+            >
+              <Copy className={cn("size-4", copied && "text-brand")} />
+            </IconButton>
+            {confirming ? (
+              <span className="flex items-center gap-1.5 text-sm">
+                Gerar novo?
+                <Button
+                  variant="danger"
+                  loading={rotate.isPending}
+                  onClick={() => rotate.mutate(undefined, { onSettled: () => setConfirming(false) })}
+                >
+                  Sim
+                </Button>
+                <Button variant="secondary" onClick={() => setConfirming(false)}>
+                  Não
+                </Button>
+              </span>
+            ) : (
+              <IconButton label="Gerar novo token" onClick={() => setConfirming(true)}>
+                <RefreshCw className="size-4" />
+              </IconButton>
+            )}
+          </div>
+          <form
+            className="mt-3 flex flex-wrap items-end gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setDomain.mutate(domainValue, { onSuccess: () => setDomainText(null) });
+            }}
+          >
+            <div className="min-w-48 flex-1">
+              <Field
+                label="Só e-mails deste domínio (opcional)"
+                placeholder="escritorio.com.br"
+                value={domainValue}
+                error={fields.allowedDomain}
+                onChange={(e) => setDomainText(e.target.value)}
+              />
+            </div>
+            <Button type="submit" variant="secondary" loading={setDomain.isPending} disabled={domain === null}>
+              Salvar
+            </Button>
+          </form>
+          <p className="mt-2 text-xs text-muted">Gerar um novo token só impede novos cadastros com o antigo; quem já criou conta continua entrando.</p>
+        </>
+      )}
+    </section>
   );
 }

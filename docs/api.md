@@ -32,28 +32,32 @@ gerais ou sem equipe; o cadastro não cria um escritório separado.
 
 Enquanto um desses estados estiver pendente, as demais rotas respondem `403` com `mfa_required` ou `mfa_setup_required`.
 
-## Acesso sem terminal (setup, convites e autenticador)
+## Instância do escritório (instalação, token e autenticador)
 
-Nada exige o terminal do servidor: o primeiro administrador e os demais acessos são criados pela interface.
+Um escritório por servidor. Nada exige o terminal.
 
-1. **Configuração inicial** — enquanto não há usuários, `GET /auth/options` devolve `needsSetup: true` e a tela de entrada vira
-   "Crie o administrador". `POST /setup/start {name, email, installCode?}` devolve `{secret, otpauthUrl, token}` (QR do autenticador);
-   `POST /setup/finish {token, code}` cria o administrador **já com autenticador ativo**, abre a sessão e devolve `recoveryCodes`
-   (8, mostrados uma vez). Depois disso a rota responde `409 setup_done`. Opcional: `SETUP_TOKEN` exige um código de instalação
-   (`installCode`), útil se o servidor ficar exposto antes do primeiro acesso.
-2. **Convite** (admin): `POST /users/invite {email, name, role, teamIds}` cria a conta **inativa**, sem senha utilizável, e devolve
-   `inviteCode` (`XXXXX-XXXXX`, uso único, 72 h; aparece só nessa resposta). A pessoa abre "Tenho um convite":
-   `POST /auth/enroll/start {email, inviteCode}` → `{secret, otpauthUrl, token}`; `POST /auth/enroll/finish {email, inviteCode, token, code}`
-   ativa a conta, consome o convite, devolve `recoveryCodes` e abre a sessão. 10 erros invalidam o convite.
-3. **Login só com o autenticador**: `POST /auth/login {email, code}` — `code` é o TOTP de 6 dígitos (cada código vale uma vez) ou um
-   código de recuperação (uso único). Entra com sessão completa (o código é o único fator). Login com senha continua disponível
-   para contas antigas (`{email, password}` + MFA quando ativo).
-4. **Celular perdido**: com um código de recuperação a pessoa entra e pode `POST /auth/recovery-codes` (novos 8, invalida os
-   anteriores). O administrador pode `POST /users/{id}/invite`: redefine o autenticador (encerra segredo, recuperação e sessões) e gera
-   novo código de convite. Sem celular e sem códigos, só outro administrador resolve.
+1. **Instalação inicial (só sem administrador)** — `GET /auth/options` devolve `needsSetup: true` e a tela de entrada mostra o QR do
+   WhatsApp: `POST /setup/whatsapp/connect {installCode?}` inicia o pareamento e devolve uma `key`; `POST /setup/whatsapp/status {key}` devolve
+   estado e QR (só a tela que iniciou, pela `key`). Com o WhatsApp conectado: `POST /setup/start {name, email, installCode?}` →
+   `{secret, otpauthUrl, token}` e `POST /setup/finish {token, code}` cria o **administrador** (autenticador ativo), abre a sessão e devolve
+   `recoveryCodes` (8, uma vez). Existindo um administrador, todas essas rotas respondem `409 setup_done`: **o backend recusa o
+   pareamento por essa tela**. Reconectar depois é dentro do app (`/whatsapp/connect`, admin logado). `SETUP_TOKEN` (opcional) exige um
+   código de instalação, útil se o servidor ficar exposto antes do primeiro acesso.
+2. **Token do escritório** — nasce junto com o administrador (`XXXX-XXXX-XXXX`, cifrado no banco). Admin: `GET /office/access`,
+   `POST /office/access/rotate` (gera outro; contas já criadas continuam), `PATCH /office/access {allowedDomain}` (restringe o domínio do
+   e-mail; vazio libera). Aparece em Equipe → "Acesso da equipe".
+3. **Equipe entra com o token (aprovação automática)** — `POST /auth/join/start {name, email, officeToken}` → `{secret, otpauthUrl, token}`;
+   `POST /auth/join/finish {officeToken, token, code}` cria a conta **ativa**, atendente, sem equipe, com autenticador, e devolve
+   `recoveryCodes`. `401 invalid_token`, `409 email_unavailable`, `422` (e-mail fora do domínio permitido), `429` após falhas (mesmo limite
+   do login). O token só serve para criar a conta; depois a credencial é o autenticador. Quem entra por token não tem equipe: o gestor
+   a define em Equipe, e até lá só vê a fila geral sem responsável.
+4. **Login**: `POST /auth/login {email, code}` — `code` é o TOTP de 6 dígitos (cada código vale uma vez) ou um código de recuperação
+   (uso único). Senha continua para contas antigas.
+5. **Celular perdido**: código de recuperação (`POST /auth/recovery-codes` gera outros 8) ou o administrador redefine em Equipe
+   (`POST /users/{id}/invite`, gera um código pessoal que a pessoa usa em "Sou da equipe → código pessoal"). Convite pessoal:
+   `POST /users/invite {email, name, role, teamIds}` (conta inativa até a pessoa configurar o autenticador).
 
 Segredos do autenticador ficam cifrados (AES-256-GCM); antes de confirmados viajam num token lacrado e nunca são gravados.
-As tentativas erradas seguem o mesmo limite do login (por e-mail e por IP).
 
 ## Autenticação
 

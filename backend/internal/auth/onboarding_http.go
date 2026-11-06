@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/vyctinho77/chathm/backend/internal/platform/httpx"
 )
 
@@ -34,6 +36,12 @@ func (s *Service) writeOnboardingError(w http.ResponseWriter, r *http.Request, e
 		httpx.Error(w, http.StatusUnprocessableEntity, "invalid_code", "Código inválido. Confira o horário do celular e tente com o código atual.")
 	case errors.Is(err, ErrSetupDone):
 		httpx.Error(w, http.StatusConflict, "setup_done", "A configuração inicial já foi concluída. Entre com sua conta.")
+	case errors.Is(err, ErrSetupNeedsWhatsApp):
+		httpx.Error(w, http.StatusConflict, "whatsapp_required", "Conecte o WhatsApp do escritório antes de continuar.")
+	case errors.Is(err, ErrInvalidOfficeToken):
+		httpx.Error(w, http.StatusUnauthorized, "invalid_token", "Token inválido. Peça o token atual ao administrador.")
+	case errors.Is(err, ErrEmailUnavailable):
+		httpx.Error(w, http.StatusConflict, "email_unavailable", "Não foi possível usar este e-mail. Entre com sua conta ou use outro endereço.")
 	case errors.Is(err, ErrSetupForbidden):
 		httpx.Error(w, http.StatusForbidden, "setup_forbidden", "Código de instalação inválido.")
 	case errors.Is(err, ErrTooManyAttempts):
@@ -128,4 +136,73 @@ func (s *Service) handleRecoveryCodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"recoveryCodes": codes})
+}
+
+type joinInput struct {
+	Name        string `json:"name"`
+	Email       string `json:"email"`
+	OfficeToken string `json:"officeToken"`
+	Token       string `json:"token"`
+	Code        string `json:"code"`
+}
+
+func (s *Service) handleJoinStart(w http.ResponseWriter, r *http.Request) {
+	var in joinInput
+	if !httpx.Decode(w, r, &in) {
+		return
+	}
+	e, err := s.JoinStart(r.Context(), in.Name, in.Email, in.OfficeToken, ClientFrom(r))
+	if err != nil {
+		s.writeOnboardingError(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, e)
+}
+
+func (s *Service) handleJoinFinish(w http.ResponseWriter, r *http.Request) {
+	var in joinInput
+	if !httpx.Decode(w, r, &in) {
+		return
+	}
+	tok, sess, codes, err := s.JoinFinish(r.Context(), in.OfficeToken, in.Token, in.Code, ClientFrom(r))
+	if err != nil {
+		s.writeOnboardingError(w, r, err)
+		return
+	}
+	s.setCookie(w, tok)
+	httpx.JSON(w, http.StatusCreated, sessionWithCodes{s.me(sess), codes})
+}
+
+// AdminRoutes: acesso da equipe (somente administradores).
+func (s *Service) AdminRoutes(r chi.Router) {
+	r.Get("/office/access", func(w http.ResponseWriter, r *http.Request) {
+		a, err := s.OfficeAccess(r.Context())
+		if err != nil {
+			httpx.Internal(w, r, err)
+			return
+		}
+		httpx.JSON(w, http.StatusOK, a)
+	})
+	r.Post("/office/access/rotate", func(w http.ResponseWriter, r *http.Request) {
+		a, err := s.RotateOfficeToken(r.Context(), MustFromContext(r.Context()).UserID, httpx.ClientIP(r))
+		if err != nil {
+			httpx.Internal(w, r, err)
+			return
+		}
+		httpx.JSON(w, http.StatusOK, a)
+	})
+	r.Patch("/office/access", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			AllowedDomain string `json:"allowedDomain"`
+		}
+		if !httpx.Decode(w, r, &in) {
+			return
+		}
+		a, err := s.SetAllowedDomain(r.Context(), MustFromContext(r.Context()).UserID, httpx.ClientIP(r), in.AllowedDomain)
+		if err != nil {
+			s.writeOnboardingError(w, r, err)
+			return
+		}
+		httpx.JSON(w, http.StatusOK, a)
+	})
 }

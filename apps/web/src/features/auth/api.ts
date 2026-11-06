@@ -52,6 +52,25 @@ export const setupFinish = (token: string, code: string) => post<MeWithCodes>("/
 export const enrollStart = (email: string, inviteCode: string) => post<Enrollment>("/auth/enroll/start", { email, inviteCode });
 export const enrollFinish = (email: string, inviteCode: string, token: string, code: string) =>
   post<MeWithCodes>("/auth/enroll/finish", { email, inviteCode, token, code });
+/** Instalação inicial: pareamento do WhatsApp do escritório pela tela de entrada (só sem administrador). */
+export type SetupConnection = {
+  state: "disconnected" | "pending_qr" | "connected" | "error";
+  phone: string;
+  displayName: string;
+  lastError?: string;
+  qr?: { code: string; expiresAt: string } | null;
+};
+export const setupWhatsAppConnect = (installCode?: string) =>
+  post<{ key: string }>("/setup/whatsapp/connect", { installCode: installCode ?? "" });
+export const setupWhatsAppStatus = (key: string, installCode?: string) =>
+  post<SetupConnection>("/setup/whatsapp/status", { key, installCode: installCode ?? "" });
+
+/** Equipe: cria a conta com o token do escritório (e configura o autenticador). */
+export const joinStart = (name: string, email: string, officeToken: string) =>
+  post<Enrollment>("/auth/join/start", { name, email, officeToken });
+export const joinFinish = (officeToken: string, token: string, code: string) =>
+  post<MeWithCodes>("/auth/join/finish", { officeToken, token, code });
+
 export const regenerateRecoveryCodes = () => post<{ recoveryCodes: string[] }>("/auth/recovery-codes");
 
 /** Opções públicas da tela de entrada. */
@@ -59,6 +78,7 @@ export function useAuthOptions() {
   return useQuery({
     queryKey: ["auth", "options"] as const,
     queryFn: () => get<{ selfRegister: boolean; needsSetup: boolean; setupCode: boolean }>("/auth/options"),
+    refetchOnWindowFocus: true,
     staleTime: 5 * 60_000,
     retry: false,
   });

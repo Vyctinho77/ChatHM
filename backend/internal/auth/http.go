@@ -205,6 +205,8 @@ func (s *Service) PublicRoutes(r chi.Router) {
 	r.Get("/setup/status", s.handleSetupStatus)
 	r.With(s.CheckOrigin).Post("/setup/start", s.handleSetupStart)
 	r.With(s.CheckOrigin).Post("/setup/finish", s.handleSetupFinish)
+	r.With(s.CheckOrigin).Post("/auth/join/start", s.handleJoinStart)
+	r.With(s.CheckOrigin).Post("/auth/join/finish", s.handleJoinFinish)
 	r.With(s.CheckOrigin).Post("/auth/enroll/start", s.handleEnrollStart)
 	r.With(s.CheckOrigin).Post("/auth/enroll/finish", s.handleEnrollFinish)
 }

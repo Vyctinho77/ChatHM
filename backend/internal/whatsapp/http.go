@@ -2,10 +2,13 @@ package whatsapp
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -16,6 +19,10 @@ import (
 
 type HTTPHandler struct {
 	m *Manager
+	// gate libera o pareamento da instalação inicial (sem administrador) e confere o código de instalação.
+	gate func(ctx context.Context, installCode string) error
+	mu   sync.Mutex
+	key  string // chave da tela que iniciou o pareamento: só ela vê o QR
 	// sim permite simular mensagens recebidas (somente provedor fake em desenvolvimento).
 	sim func(InboundMessage)
 }
@@ -138,4 +145,77 @@ func (h *HTTPHandler) simulate(w http.ResponseWriter, r *http.Request) {
 		PushName: in.Name, Timestamp: time.Now(), Kind: KindText, Body: in.Text,
 	})
 	httpx.NoContent(w)
+}
+
+// SetSetupGate liga a instalação inicial por QR (auth.Service.CheckSetupOpen).
+func (h *HTTPHandler) SetSetupGate(g func(ctx context.Context, installCode string) error) { h.gate = g }
+
+// PublicRoutes: pareamento da instalação inicial, sem sessão. Só funciona enquanto o escritório não tem
+// administrador; depois disso responde 409 (o QR da tela de entrada some e o backend recusa).
+func (h *HTTPHandler) PublicRoutes(r chi.Router, checkOrigin func(http.Handler) http.Handler) {
+	if h.gate == nil {
+		return
+	}
+	r.With(checkOrigin).Post("/setup/whatsapp/connect", h.setupConnect)
+	r.With(checkOrigin).Post("/setup/whatsapp/status", h.setupStatus)
+}
+
+func (h *HTTPHandler) setupGateError(w http.ResponseWriter, r *http.Request, err error) bool {
+	switch {
+	case err == nil:
+		return false
+	case errors.Is(err, auth.ErrSetupDone):
+		httpx.Error(w, http.StatusConflict, "setup_done", "O escritório já tem um administrador. Entre com sua conta.")
+	case errors.Is(err, auth.ErrSetupForbidden):
+		httpx.Error(w, http.StatusForbidden, "setup_forbidden", "Código de instalação inválido.")
+	default:
+		httpx.Internal(w, r, err)
+	}
+	return true
+}
+
+func (h *HTTPHandler) setupConnect(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		InstallCode string `json:"installCode"`
+	}
+	if !httpx.Decode(w, r, &in) {
+		return
+	}
+	if h.setupGateError(w, r, h.gate(r.Context(), in.InstallCode)) {
+		return
+	}
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	key := base64.RawURLEncoding.EncodeToString(b)
+	h.mu.Lock()
+	h.key = key
+	h.mu.Unlock()
+	if err := h.m.Connect(r.Context(), "", httpx.ClientIP(r)); err != nil && !errors.Is(err, ErrAlreadyConnected) {
+		httpx.Error(w, http.StatusBadGateway, "provider_error", "Não foi possível iniciar a conexão com o WhatsApp.")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]string{"key": key})
+}
+
+// setupStatus devolve o estado e o QR a quem iniciou o pareamento (a chave sai no corpo, nunca na URL).
+func (h *HTTPHandler) setupStatus(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Key         string `json:"key"`
+		InstallCode string `json:"installCode"`
+	}
+	if !httpx.Decode(w, r, &in) {
+		return
+	}
+	if h.setupGateError(w, r, h.gate(r.Context(), in.InstallCode)) {
+		return
+	}
+	h.mu.Lock()
+	ok := h.key != "" && subtle.ConstantTimeCompare([]byte(in.Key), []byte(h.key)) == 1
+	h.mu.Unlock()
+	if !ok {
+		httpx.Error(w, http.StatusForbidden, "setup_forbidden", "Reinicie a conexão.")
+		return
+	}
+	v := connectionView{Status: h.m.Status(), QR: h.m.CurrentQR()}
+	httpx.JSON(w, http.StatusOK, v)
 }
