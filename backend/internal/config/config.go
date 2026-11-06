@@ -53,6 +53,7 @@ type Config struct {
 	ClamAVAddr    string
 	// Cadastro por conta própria (padrão desligado). Ligado, a conta nasce INATIVA e só entra após aprovação do admin.
 	AllowSelfRegister bool
+	WebDir            string // WEB_DIR: pasta do frontend compilado (servido pela própria API, mesma origem)
 	SeedExampleData   bool   // SEED_EXAMPLE_DATA: cria segmentos de exemplo na primeira subida (só desenvolvimento)
 	SetupToken        string // SETUP_TOKEN: exigido na tela de configuração inicial (opcional)
 	FFmpegBin         string // FFMPEG_BIN: caminho do ffmpeg (vazio = PATH)
@@ -86,6 +87,7 @@ func Load() (Config, error) {
 		AllowSelfRegister: getbool("ALLOW_SELF_REGISTER", false),
 		SetupToken:        os.Getenv("SETUP_TOKEN"),
 		SeedExampleData:   getbool("SEED_EXAMPLE_DATA", false),
+		WebDir:            os.Getenv("WEB_DIR"),
 		FFmpegBin:         os.Getenv("FFMPEG_BIN"),
 		FFprobeBin:        os.Getenv("FFPROBE_BIN"),
 	}

@@ -130,6 +130,15 @@ func NewRouter(d Deps) http.Handler {
 		})
 	})
 
+	if d.Config.WebDir != "" {
+		web, err := webHandler(d.Config.WebDir)
+		if err != nil {
+			d.Logger.Error("frontend indisponível (WEB_DIR)", "dir", d.Config.WebDir, "err", err)
+		} else {
+			r.NotFound(web.ServeHTTP) // tudo fora de /api, /healthz e /readyz
+		}
+	}
+
 	return r
 }
 
