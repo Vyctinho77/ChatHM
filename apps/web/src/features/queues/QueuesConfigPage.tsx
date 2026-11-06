@@ -2,7 +2,8 @@ import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
 import { Check, Layers, Plus, TriangleAlert } from "lucide-react";
 import { ListRow, Page, PageBody, PageHeader, Section } from "@/components/list";
-import { Alert, Button, Field, Modal, Spinner } from "@/components/ui";
+import { Alert, Button, Field, Modal } from "@/components/ui";
+import { ListSkeleton } from "@/components/Skeleton";
 import { errorMessage, fieldErrors } from "@/lib/api";
 import { useTeams } from "@/features/team/api";
 import { useClassifyText, useCreateSegment, useImportExamples, useSegments, type ClassifyResult, type Segment } from "./api";
@@ -19,13 +20,13 @@ export function QueuesConfigPage() {
     <Page>
       <PageHeader title="Configurar filas" onBack={() => navigate("/filas")} />
       <PageBody>
-        {segments.isPending && <Spinner className="mx-auto mt-10" />}
+        {segments.isPending && <ListSkeleton rows={4} label="Carregando segmentos" />}
         {segments.data?.length === 0 && (
           <div className="mx-4 mt-6 border-b border-line pb-5 text-sm">
             <p className="font-medium">Nenhum segmento ainda</p>
             <p className="mt-1 text-muted">
               Segmentos organizam as conversas por assunto e as encaminham à equipe certa, por palavras-chave. Até você criar o primeiro,
-              toda conversa fica na fila Geral, visível a todos.
+              toda conversa fica na fila Não atribuídos, visível a todos.
             </p>
             {examples.isError && <Alert>{errorMessage(examples.error)}</Alert>}
             <div className="mt-4 flex flex-wrap gap-2">
@@ -52,7 +53,7 @@ export function QueuesConfigPage() {
 
             <Section
               title="Segmentos"
-              note="Mensagens sem correspondência clara, ou que combinam com mais de um segmento, vão para a fila Geral."
+              note="Mensagens sem correspondência clara, ou que combinam com mais de um segmento, vão para a fila Não atribuídos."
             >
               {segments.data.map((s) => (
                 <ListRow
@@ -79,7 +80,7 @@ function resultLine(r: ClassifyResult, name: (key?: string) => string) {
     const word = r.matches.find((m) => m.segmentKey === r.segmentKey)?.phrase;
     return (
       <span className="flex items-start gap-1.5 text-fg">
-        <Check className="mt-0.5 size-4 shrink-0 text-brand" />
+        <Check className="mt-0.5 size-4 shrink-0 text-brand-ink" />
         <span>
           Vai para <strong className="font-medium">{name(r.segmentKey)}</strong>
           {word && <span className="text-muted"> · “{word}”</span>}
@@ -92,11 +93,11 @@ function resultLine(r: ClassifyResult, name: (key?: string) => string) {
     return (
       <span className="flex items-start gap-1.5">
         <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" />
-        <span>Fila Geral: empate entre {names}. Dê prioridade maior a uma das palavras.</span>
+        <span>Fila Não atribuídos: empate entre {names}. Dê prioridade maior a uma das palavras.</span>
       </span>
     );
   }
-  return <span>Fila Geral: nenhuma palavra encontrada.</span>;
+  return <span>Fila Não atribuídos: nenhuma palavra encontrada.</span>;
 }
 
 function Tester({ segments }: { segments: Segment[] }) {
@@ -122,7 +123,7 @@ function Tester({ segments }: { segments: Segment[] }) {
         <button
           type="submit"
           disabled={!text.trim() || classify.isPending}
-          className="h-9 shrink-0 rounded-lg px-3 text-[13.5px] font-medium text-accent hover:bg-hover disabled:opacity-50"
+          className="h-9 shrink-0 rounded-lg px-3 text-[13.5px] font-medium text-brand-ink hover:bg-hover disabled:opacity-50"
         >
           Testar
         </button>

@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import QRCode from "react-qr-code";
 import { Check, Copy } from "lucide-react";
 import { Alert, Button, Field, Spinner } from "@/components/ui";
+import { Logo } from "@/components/Logo";
 import { ApiError, errorMessage, fieldErrors, type FieldErrors } from "@/lib/api";
 import {
   enrollFinish,
@@ -231,7 +232,7 @@ export function SetupPage({ needsInstallCode }: { needsInstallCode: boolean }) {
     return (
       <div className="flex min-h-full flex-col bg-app">
         <header className="px-6 py-4">
-          <span className="text-lg font-semibold text-brand">ChatHM</span>
+          <Logo />
         </header>
         <main className="flex flex-1 items-center px-4 pb-16">
           <WhatsAppQrCard installCode={installCode} onConnected={setWhatsapp} />
@@ -282,7 +283,7 @@ export function SetupPage({ needsInstallCode }: { needsInstallCode: boolean }) {
 
   return (
     <AuthLayout title="WhatsApp conectado" subtitle={whatsapp.phone ? `Número ${whatsapp.phone}` : "Agora, seus dados."}>
-      <div className="mb-4 flex items-center gap-2 text-sm text-brand">
+      <div className="mb-4 flex items-center gap-2 text-sm text-brand-ink">
         <Check className="size-4" /> Conectado
         <span className="ml-auto text-muted">
           <Steps current={2} total={3} />

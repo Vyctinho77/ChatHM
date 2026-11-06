@@ -4,10 +4,12 @@ import { meKey } from "@/features/auth/api";
 import { conversationKeys } from "@/features/conversations/store.api";
 import type { Conversation, Message } from "@/features/conversations/types";
 import { connectionKey, type Connection, type HistoryProgress } from "@/features/whatsapp/api";
+import { reminderKey } from "@/features/conversations/reminders";
 
 type ServerEvent =
   | { type: "conversation.updated"; data: Conversation }
   | { type: "conversation.removed"; data: { id: string } }
+  | { type: "conversation.reminder.updated"; data: { id: string } }
   | { type: "message.created"; data: Message }
   | { type: "message.updated"; data: Message }
   | { type: "whatsapp.status"; data: Omit<Connection, "qr" | "simulator"> }
@@ -22,6 +24,8 @@ export function applyRealtimeEvent(qc: QueryClient, ev: ServerEvent | HistoryEve
   switch (ev.type) {
     case "conversation.updated": {
       const c = ev.data;
+      const previous = qc.getQueryData<Conversation[]>(conversationKeys.list)?.find((x) => x.id === c.id);
+      if (previous?.assignee?.id !== c.assignee?.id) void qc.invalidateQueries({ queryKey: reminderKey });
       qc.setQueryData<Conversation[]>(conversationKeys.list, (old) => {
         if (!old) return old;
         const rest = old.filter((x) => x.id !== c.id);
@@ -33,8 +37,12 @@ export function applyRealtimeEvent(qc: QueryClient, ev: ServerEvent | HistoryEve
       // Perdeu acesso (ex.: outra pessoa assumiu uma conversa da fila geral).
       qc.setQueryData<Conversation[]>(conversationKeys.list, (old) => old?.filter((c) => c.id !== ev.data.id));
       qc.removeQueries({ queryKey: conversationKeys.messages(ev.data.id) });
+      void qc.invalidateQueries({ queryKey: reminderKey });
       break;
     }
+    case "conversation.reminder.updated":
+      void qc.invalidateQueries({ queryKey: reminderKey });
+      break;
     case "message.created":
     case "message.updated": {
       const m = ev.data;
@@ -76,7 +84,10 @@ export function useRealtime(enabled: boolean) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     // Rede de segurança: enquanto o socket estiver fora, recarrega o que está na tela.
     let poll: ReturnType<typeof setInterval> | undefined;
-    const resync = () => void qc.invalidateQueries({ queryKey: conversationKeys.list, refetchType: "active" });
+    const resync = () => {
+      void qc.invalidateQueries({ queryKey: conversationKeys.list, refetchType: "active" });
+      void qc.invalidateQueries({ queryKey: reminderKey, refetchType: "active" });
+    };
     const startPolling = () => {
       if (!poll) poll = setInterval(resync, 5_000);
     };
@@ -104,6 +115,7 @@ export function useRealtime(enabled: boolean) {
         if (attempt > 0) {
           void qc.invalidateQueries({ queryKey: conversationKeys.list });
           void qc.invalidateQueries({ queryKey: connectionKey });
+          void qc.invalidateQueries({ queryKey: reminderKey });
         }
         attempt = 0;
         stopPolling();

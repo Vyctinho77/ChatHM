@@ -1,11 +1,12 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowDown, ArrowLeft, CheckCheck, ChevronDown, ChevronUp, CircleCheck, EllipsisVertical, PanelRight, Search, UserRoundPlus, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, CheckCheck, ChevronDown, ChevronUp, CircleCheck, Clock3, EllipsisVertical, PanelRight, Search, UserRoundPlus, X } from "lucide-react";
 import { useSearchParams } from "react-router";
 import { fold, matches } from "@/lib/search";
 import { Avatar } from "@/components/Avatar";
 import { Menu, MenuItem } from "@/components/Menu";
-import { Alert, IconButton, Spinner } from "@/components/ui";
+import { Alert, IconButton } from "@/components/ui";
+import { ChatSkeleton } from "@/components/Skeleton";
 import { errorMessage, isRejection } from "@/lib/api";
 import { useMe } from "@/features/auth/api";
 import { cn } from "@/lib/cn";
@@ -22,6 +23,7 @@ import { TransferMenu } from "./TransferMenu";
 import { buildOutgoing, capabilities, useConversationActions, useMessages, useSendMessage, type OutgoingDraft } from "./store";
 import { statusLabel } from "./receipts";
 import { segmentClass, segmentLabel, type Conversation, type Message } from "./types";
+import { SnoozeDialog, SnoozeNotice } from "./SnoozeDialog";
 
 export function ChatPanel({
   conversation: c,
@@ -39,6 +41,8 @@ export function ChatPanel({
   const send = useSendMessage(c.id);
   const { data: me } = useMe();
   const isAdmin = me?.user.role === "admin";
+  const [snoozeOpen, setSnoozeOpen] = useState(false);
+  const [statusExpanded, setStatusExpanded] = useState(true);
   // Muda ao devolver um texto recusado ao campo de mensagem (remonta o Composer).
   const [composerKey, setComposerKey] = useState(0);
   const scroller = useRef<HTMLDivElement>(null);
@@ -153,6 +157,7 @@ export function ChatPanel({
   const lockedByOther = !!c.assignee && !mine && !closed;
   // O responsável encerra; administradores também podem encerrar qualquer atendimento.
   const canClose = capabilities.close && !closed && (mine || isAdmin);
+  const showAttendanceStatus = !lockedByOther && !closed && !c.snoozedUntil;
 
   const canTransfer = !closed && (mine || isAdmin || !c.assignee);
   const [transferAt, setTransferAt] = useState<{ x: number; y: number } | null>(null);
@@ -191,8 +196,8 @@ export function ChatPanel({
   }
 
   return (
-    <section aria-label={`Conversa com ${c.contact.name}`} className="flex h-full min-w-0 flex-col">
-      <header className="flex h-14 shrink-0 items-center gap-1.5 border-b border-line bg-panel px-2.5">
+    <section aria-label={`Conversa com ${c.contact.name}`} className="chat-wallpaper flex h-full min-w-0 flex-col">
+      <header className="relative flex h-14 shrink-0 items-center gap-1.5 border-b border-line bg-panel px-2.5">
         {onBack && (
           <IconButton label="Voltar para a lista" onClick={onBack}>
             <ArrowLeft className="size-5" />
@@ -212,9 +217,9 @@ export function ChatPanel({
               <span
                 title={
                   c.classification === "conflict"
-                    ? "Fila geral: a mensagem combinou com mais de um segmento"
+                    ? "Não atribuídos: a mensagem combinou com mais de um segmento, sem uma equipe definida"
                     : c.segment === "geral"
-                      ? "Fila geral: sem correspondência com um segmento"
+                      ? "Não atribuídos: nenhuma equipe identificada para este atendimento"
                       : undefined
                 }
                 className={cn(
@@ -231,6 +236,11 @@ export function ChatPanel({
           </span>
         </button>
         <div className="ml-auto flex items-center">
+          {showAttendanceStatus && !statusExpanded && (
+            <IconButton label="Mostrar status do atendimento" aria-expanded={false} onClick={() => setStatusExpanded(true)}>
+              <ChevronDown className="size-4" />
+            </IconButton>
+          )}
           {!closed && (
             <IconButton
               label="Transferir conversa"
@@ -273,6 +283,9 @@ export function ChatPanel({
             {(close) => (
               <>
                 <MenuItem onClick={() => (onToggleContact(), close())}>Dados do contato</MenuItem>
+                <MenuItem icon={<Clock3 />} disabled={!canClose} onClick={() => { setSnoozeOpen(true); close(); }}>
+                  {c.snoozedUntil ? "Alterar adiamento" : "Adiar atendimento"}
+                </MenuItem>
                 <MenuItem
                   icon={<UserRoundPlus />}
                   disabled={closed}
@@ -294,7 +307,30 @@ export function ChatPanel({
             )}
           </Menu>
         </div>
+        <AnimatePresence initial={false}>
+          {showAttendanceStatus && statusExpanded && (
+            <motion.button
+              key="attendance-status"
+              type="button"
+              aria-label="Recolher status do atendimento"
+              aria-expanded={true}
+              onClick={() => setStatusExpanded(false)}
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.16 }}
+              className="absolute right-3 top-full z-20 mt-2 flex min-h-9 max-w-[min(20rem,calc(100%-1.5rem))] items-center justify-between gap-3 rounded-lg border border-line bg-elevated px-3 py-2 text-left text-[11.5px] leading-4 text-muted shadow-sm hover:bg-hover"
+            >
+              <span aria-hidden className="absolute -top-1.5 right-8 size-2.5 rotate-45 border-l border-t border-line bg-elevated" />
+              <span className={cn("relative", mine && "font-medium text-brand-ink")}>{banner}</span>
+              <ChevronDown aria-hidden className="size-3.5 shrink-0" />
+            </motion.button>
+          )}
+        </AnimatePresence>
       </header>
+
+      {c.snoozedUntil && <SnoozeNotice conversation={c} canManage={canClose} onEdit={() => setSnoozeOpen(true)} />}
+      {snoozeOpen && <SnoozeDialog conversation={c} onClose={() => setSnoozeOpen(false)} />}
 
       {search !== null && (
         <div className="flex items-center gap-2 border-b border-line bg-panel px-4 py-2">
@@ -334,10 +370,10 @@ export function ChatPanel({
       )}
 
       <div className="relative min-h-0 flex-1">
-      <div ref={scroller} onScroll={onScroll} className="chat-wallpaper h-full overflow-y-auto px-3 py-3 sm:px-4">
-        {isPending && <Spinner className="mx-auto mt-10" />}
+      <div ref={scroller} onScroll={onScroll} className="h-full overflow-y-auto px-3 py-3 sm:px-4">
+        {isPending && <ChatSkeleton />}
         <motion.div
-          className="flex flex-col gap-1"
+          className="flex flex-col gap-2"
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: messages ? 1 : 0, y: messages ? 0 : 8 }}
           transition={{ duration: 0.25, ease: "easeOut" }}
@@ -363,7 +399,7 @@ export function ChatPanel({
                     </span>
                   </div>
                 )}
-                <div id={`msg-${m.id}`} className={cn(showAuthor || (prev && prev.direction !== m.direction) ? "mt-1.5" : "")}>
+                <div id={`msg-${m.id}`} className={cn(showAuthor || (prev && prev.direction !== m.direction) ? "mt-2" : "")}>
                   <MessageBubble
                     m={m}
                     showAuthor={showAuthor}
@@ -414,13 +450,10 @@ export function ChatPanel({
           </Alert>
         </div>
       )}
-      {!lockedByOther && !closed && (
-        <div className="border-t border-line bg-panel px-4 py-1 text-[11.5px] text-muted">{banner}</div>
-      )}
       <Composer
         key={`${c.id}:${composerKey}`}
         conversationId={c.id}
-        disabled={lockedByOther || closed || !capabilities.send}
+        disabled={lockedByOther || closed || !!c.snoozedUntil || !capabilities.send}
         disabledReason={
           !capabilities.send
             ? capabilities.sendUnavailableReason
@@ -428,7 +461,7 @@ export function ChatPanel({
               ? "Atendimento encerrado. Uma nova mensagem do cliente abre um novo atendimento."
               : lockedByOther
                 ? `${c.assignee?.name} está atendendo esta conversa.${canClose ? "" : ""}`
-                : undefined
+                : c.snoozedUntil ? "Atendimento adiado. Retome para responder." : undefined
         }
         mediaDisabledReason={capabilities.media ? undefined : capabilities.mediaUnavailableReason}
         onSend={submit}

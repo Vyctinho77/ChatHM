@@ -2,8 +2,30 @@ import { describe, expect, it } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import { applyRealtimeEvent } from "./useRealtime";
 import { connectionKey, type Connection } from "@/features/whatsapp/api";
+import { conversationKeys } from "@/features/conversations/store.api";
+import type { Conversation } from "@/features/conversations/types";
+import { reminderKey } from "@/features/conversations/reminders";
 
 describe("WhatsApp events", () => {
+  it("refreshes personal reminders without mixing them into the shared conversation", () => {
+    const qc = new QueryClient();
+    qc.setQueryData([...reminderKey, "me"], {});
+    qc.setQueryData(conversationKeys.list, []);
+    applyRealtimeEvent(qc, { type: "conversation.reminder.updated", data: { id: "chat" } });
+    expect(qc.getQueryState([...reminderKey, "me"])?.isInvalidated).toBe(true);
+    expect(qc.getQueryState(conversationKeys.list)?.isInvalidated).toBe(false);
+    qc.clear();
+  });
+  it("updates postponed state and clears it when the server resumes the conversation", () => {
+    const qc = new QueryClient();
+    const c: Conversation = { id: "chat", contact: { id: "contact", name: "Ana", phone: "", note: "" }, status: "in_progress", segment: "geral", tags: [], unreadCount: 0 };
+    qc.setQueryData<Conversation[]>(conversationKeys.list, [c]);
+    applyRealtimeEvent(qc, { type: "conversation.updated", data: { ...c, snoozedUntil: "2030-01-01T12:00:00Z" } });
+    expect(qc.getQueryData<Conversation[]>(conversationKeys.list)?.[0]?.snoozedUntil).toBeDefined();
+    applyRealtimeEvent(qc, { type: "conversation.updated", data: c });
+    expect(qc.getQueryData<Conversation[]>(conversationKeys.list)?.[0]?.snoozedUntil).toBeUndefined();
+    qc.clear();
+  });
   it("removes the QR as soon as the connection is confirmed and ignores late QR events", () => {
     const qc = new QueryClient();
     const qr = { code: "temporary", expiresAt: "2030-01-01T00:00:00Z" };

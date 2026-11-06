@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { AnimatePresence, motion } from "motion/react";
-import { CheckCheck, EllipsisVertical, ListFilter, Search, SquarePen } from "lucide-react";
+import { CheckCheck, Clock3, EllipsisVertical, ListFilter, Search, SquarePen, StickyNote } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
+import { Logo } from "@/components/Logo";
 import { Menu, MenuItem } from "@/components/Menu";
-import { Badge, IconButton, Spinner } from "@/components/ui";
+import { Badge, IconButton } from "@/components/ui";
+import { ListSkeleton } from "@/components/Skeleton";
 import { useMe } from "@/features/auth/api";
 import { cn } from "@/lib/cn";
 import { formatListTime } from "@/lib/format";
@@ -16,19 +18,29 @@ import { SearchResults } from "./SearchResults";
 import { useContactOpener, useConversationActions, useConversations, useMessageSearch, useSegmentOptions } from "./store";
 import { Ticks } from "./Ticks";
 import { TransferMenu } from "./TransferMenu";
+import { filterConversations, type ConversationFilter as Filter } from "./conversationFilter";
+import { reminderColors, useReminders, type Reminder } from "./reminders";
+import { ReminderEditor } from "./ReminderEditor";
 import type { ContactRecord, Conversation, MessageHit, SegmentKey, SegmentOption } from "./types";
-
-type Filter = "mine" | "general" | "all";
 
 export function ConversationList({ selectedId, onSelect }: { selectedId?: string; onSelect: (id: string) => void }) {
   const { data, isPending } = useConversations();
   const actions = useConversationActions();
-  const [filter, setFilter] = useState<Filter>("all");
   const { data: meData } = useMe();
   const isAdmin = meData?.user.role === "admin";
   const [ctx, setCtx] = useState<{ id: string; x: number; y: number } | null>(null);
   // O filtro de fila fica na URL (?fila=folha): a tela Filas / Segmentos abre a lista já filtrada.
   const [params, setParams] = useSearchParams();
+  const requestedFilter = params.get("vista");
+  const filter: Filter = requestedFilter === "mine" || requestedFilter === "general" || requestedFilter === "snoozed" ? requestedFilter : "all";
+  const reminders = useReminders(filter === "mine");
+  const [editingReminder, setEditingReminder] = useState<Conversation | null>(null);
+  const setFilter = (nextFilter: Filter) => setParams((p) => {
+    const next = new URLSearchParams(p);
+    if (nextFilter === "all") next.delete("vista");
+    else next.set("vista", nextFilter);
+    return next;
+  }, { replace: true });
   const segment: SegmentKey | null = params.get("fila");
   const setSegment = (k: SegmentKey | null) =>
     setParams(
@@ -41,7 +53,7 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
       { replace: true },
     );
   const { data: segmentData } = useSegmentOptions();
-  const segmentOptions: SegmentOption[] = [...(segmentData ?? []), { key: "geral", name: "Geral" }];
+  const segmentOptions: SegmentOption[] = [...(segmentData ?? []), { key: "geral", name: "Não atribuídos" }];
   const [query, setQuery] = useState("");
   const [newOpen, setNewOpen] = useState(false);
   const navigate = useNavigate();
@@ -66,10 +78,7 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
 
   const visible = useMemo(() => {
     const q = query.trim();
-    return all.filter((c) => {
-      if (filter === "mine" && c.assignee?.id !== actions.me.id) return false;
-      if (filter === "general" && c.segment !== "geral") return false;
-      if (segment && c.segment !== segment) return false;
+    return filterConversations(all, filter, actions.me.id, segment).filter((c) => {
       if (!q) return true;
       const last = c.lastMessage;
       const text = last?.kind === "text" ? last.text : last?.kind === "document" ? last.fileName : "";
@@ -98,15 +107,19 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
 
   const chips: { key: Filter; label: string }[] = [
     { key: "mine", label: "Minhas" },
-    { key: "general", label: "Geral" },
+    { key: "general", label: "Não atribuídos" },
     { key: "all", label: "Todas" },
+    { key: "snoozed", label: "Adiadas" },
   ];
   const ctxConv = ctx ? all.find((c) => c.id === ctx.id) : undefined;
 
   return (
     <section aria-label="Conversas" className="flex h-full min-w-0 flex-col bg-panel">
       <div className="flex items-center gap-0.5 px-3 pt-3">
-        <h1 className="mr-auto pl-1 text-base font-semibold">Conversas</h1>
+        <h1 className="mr-auto pl-1 text-base font-semibold">
+          <span className="lg:hidden">Conversas</span>
+          <span className="hidden lg:inline-flex"><Logo className="[&_img]:h-7" /></span>
+        </h1>
         <IconButton label="Nova conversa" onClick={() => setNewOpen(true)}>
           <SquarePen className="size-5" />
         </IconButton>
@@ -172,10 +185,11 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
             onClick={() => setFilter(c.key)}
             className={cn(
               "inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2.5 text-xs transition-colors",
-              filter === c.key ? "font-semibold text-accent" : "text-muted hover:bg-hover hover:text-fg",
+              filter === c.key ? "font-semibold text-brand-ink" : "text-muted hover:bg-hover hover:text-fg",
             )}
           >
             {c.label}
+            {c.key === "snoozed" && all.some((x) => x.snoozedUntil) && <span className="text-[10px] tabular-nums">{all.filter((x) => x.snoozedUntil).length}</span>}
           </button>
         ))}
       </div>
@@ -183,14 +197,15 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
       {segment && (
         <div className="px-4 pb-2 text-[11.5px] text-muted">
           Segmento: <span className="font-medium text-fg">{segmentOptions.find((o) => o.key === segment)?.name ?? segment}</span>{" "}
-          <button className="text-accent hover:underline" onClick={() => setSegment(null)}>
+          <button className="text-brand-ink hover:underline" onClick={() => setSegment(null)}>
             limpar
           </button>
         </div>
       )}
 
       <motion.div layoutScroll className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
-        {isPending && <Spinner className="mx-auto mt-8" />}
+        {filter === "mine" && reminders.isError && <p role="status" className="px-3 py-2 text-xs text-muted">Não foi possível carregar os lembretes. <button type="button" className="text-brand-ink underline" onClick={() => void reminders.refetch()}>Tentar novamente</button></p>}
+        {isPending && <ListSkeleton rows={6} label="Carregando conversas" />}
         {!isPending && visible.length === 0 && !(debounced.length >= 2 && debounced === query.trim() && ((server.data?.messages.length ?? 0) > 0 || (server.data?.contacts.length ?? 0) > 0 || server.isFetching)) && (
           <p className="px-4 py-10 text-center text-sm text-muted">Nenhuma conversa encontrada.</p>
         )}
@@ -202,6 +217,10 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
                 c={c}
                 myId={actions.me.id}
                 selected={c.id === selectedId}
+                showReminder={filter === "mine" && c.assignee?.id === actions.me.id}
+                reminder={reminders.data?.[c.id]}
+                reminderReady={reminders.isSuccess}
+                onEditReminder={() => setEditingReminder(c)}
                 onClick={() => onSelect(c.id)}
                 onContextMenu={(e) => {
                   e.preventDefault();
@@ -223,6 +242,7 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
         )}
       </motion.div>
       <NewConversationModal open={newOpen} onClose={() => setNewOpen(false)} />
+      {editingReminder && <ReminderEditor key={editingReminder.id} conversationId={editingReminder.id} contactName={editingReminder.contact.name} reminder={reminders.data?.[editingReminder.id]} onClose={() => setEditingReminder(null)} />}
       {ctx && ctxConv && (
         <TransferMenu
           conversation={ctxConv}
@@ -244,12 +264,20 @@ function ConversationRow({
   selected,
   onClick,
   onContextMenu,
+  showReminder,
+  reminder,
+  reminderReady,
+  onEditReminder,
 }: {
   c: Conversation;
   myId: string;
   selected: boolean;
   onClick: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
+  showReminder: boolean;
+  reminder?: Reminder;
+  reminderReady: boolean;
+  onEditReminder: () => void;
 }) {
   const unread = c.unreadCount > 0;
   const last = c.lastMessage;
@@ -312,7 +340,7 @@ function ConversationRow({
                   exit={{ scale: 0 }}
                   transition={{ type: "spring", stiffness: 600, damping: 22 }}
                 >
-                  <Badge className="bg-unread text-white">{c.unreadCount}</Badge>
+                  <Badge className="bg-unread text-accent-fg">{c.unreadCount}</Badge>
                 </motion.span>
               )}
             </AnimatePresence>
@@ -334,8 +362,15 @@ function ConversationRow({
               ))}
             </div>
           )}
+          {c.snoozedUntil && <p className="mt-1 flex items-center gap-1 text-[11px] text-muted"><Clock3 className="size-3 shrink-0" />Retorna {new Date(c.snoozedUntil).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</p>}
         </div>
       </button>
+      {showReminder && <div className="-mt-1 pb-2.5 pl-14 pr-2.5">
+        <button type="button" disabled={!reminderReady} onClick={onEditReminder} aria-label={`${reminder ? "Editar" : "Adicionar"} lembrete de ${c.contact.name}`} title={reminder?.text} className={cn("flex w-full items-start gap-1.5 rounded-md px-2 py-1.5 text-left text-[11.5px] leading-4 transition-colors disabled:opacity-50", reminder ? reminderColors[reminder.color].style : "text-muted hover:bg-hover hover:text-fg")}>
+          <StickyNote className="mt-px size-3 shrink-0" />
+          <span className="min-w-0 break-words line-clamp-2">{reminder?.text ?? (reminderReady ? "Adicionar lembrete" : "Carregando lembrete…")}</span>
+        </button>
+      </div>}
     </motion.li>
   );
 }

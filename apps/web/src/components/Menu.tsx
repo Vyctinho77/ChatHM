@@ -77,7 +77,7 @@ export function MenuItem({
       className={cn(
         "flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[13px] hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50",
         danger && "text-danger",
-        active && "font-semibold text-accent",
+        active && "font-semibold text-brand-ink",
       )}
     >
       {icon && <span className="text-muted [&>svg]:size-4">{icon}</span>}

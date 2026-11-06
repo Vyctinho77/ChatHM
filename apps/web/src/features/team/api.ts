@@ -36,9 +36,10 @@ export function useTeams() {
   return useQuery({ queryKey: teamKeys.teams, queryFn: async () => (await get<{ teams: Team[] }>("/teams")).teams });
 }
 
-export function useMembers(teamId: string) {
+export function useMembers(teamId: string, enabled = true) {
   return useQuery({
     queryKey: teamKeys.members(teamId),
+    enabled,
     queryFn: async () => (await get<{ members: Member[] }>(`/teams/${teamId}/members`)).members,
   });
 }

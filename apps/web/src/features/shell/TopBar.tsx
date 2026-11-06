@@ -11,7 +11,7 @@ export function TopBar({ onOpenMenu }: { onOpenMenu?: () => void }) {
           <MenuIcon className="size-5" />
         </IconButton>
       )}
-      <Logo />
+      <Logo className="[&_img]:h-6" />
       <ThemeSwitcher className="ml-auto" />
     </header>
   );

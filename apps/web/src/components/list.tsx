@@ -37,7 +37,7 @@ export function PageBody({ children }: { children: ReactNode }) {
 export function Section({ title, note, children }: { title?: string; note?: ReactNode; children: ReactNode }) {
   return (
     <section>
-      {title && <h2 className="px-4 pb-1 pt-6 text-[12.5px] font-medium text-brand">{title}</h2>}
+      {title && <h2 className="px-4 pb-1 pt-6 text-[12.5px] font-medium text-brand-ink">{title}</h2>}
       <ul>{children}</ul>
       {note && <p className="px-4 pt-2 text-[12px] leading-snug text-muted">{note}</p>}
     </section>
@@ -89,7 +89,7 @@ export function ListRow({
             className={cn(
               "block truncate text-[14px] leading-snug",
               tone === "danger" && "text-danger",
-              tone === "brand" && "font-medium text-brand",
+              tone === "brand" && "font-medium text-brand-ink",
             )}
           >
             {title}
@@ -157,7 +157,7 @@ function SwitchGraphic({ checked }: { checked: boolean }) {
 export function CountBadge({ n }: { n: number }) {
   if (n <= 0) return null;
   return (
-    <span className="inline-flex min-w-[20px] items-center justify-center rounded-full bg-unread px-1.5 text-[11.5px] font-semibold leading-5 text-white tabular-nums">
+    <span className="inline-flex min-w-[20px] items-center justify-center rounded-full bg-unread px-1.5 text-[11.5px] font-semibold leading-5 text-accent-fg tabular-nums">
       {n}
     </span>
   );

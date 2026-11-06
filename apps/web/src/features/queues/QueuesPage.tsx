@@ -2,7 +2,8 @@ import { useMemo } from "react";
 import { useNavigate } from "react-router";
 import { Layers, SlidersHorizontal } from "lucide-react";
 import { CountBadge, ListRow, Page, PageBody, PageHeader, Section } from "@/components/list";
-import { Alert, IconButton, Spinner } from "@/components/ui";
+import { Alert, IconButton } from "@/components/ui";
+import { ListSkeleton } from "@/components/Skeleton";
 import { useMe } from "@/features/auth/api";
 import { useConversations } from "@/features/conversations/store";
 import type { Conversation } from "@/features/conversations/types";
@@ -15,6 +16,7 @@ function counts(list: Conversation[], key: string) {
   let waiting = 0;
   let active = 0;
   for (const c of list) {
+    if (c.snoozedUntil) continue;
     if (c.segment !== key) continue;
     if (c.status === "new") waiting++;
     else if (c.status === "in_progress") active++;
@@ -24,7 +26,7 @@ function counts(list: Conversation[], key: string) {
 
 /** Uma linha de apoio curta: equipe e andamento. */
 function subtitle(q: Queue, n: { waiting: number; active: number }) {
-  const team = q.general ? "Todas as equipes" : q.teamName ? `Equipe ${q.teamName}` : "Sem equipe";
+  const team = q.general ? "Sem equipe definida" : q.teamName ? `Equipe ${q.teamName}` : "Sem equipe";
   const progress =
     n.active > 0 ? `${n.active} em atendimento` : n.waiting > 0 ? "ninguém atendendo ainda" : "nenhuma conversa";
   return `${q.isActive ? "" : "Desativada · "}${team} · ${progress}`;
@@ -44,7 +46,7 @@ export function QueuesPage() {
     const visible = (segments.data ?? []).filter((s) => isAdmin || !s.teamId || myTeams.has(s.teamId));
     return [
       ...visible.map((s) => ({ key: s.key, name: s.name, teamName: s.teamName, isActive: s.isActive })),
-      { key: "geral", name: "Geral", isActive: true, general: true },
+      { key: "geral", name: "Não atribuídos", isActive: true, general: true },
     ];
   }, [segments.data, teams.data, isAdmin]);
 
@@ -61,7 +63,7 @@ export function QueuesPage() {
         }
       />
       <PageBody>
-        {segments.isPending && <Spinner className="mx-auto mt-10" />}
+        {segments.isPending && <ListSkeleton rows={4} label="Carregando filas" />}
         {segments.isError && (
           <div className="p-4">
             <Alert>Não foi possível carregar as filas.</Alert>
@@ -69,13 +71,13 @@ export function QueuesPage() {
         )}
         {!segments.isPending && !segments.isError && segments.data?.length === 0 && (
           <p className="px-4 pt-6 text-[13px] text-muted">
-            Ainda não há segmentos: todas as conversas ficam na fila Geral.
+            Ainda não há segmentos: todas as conversas ficam na fila Não atribuídos.
             {isAdmin && " Crie os segmentos do escritório em Configurar filas (ícone de ajustes)."}
           </p>
         )}
         {!segments.isPending && !segments.isError && (
           <Section
-            note="Cada mensagem nova vai para a fila do segmento que combina com ela. Sem correspondência clara, fica na fila Geral."
+            note="As conversas são encaminhadas por assunto. Sem uma correspondência clara, aparecem em Não atribuídos."
           >
             {queues.map((q) => {
               const n = counts(conversations, q.key);

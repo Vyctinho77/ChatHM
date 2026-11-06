@@ -33,9 +33,13 @@ export function useConversations() {
   const who = useIdentity();
   return useQuery({
     queryKey: keys.list,
+    refetchInterval: (query) => query.state.data?.some((c) => c.snoozedUntil) ? 15_000 : false,
     enabled: !!who.id,
     queryFn: async () => {
       await delay(150);
+      getDB(who.id, who.name).conversations.forEach((c) => {
+        if (c.snoozedUntil && Date.parse(c.snoozedUntil) <= Date.now()) c.snoozedUntil = undefined;
+      });
       return getDB(who.id, who.name).conversations.filter((c) => c.status !== "closed").sort((a, b) =>
         (b.lastMessage?.sentAt ?? "9").localeCompare(a.lastMessage?.sentAt ?? "9"), // sem mensagens (nova conversa) fica no topo
       );
@@ -102,7 +106,7 @@ export function useContactOpener() {
     };
     const create = (contact: Conversation["contact"]) => {
       const d = getDB(who.id, who.name);
-      const c: Conversation = { id: `n${Date.now()}`, contact, segment: "geral", segmentName: "Geral", status: "in_progress", assignee: { id: who.id, name: who.name }, unreadCount: 0, tags: [] };
+      const c: Conversation = { id: `n${Date.now()}`, contact, segment: "geral", segmentName: "Não atribuídos", status: "in_progress", assignee: { id: who.id, name: who.name }, unreadCount: 0, tags: [] };
       d.conversations = [c, ...d.conversations];
       d.messages[c.id] = [];
       return open(c);
@@ -131,6 +135,14 @@ export function useConversationActions() {
   const refresh = () => qc.invalidateQueries({ queryKey: keys.list });
 
   return useMemo(() => ({
+    async snooze(id: string, until: string) {
+      patchConversation(id, (c) => ({ ...c, snoozedUntil: until }));
+      await refresh();
+    },
+    async resume(id: string) {
+      patchConversation(id, (c) => ({ ...c, snoozedUntil: undefined }));
+      await refresh();
+    },
     markRead(id: string) {
       const c = db?.conversations.find((x) => x.id === id);
       if (!c || c.unreadCount === 0) return;

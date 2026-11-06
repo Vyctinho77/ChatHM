@@ -6,46 +6,54 @@
 
 /* Tokens semânticos: os componentes usam bg-panel, text-muted etc. e o tema troca os valores. */
 :root {
-  --c-app: #eef1f5;
+  --c-app: #ffffff;
   --c-panel: #ffffff;
-  --c-chat: #f4f1ec;
-  --c-elevated: #ffffff;
-  --c-hover: #f1f4f8;
-  --c-border: #e2e7ee;
-  --c-text: #111827;
-  --c-muted: #667085;
-  --c-accent: #1f7aec;
-  --c-accent-fg: #ffffff;
-  --c-selected: #e3eefc;
-  --c-brand: #12a150;
-  --c-out: #d7f8cf;
-  --c-out-text: #0b2a17;
-  --c-in: #ffffff;
-  --c-unread: #1fb855;
-  --c-read: #2b9be0;
+  --c-chat: #f4f4f4;
+  --c-elevated: #fafafa;
+  --c-hover: #f0f0f0;
+  --c-border: #dedede;
+  --c-text: #111111;
+  --c-muted: #646464;
+  --c-accent: #8b9d40;
+  --c-accent-fg: #111111;
+  --c-selected: #e8e8e8;
+  --c-brand: #8b9d40;
+  --c-brand-ink: #53611f;
+  --c-out: #8b9d40;
+  --c-out-text: #ffffff;
+  --c-in: #292929;
+  --c-in-text: #ffffff;
+  --c-unread: #8b9d40;
+  --c-read: #006fc9;
+  --c-auth-bg: #f4f4f4;
+  --c-input: #f2f2f2;
   --c-danger: #dc2626;
   --c-warning: #b7791f;
   --chat-dot: rgb(0 0 0 / 0.035);
 }
 
 .dark {
-  --c-app: #0a0e14;
-  --c-panel: #0d1219;
-  --c-chat: #080b10;
-  --c-elevated: #18202b;
-  --c-hover: #151c26;
-  --c-border: #1c2430;
-  --c-text: #e8edf3;
-  --c-muted: #8d98a7;
-  --c-accent: #2b8cff;
-  --c-accent-fg: #ffffff;
-  --c-selected: #15253b;
-  --c-brand: #3ddc84;
-  --c-out: #0f5537;
-  --c-out-text: #e9fbf0;
-  --c-in: #1a222d;
-  --c-unread: #22c55e;
+  --c-app: #111111;
+  --c-panel: #171717;
+  --c-chat: #101010;
+  --c-elevated: #262626;
+  --c-hover: #2c2c2c;
+  --c-border: #333333;
+  --c-text: #f5f5f5;
+  --c-muted: #ababab;
+  --c-accent: #8b9d40;
+  --c-accent-fg: #111111;
+  --c-selected: #303030;
+  --c-brand: #8b9d40;
+  --c-brand-ink: #bacb79;
+  --c-out: #8b9d40;
+  --c-out-text: #ffffff;
+  --c-in: #ffffff;
+  --c-in-text: #111111;
+  --c-unread: #8b9d40;
   --c-read: #53bdeb;
+  --c-auth-bg: #111111;
+  --c-input: #242424;
   --c-danger: #f87171;
   --c-warning: #f5c542;
   --chat-dot: rgb(255 255 255 / 0.025);
@@ -65,13 +73,33 @@
   --color-accent-fg: var(--c-accent-fg);
   --color-selected: var(--c-selected);
   --color-brand: var(--c-brand);
+  --color-brand-ink: var(--c-brand-ink);
+  --color-auth-bg: var(--c-auth-bg);
   --color-out: var(--c-out);
   --color-out-fg: var(--c-out-text);
   --color-in: var(--c-in);
+  --color-in-fg: var(--c-in-text);
   --color-unread: var(--c-unread);
   --color-read: var(--c-read);
   --color-danger: var(--c-danger);
   --color-warning: var(--c-warning);
+}
+
+.auth-card input:not([type="checkbox"]):not([type="radio"]) {
+  min-height: 46px;
+  border-radius: 10px;
+  background: var(--c-input);
+  padding-inline: 14px;
+  font-size: 14px;
+}
+
+.auth-card input[autocomplete="one-time-code"] {
+  font-size: 20px;
+}
+
+.auth-card input:focus {
+  border-color: var(--c-brand-ink);
+  box-shadow: 0 0 0 3px rgb(139 157 64 / 0.12);
 }
 
 html,
@@ -109,7 +137,12 @@ body {
    (ex.: outline-none no campo de mensagem) possam sobrescrever. */
 @layer base {
   :focus-visible {
-    outline: 2px solid var(--c-accent);
+    outline: 2px solid var(--c-brand-ink);
     outline-offset: 2px;
+  }
+
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--c-accent);
   }
 }

@@ -28,7 +28,7 @@ export function GettingStarted() {
       {steps.map((s) => (
         <li key={s.title}>
           <Link to={s.to} className="flex items-center gap-2.5 rounded-lg px-3 py-1.5 hover:bg-hover">
-            {s.done ? <Check className="size-4 text-brand" /> : <Circle className="size-4 text-muted" />}
+            {s.done ? <Check className="size-4 text-brand-ink" /> : <Circle className="size-4 text-muted" />}
             <span className={s.done ? "text-muted line-through" : "text-fg"}>{s.title}</span>
           </Link>
         </li>

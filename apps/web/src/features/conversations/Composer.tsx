@@ -163,15 +163,17 @@ export function Composer({
 
   if (disabled) {
     return (
-      <div className="border-t border-line bg-panel px-4 py-3 text-center text-[12.5px] text-muted">{disabledReason}</div>
+      <div className="shrink-0 px-3 pb-3 pt-2 sm:px-4">
+        <div className="rounded-2xl bg-panel px-4 py-3 text-center text-[12.5px] text-muted shadow-sm">{disabledReason}</div>
+      </div>
     );
   }
 
   return (
-    <div className="border-t border-line bg-panel px-2.5 py-2">
+    <div className="shrink-0 px-3 pb-3 pt-2 sm:px-4">
       {error && <p className="px-2 pb-1 text-xs text-danger">{error}</p>}
       {recorder.recording ? (
-        <div className="flex items-center gap-3 px-1">
+        <div className="flex min-h-14 items-center gap-3 rounded-2xl bg-panel px-3 py-2 shadow-lg shadow-black/5">
           <IconButton label="Descartar gravação" onClick={() => recorder.stop(true)}>
             <Trash2 className="size-5 text-danger" />
           </IconButton>
@@ -183,13 +185,13 @@ export function Composer({
             type="button"
             onClick={() => recorder.stop()}
             aria-label="Enviar áudio"
-            className="ml-auto inline-flex size-10 items-center justify-center rounded-full bg-brand text-white"
+            className="ml-auto inline-flex size-10 items-center justify-center rounded-full bg-brand text-accent-fg"
           >
             <SendHorizontal className="size-5" />
           </button>
         </div>
       ) : (
-        <div className="flex items-end gap-1">
+        <div className="flex items-end gap-1 rounded-2xl bg-panel px-2.5 py-2 shadow-lg shadow-black/5">
           <Menu
             align="left"
             placement="top"
@@ -259,7 +261,7 @@ export function Composer({
             onKeyDown={onKeyDown}
             placeholder="Digite uma mensagem"
             aria-label="Mensagem"
-            className="mx-1 max-h-40 min-h-9 flex-1 resize-none rounded-lg border border-line bg-elevated px-3.5 py-2 text-[13.5px] leading-5 outline-none placeholder:text-muted focus-visible:outline-none"
+            className="mx-1 max-h-40 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-[13.5px] leading-5 outline-none placeholder:text-muted focus-visible:outline-none"
           />
 
           <AnimatePresence mode="popLayout" initial={false}>
@@ -272,7 +274,7 @@ export function Composer({
               className="inline-flex"
             >
               {text.trim() ? (
-                <IconButton label="Enviar" onClick={sendText} className="text-brand hover:text-brand">
+                <IconButton label="Enviar" onClick={sendText} className="text-brand-ink hover:text-brand-ink">
                   <SendHorizontal className="size-5" />
                 </IconButton>
               ) : (

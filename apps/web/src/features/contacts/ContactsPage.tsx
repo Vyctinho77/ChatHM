@@ -3,7 +3,8 @@ import { Link, useNavigate } from "react-router";
 import { MessageSquarePlus, MessageSquareText, Search, UserRound } from "lucide-react";
 import { Highlight } from "@/components/Highlight";
 import { Page, PageHeader } from "@/components/list";
-import { Alert, Button, Spinner } from "@/components/ui";
+import { Alert, Button } from "@/components/ui";
+import { ListSkeleton } from "@/components/Skeleton";
 import { errorMessage } from "@/lib/api";
 import { matches } from "@/lib/search";
 import { useContactOpener } from "@/features/conversations/store";
@@ -35,29 +36,33 @@ export function ContactsPage() {
 
   return (
     <Page>
-      <PageHeader title="Clientes" />
-      <div className="mx-auto max-w-4xl px-4 py-5 sm:px-6">
-        <div className="mb-4 flex flex-wrap items-center gap-3">
-          <label className="flex flex-1 items-center gap-2 rounded-lg border border-line bg-elevated px-3 py-2 text-sm">
-            <Search className="size-4 shrink-0 text-muted" />
+      <PageHeader
+        title="Clientes"
+        actions={
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="sr-only whitespace-nowrap text-xs text-muted sm:not-sr-only" aria-live="polite">
+              {term ? `${visible.length} de ${contacts.length}` : contacts.length} contatos
+            </span>
+          <label className="flex h-9 w-[min(52vw,24rem)] items-center gap-2 rounded-lg border border-line bg-elevated px-3 text-[13px] focus-within:border-accent sm:w-80 lg:w-96">
+            <Search className="size-4 shrink-0 text-muted" aria-hidden="true" />
             <input
               aria-label="Buscar clientes"
               placeholder="Buscar por nome, telefone ou empresa"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="min-w-0 flex-1 bg-transparent outline-none"
+              className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted"
             />
           </label>
-          <span className="text-xs text-muted">
-            {term ? `${visible.length} de ${contacts.length}` : contacts.length} contatos
-          </span>
-        </div>
+          </div>
+        }
+      />
+      <div className="mx-auto max-w-4xl px-4 py-5 sm:px-6">
         {failure && (
           <div className="mb-3">
             <Alert>{failure}</Alert>
           </div>
         )}
-        {isPending && <Spinner className="mx-auto my-10" />}
+        {isPending && <ListSkeleton label="Carregando clientes" />}
         {error && <Alert>{errorMessage(error)}</Alert>}
         {!isPending && !error && visible.length === 0 && (
           <p className="py-12 text-center text-sm text-muted">

@@ -20,14 +20,14 @@ export function UserMenu({ me }: { me: Me }) {
           onClick={toggle}
           aria-expanded={open}
           aria-haspopup="menu"
-          className="flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left transition-colors hover:bg-hover"
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left transition-colors hover:bg-hover"
         >
-          <Avatar name={me.user.name} size="sm" className="bg-blue-600 text-white" />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-[13px] font-medium leading-tight">{me.user.name}</span>
-            <span className="block truncate text-[11px] leading-tight text-muted">{roleLabel[me.user.role]}</span>
+          <Avatar name={me.user.name} size="sm" className="size-8 bg-selected text-brand-ink" />
+          <span className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="block truncate text-[13px] font-semibold leading-4">{me.user.name}</span>
+            <span className="block truncate text-[11px] leading-4 text-muted">{roleLabel[me.user.role]}</span>
           </span>
-          <ChevronsUpDown className="size-3.5 shrink-0 text-muted" />
+          <ChevronsUpDown className="ml-1 size-3.5 shrink-0 text-muted/70" />
         </button>
       )}
     >

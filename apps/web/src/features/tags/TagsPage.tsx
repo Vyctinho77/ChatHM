@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import { Alert, Button, Field, IconButton, Modal, Spinner } from "@/components/ui";
+import { Alert, Button, Field, IconButton, Modal } from "@/components/ui";
+import { ListSkeleton } from "@/components/Skeleton";
 import { ApiError, errorMessage, type FieldErrors } from "@/lib/api";
 import { useMe } from "@/features/auth/api";
 import type { TagInfo } from "@/features/conversations/types";
@@ -50,7 +51,7 @@ export function TagsPage() {
         {create.isError && !fields.name && <div className="mt-2"><Alert>{errorMessage(create.error)}</Alert></div>}
 
         <div className="mt-5">
-          {tags.isPending && <Spinner className="mx-auto" />}
+          {tags.isPending && <ListSkeleton avatar={false} rows={4} label="Carregando etiquetas" />}
           {tags.isError && <Alert>{errorMessage(tags.error)}</Alert>}
           <ul className="divide-y divide-line border-y border-line">
             {tags.data?.length === 0 && <li className="px-4 py-6 text-center text-[13px] text-muted">Nenhuma etiqueta cadastrada.</li>}

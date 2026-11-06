@@ -102,7 +102,7 @@ function ItemView({ item, onView, onClose }: Props & { item: AgendaItem }) {
             <button
               type="button"
               onClick={() => navigate(`/conversas/${item.contact!.conversationId}`)}
-              className="ml-2 inline-flex items-center gap-1 text-accent hover:underline"
+              className="ml-2 inline-flex items-center gap-1 text-brand-ink hover:underline"
             >
               <MessageSquareText className="size-3.5" /> Abrir conversa
             </button>
@@ -164,7 +164,7 @@ function DayView({ date, items, teamNames, onView, onClose }: Props & { date: st
           type="button"
           disabled={teamNames.length === 0}
           onClick={() => onView({ type: "form", date })}
-          className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[13.5px] font-medium text-brand hover:bg-hover"
+          className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[13.5px] font-medium text-brand-ink hover:bg-hover"
         >
           <Plus className="size-4" /> Novo neste dia
         </button>

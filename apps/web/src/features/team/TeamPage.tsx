@@ -1,7 +1,10 @@
 import { useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router";
-import { Copy, Eye, EyeOff, KeyRound, Pencil, Plus, RefreshCw, ShieldCheck, Smartphone, Trash2, UserPlus } from "lucide-react";
+import { ChevronDown, Copy, EllipsisVertical, Eye, EyeOff, KeyRound, Pencil, Plus, RefreshCw, ShieldCheck, Smartphone, Trash2, UserPlus, UsersRound } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
+import { Menu, MenuItem } from "@/components/Menu";
+import { Page, PageHeader } from "@/components/list";
+import { ListSkeleton } from "@/components/Skeleton";
 import { Alert, Button, Field, IconButton, Modal, Spinner } from "@/components/ui";
 import { ApiError, errorMessage, type FieldErrors } from "@/lib/api";
 import { cn } from "@/lib/cn";
@@ -42,25 +45,21 @@ export function TeamPage() {
     ? "teams"
     : (chosen ?? (params.get("aba") === "equipes" || teamsList.data?.length === 0 ? "teams" : "members"));
   const setTab = setChosen;
+  const [accessOpen, setAccessOpen] = useState(false);
+  const [inviting, setInviting] = useState(false);
+  const [creatingTeam, setCreatingTeam] = useState(false);
 
   return (
-    <div className="h-full overflow-y-auto bg-app">
-      <div className="mx-auto max-w-5xl px-4 py-6 sm:px-8">
-        <h1 className="text-xl font-semibold">Equipe</h1>
-        <p className="mt-1 text-[13px] text-muted">
-          {isAdmin
-            ? "Cadastre atendentes e defina de quais equipes participam. A equipe determina quais filas cada pessoa vê."
-            : "Equipes das quais você participa."}
-        </p>
-
-        {isAdmin && (
-          <div className="mt-6">
-            <TeamAccessCard />
-          </div>
-        )}
-
-        {isAdmin && (
-          <div role="tablist" className="flex gap-1 border-b border-line">
+    <Page>
+      <PageHeader title="Equipe" actions={isAdmin ? (
+        <Button variant="ghost" onClick={() => setAccessOpen(true)}>
+          <KeyRound className="size-4 text-muted" /> Acesso da equipe
+        </Button>
+      ) : undefined} />
+      <div className="px-4 py-6 sm:px-5">
+        <div className="mb-7 flex flex-wrap items-center justify-between gap-4">
+        {isAdmin ? (
+          <div role="tablist" aria-label="Gerenciar equipe" className="inline-flex gap-1 rounded-xl bg-hover p-1">
             {(
               [
                 ["members", "Pessoas"],
@@ -73,29 +72,37 @@ export function TeamPage() {
                 aria-selected={tab === k}
                 onClick={() => setTab(k)}
                 className={cn(
-                  "-mb-px border-b-2 px-4 py-2 text-sm font-medium",
-                  tab === k ? "border-accent text-fg" : "border-transparent text-muted hover:text-fg",
+                  "rounded-lg px-4 py-2 text-[13px] font-medium transition-colors",
+                  tab === k ? "bg-panel text-fg shadow-sm" : "text-muted hover:text-fg",
                 )}
               >
                 {label}
               </button>
             ))}
           </div>
+        ) : <p className="text-sm text-muted">Minhas equipes</p>}
+        {isAdmin && (
+          <Button className="ml-auto h-9" onClick={() => tab === "members" ? setInviting(true) : setCreatingTeam(true)}>
+            {tab === "members" ? <UserPlus className="size-4" /> : <Plus className="size-4" />}
+            {tab === "members" ? "Convidar pessoa" : "Nova equipe"}
+          </Button>
         )}
-
-        <div className="mt-6">{isAdmin && tab === "members" ? <PeopleTab /> : <TeamsTab isAdmin={isAdmin} />}</div>
+        </div>
+        <div className="mx-auto max-w-5xl">
+          {isAdmin && tab === "members" ? <PeopleTab creating={inviting} onCloseCreate={() => setInviting(false)} /> : <TeamsTab isAdmin={isAdmin} creating={creatingTeam} onCloseCreate={() => setCreatingTeam(false)} />}
+        </div>
       </div>
-    </div>
+      {accessOpen && <Modal open onClose={() => setAccessOpen(false)} title="Acesso da equipe"><TeamAccessCard /></Modal>}
+    </Page>
   );
 }
 
 // ---------------------------------------------------------------------------
 // Pessoas (admin)
 
-function PeopleTab() {
+function PeopleTab({ creating, onCloseCreate }: { creating: boolean; onCloseCreate: () => void }) {
   const { data: me } = useMe();
   const users = useUsers(true);
-  const [creating, setCreating] = useState(false);
   const [invited, setInvited] = useState<InviteResult | null>(null);
   const reinvite = useReinviteUser();
   const [reinviting, setReinviting] = useState<User | null>(null);
@@ -104,14 +111,9 @@ function PeopleTab() {
 
   return (
     <>
-      <div className="mb-4 flex justify-end">
-        <Button variant="secondary" onClick={() => setCreating(true)}>
-          <UserPlus className="size-4" /> Convite pessoal
-        </Button>
-      </div>
-      {users.isPending && <Spinner className="mx-auto" />}
+      {users.isPending && <ListSkeleton label="Carregando pessoas" />}
       {users.isError && <Alert>{errorMessage(users.error)}</Alert>}
-      <ul className="divide-y divide-line border-y border-line">
+      <ul className="divide-y divide-line">
         {users.data?.map((u) => (
           <li key={u.id} className={cn("flex flex-col gap-2 px-4 py-3 md:flex-row md:items-center md:gap-3", !u.isActive && "opacity-60")}>
             <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -120,20 +122,18 @@ function PeopleTab() {
                 <p className="flex items-center gap-2 font-medium">
                   <span className="truncate">{u.name}</span>
                   {u.id === me?.user.id && <span className="shrink-0 text-xs text-muted">(você)</span>}
-                  {u.mfaEnabled && <ShieldCheck className="size-4 shrink-0 text-brand" aria-label="MFA ativo" />}
+                  {u.mfaEnabled && <ShieldCheck className="size-4 shrink-0 text-brand-ink" aria-label="MFA ativo" />}
                 </p>
                 <p className="truncate text-sm text-muted">{u.email}</p>
               </div>
               <div className="flex shrink-0 md:order-last">
-                <IconButton label={`Editar ${u.name}`} onClick={() => setEditing(u)}>
-                  <Pencil className="size-4" />
-                </IconButton>
-                <IconButton label={`Novo código de acesso para ${u.name}`} onClick={() => setReinviting(u)}>
-                  <Smartphone className="size-4" />
-                </IconButton>
-                <IconButton label={`Redefinir senha de ${u.name}`} onClick={() => setResetting(u)}>
-                  <KeyRound className="size-4" />
-                </IconButton>
+                <Menu trigger={({ open, toggle }) => <IconButton label={`Opções de ${u.name}`} aria-haspopup="menu" aria-expanded={open} onClick={toggle}><EllipsisVertical className="size-4" /></IconButton>}>
+                  {(close) => <>
+                    <MenuItem icon={<Pencil />} onClick={() => { setEditing(u); close(); }}>Editar pessoa</MenuItem>
+                    <MenuItem icon={<Smartphone />} onClick={() => { setReinviting(u); close(); }}>Novo código de acesso</MenuItem>
+                    <MenuItem icon={<KeyRound />} onClick={() => { setResetting(u); close(); }}>Redefinir senha</MenuItem>
+                  </>}
+                </Menu>
               </div>
             </div>
             <div className="flex flex-wrap gap-1.5 pl-14 text-xs md:justify-end md:pl-0">
@@ -144,17 +144,18 @@ function PeopleTab() {
                 ) : (
                   <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-700 dark:text-amber-300">Aguardando primeiro acesso</span>
                 ))}
-              {u.teams.map((t) => (
+              {u.teams.slice(0, 2).map((t) => (
                 <span key={t.id} className="rounded-full border border-line px-2 py-0.5">
                   {t.name}
                 </span>
               ))}
+              {u.teams.length > 2 && <span className="px-1 py-0.5 text-muted" title={u.teams.slice(2).map((t) => t.name).join(", ")}>+{u.teams.length - 2}</span>}
               {u.teams.length === 0 && <span className="text-muted">Sem equipe</span>}
             </div>
           </li>
         ))}
       </ul>
-      <InviteUserModal open={creating} onClose={() => setCreating(false)} onInvited={setInvited} />
+      <InviteUserModal open={creating} onClose={onCloseCreate} onInvited={setInvited} />
       {invited && <InviteCodeModal result={invited} onClose={() => setInvited(null)} />}
       {reinviting && (
         <Modal open onClose={() => (reinvite.reset(), setReinviting(null))} title="Novo código de acesso">
@@ -395,48 +396,48 @@ function ResetPasswordModal({ user, onClose }: { user: User; onClose: () => void
 // ---------------------------------------------------------------------------
 // Equipes
 
-function TeamsTab({ isAdmin }: { isAdmin: boolean }) {
+function TeamsTab({ isAdmin, creating, onCloseCreate }: { isAdmin: boolean; creating: boolean; onCloseCreate: () => void }) {
   const teams = useTeams();
-  const [creating, setCreating] = useState(false);
   return (
     <>
-      {isAdmin && (
-        <div className="mb-4 flex justify-end">
-          <Button onClick={() => setCreating(true)}>
-            <Plus className="size-4" /> Nova equipe
-          </Button>
+      {teams.isPending && <ListSkeleton rows={4} label="Carregando equipes" />}
+      {teams.isError && <Alert>{errorMessage(teams.error)}</Alert>}
+      {teams.data?.length === 0 && (
+        <div className="flex flex-col items-center py-16 text-center">
+          <span className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-hover text-muted"><UsersRound className="size-6" /></span>
+          <h2 className="text-[15px] font-medium">{isAdmin ? "Nenhuma equipe por aqui" : "Você ainda não participa de uma equipe"}</h2>
+          <p className="mt-1.5 max-w-xs text-[13px] leading-relaxed text-muted">{isAdmin ? "Crie uma equipe para organizar os atendimentos." : "Peça ao administrador para adicionar você."}</p>
         </div>
       )}
-      {teams.isPending && <Spinner className="mx-auto" />}
-      {teams.data?.length === 0 && (
-        <p className="py-10 text-center text-sm text-muted">
-          {isAdmin
-            ? "Nenhuma equipe ainda. Crie a primeira com “Nova equipe” (ex.: Folha de pagamento, Fiscal, Atendimento). As equipes definem quais filas cada pessoa enxerga."
-            : "Você ainda não participa de nenhuma equipe."}
-        </p>
-      )}
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="divide-y divide-line">
         {teams.data?.map((t) => <TeamCard key={t.id} team={t} isAdmin={isAdmin} />)}
       </div>
-      <CreateTeamModal open={creating} onClose={() => setCreating(false)} />
+      <CreateTeamModal open={creating} onClose={onCloseCreate} />
     </>
   );
 }
 
 function TeamCard({ team, isAdmin }: { team: Team; isAdmin: boolean }) {
-  const members = useMembers(team.id);
+  const [expanded, setExpanded] = useState(false);
+  const members = useMembers(team.id, expanded);
   const remove = useDeleteTeam();
   const [confirming, setConfirming] = useState(false);
   return (
-    <article className="border-b border-line pb-4">
-      <header className="flex items-start gap-2">
+    <article className="py-4">
+      <header className="flex items-center gap-3">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-hover text-muted"><UsersRound className="size-5" /></span>
         <div className="min-w-0 flex-1">
           <h2 className="font-semibold">{team.name}</h2>
-          {team.description && <p className="text-sm text-muted">{team.description}</p>}
+          {team.description && <p className="mt-0.5 truncate text-[13px] text-muted" title={team.description}>{team.description}</p>}
           <p className="mt-1 text-xs text-muted">
             {team.memberCount} {team.memberCount === 1 ? "membro" : "membros"}
           </p>
         </div>
+        <Button variant="ghost" aria-expanded={expanded} aria-controls={`team-members-${team.id}`} onClick={() => setExpanded(!expanded)}>
+          <span className="hidden sm:inline">{expanded ? "Ocultar pessoas" : "Ver pessoas"}</span>
+          <ChevronDown className={cn("size-4 text-muted transition-transform", expanded && "rotate-180")} />
+          <span className="sr-only sm:hidden">{expanded ? "Ocultar pessoas" : "Ver pessoas"}</span>
+        </Button>
         {isAdmin && (
           <IconButton
             label={`Excluir equipe ${team.name}`}
@@ -450,6 +451,7 @@ function TeamCard({ team, isAdmin }: { team: Team; isAdmin: boolean }) {
         <p className="text-sm">
           Excluir a equipe <strong>{team.name}</strong>? Os vínculos dos membros serão removidos.
         </p>
+        {remove.error && <Alert>{errorMessage(remove.error)}</Alert>}
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={() => setConfirming(false)}>
             Cancelar
@@ -459,7 +461,12 @@ function TeamCard({ team, isAdmin }: { team: Team; isAdmin: boolean }) {
           </Button>
         </div>
       </Modal>
-      <ul className="mt-3 flex flex-col gap-2">
+      <div id={`team-members-${team.id}`} hidden={!expanded} className="pl-[52px]">
+      {team.description && <p className="mt-3 whitespace-pre-wrap text-[13px] text-muted sm:hidden">{team.description}</p>}
+      {members.isPending && <Spinner className="mt-3" />}
+      {members.error && <Alert>{errorMessage(members.error)}</Alert>}
+      {members.data?.length === 0 && <p className="mt-3 text-[13px] text-muted">Nenhuma pessoa nesta equipe.</p>}
+      <ul className="mt-3 flex flex-col gap-3">
         {members.data?.map((m) => (
           <li key={m.userId} className="flex items-center gap-2 text-sm">
             <Avatar name={m.name} size="sm" />
@@ -468,6 +475,7 @@ function TeamCard({ team, isAdmin }: { team: Team; isAdmin: boolean }) {
           </li>
         ))}
       </ul>
+      </div>
     </article>
   );
 }
@@ -521,48 +529,55 @@ function TeamAccessCard() {
   const fields = fieldsOf(setDomain.error);
 
   return (
-    <section className="mb-6 border-b border-line pb-6">
-      <h2 className="font-semibold">Acesso da equipe</h2>
-      <p className="mt-0.5 text-sm text-muted">Envie este token. Quem o usar cria a própria conta e já entra.</p>
+    <section>
+      <p className="text-[13px] leading-relaxed text-muted">Compartilhe o código para convidar pessoas ao escritório.</p>
       {access.isPending && <Spinner className="mt-3" />}
       {access.isError && <Alert>{errorMessage(access.error)}</Alert>}
       {access.data && (
         <>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <code className="min-w-48 flex-1 border-b border-line py-2 text-center font-mono text-lg tracking-widest">
+          <div className="mt-5 flex flex-wrap items-center gap-1.5">
+            <code className="min-w-0 basis-full flex-1 overflow-x-auto whitespace-nowrap rounded-lg bg-hover px-3 py-3 text-center font-mono text-base tracking-widest sm:basis-0">
               {shown ? token : "••••-••••-••••"}
             </code>
             <IconButton label={shown ? "Ocultar token" : "Mostrar token"} onClick={() => setShown(!shown)}>
               {shown ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
             </IconButton>
-            <IconButton
-              label="Copiar token"
+            <Button
+              variant="secondary"
+              aria-label="Copiar código de acesso"
               onClick={() => void navigator.clipboard?.writeText(token).then(() => (setCopied(true), setTimeout(() => setCopied(false), 1500)))}
             >
-              <Copy className={cn("size-4", copied && "text-brand")} />
-            </IconButton>
+              <Copy className={cn("size-4", copied && "text-brand-ink")} /> {copied ? "Copiado" : "Copiar"}
+            </Button>
+          </div>
+          <div className="mt-3">
             {confirming ? (
-              <span className="flex items-center gap-1.5 text-sm">
-                Gerar novo?
+              <div className="flex flex-col gap-3 rounded-lg bg-hover p-3">
+                <p className="text-xs leading-relaxed text-muted">O código atual deixará de permitir novos cadastros. As contas existentes continuam ativas.</p>
+                <div className="flex justify-end gap-2">
                 <Button
                   variant="danger"
                   loading={rotate.isPending}
                   onClick={() => rotate.mutate(undefined, { onSettled: () => setConfirming(false) })}
                 >
-                  Sim
+                  Gerar novo código
                 </Button>
                 <Button variant="secondary" onClick={() => setConfirming(false)}>
-                  Não
+                  Cancelar
                 </Button>
-              </span>
+                </div>
+              </div>
             ) : (
-              <IconButton label="Gerar novo token" onClick={() => setConfirming(true)}>
-                <RefreshCw className="size-4" />
-              </IconButton>
+              <Button variant="ghost" className="px-0 text-xs text-muted" onClick={() => setConfirming(true)}>
+                <RefreshCw className="size-3.5" /> Gerar outro código
+              </Button>
             )}
+            {rotate.error && <Alert>{errorMessage(rotate.error)}</Alert>}
           </div>
+          <details className="mt-5 border-t border-line pt-4">
+            <summary className="cursor-pointer text-[13px] font-medium">Restringir por domínio {access.data.allowedDomain && <span className="ml-1 font-normal text-muted">· {access.data.allowedDomain}</span>}</summary>
           <form
-            className="mt-3 flex flex-wrap items-end gap-2"
+            className="mt-4 flex flex-wrap items-end gap-2"
             onSubmit={(e) => {
               e.preventDefault();
               setDomain.mutate(domainValue, { onSuccess: () => setDomainText(null) });
@@ -570,7 +585,7 @@ function TeamAccessCard() {
           >
             <div className="min-w-48 flex-1">
               <Field
-                label="Só e-mails deste domínio (opcional)"
+                label="Domínio permitido (opcional)"
                 placeholder="escritorio.com.br"
                 value={domainValue}
                 error={fields.allowedDomain}
@@ -581,7 +596,8 @@ function TeamAccessCard() {
               Salvar
             </Button>
           </form>
-          <p className="mt-2 text-xs text-muted">Gerar um novo token só impede novos cadastros com o antigo; quem já criou conta continua entrando.</p>
+          {setDomain.error && !fields.allowedDomain && <Alert>{errorMessage(setDomain.error)}</Alert>}
+          </details>
         </>
       )}
     </section>

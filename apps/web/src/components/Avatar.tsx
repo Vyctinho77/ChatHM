@@ -2,14 +2,10 @@ import { cn } from "@/lib/cn";
 import { initials } from "@/lib/format";
 
 const palette = [
-  "bg-sky-200 text-sky-900",
-  "bg-blue-600 text-white",
-  "bg-amber-100 text-amber-800",
-  "bg-emerald-200 text-emerald-900",
-  "bg-violet-200 text-violet-900",
-  "bg-rose-200 text-rose-900",
-  "bg-teal-600 text-white",
-  "bg-orange-200 text-orange-900",
+  "bg-selected text-fg",
+  "bg-elevated text-fg",
+  "bg-hover text-fg",
+  "bg-fg/10 text-fg",
 ];
 
 function colorFor(seed: string) {

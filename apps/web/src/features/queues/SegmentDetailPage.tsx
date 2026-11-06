@@ -2,7 +2,8 @@ import { useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router";
 import { Check, Plus } from "lucide-react";
 import { ListRow, Page, PageBody, PageHeader, Section } from "@/components/list";
-import { Alert, Button, Field, Modal, Spinner } from "@/components/ui";
+import { Alert, Button, Field, Modal } from "@/components/ui";
+import { DetailSkeleton } from "@/components/Skeleton";
 import { cn } from "@/lib/cn";
 import { errorMessage, fieldErrors } from "@/lib/api";
 import { useTeams, type Team } from "@/features/team/api";
@@ -50,7 +51,7 @@ export function TeamPicker({
                 <span className="block text-[14px]">{o.label}</span>
                 {o.hint && <span className="block text-[12px] text-muted">{o.hint}</span>}
               </span>
-              {current === o.id && <Check className="size-4 text-brand" />}
+              {current === o.id && <Check className="size-4 text-brand-ink" />}
             </button>
           </li>
         ))}
@@ -71,7 +72,7 @@ export function SegmentDetailPage() {
     return (
       <Page>
         <PageHeader title="Segmento" onBack={back} />
-        <Spinner className="mx-auto mt-10" />
+        <DetailSkeleton />
       </Page>
     );
   }
@@ -298,7 +299,7 @@ function DeleteModal({
   return (
     <Modal open={open} onClose={onClose} title="Excluir segmento">
       <p className="text-[13.5px]">
-        Excluir <strong className="font-medium">{segment.name}</strong>? As conversas dele voltam para a fila Geral e
+        Excluir <strong className="font-medium">{segment.name}</strong>? As conversas dele voltam para a fila Não atribuídos e
         passam a ser visíveis a todos os usuários.
       </p>
       {remove.error && <Alert>{errorMessage(remove.error)}</Alert>}

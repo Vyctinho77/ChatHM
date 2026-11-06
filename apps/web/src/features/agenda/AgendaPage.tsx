@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { Page, PageHeader } from "@/components/list";
-import { Alert, Button, IconButton, Spinner } from "@/components/ui";
+import { Alert, Button, IconButton } from "@/components/ui";
+import { CalendarSkeleton } from "@/components/Skeleton";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { useMediaQuery } from "@/lib/theme";
@@ -75,7 +76,7 @@ export function AgendaPage() {
           <button
             type="button"
             onClick={goToday}
-            className="ml-2 rounded-lg px-2.5 py-1 text-[13px] font-medium text-accent hover:bg-hover"
+            className="ml-2 rounded-lg px-2.5 py-1 text-[13px] font-medium text-brand-ink hover:bg-hover"
           >
             Hoje
           </button>
@@ -90,7 +91,7 @@ export function AgendaPage() {
         </div>
 
         {isPending ? (
-          <Spinner className="mx-auto mt-10" />
+          <CalendarSkeleton rows={rows} />
         ) : (
           <div className="flex min-h-0 flex-1 flex-col border-t border-line" role="grid" aria-label={cap(monthLabel(month))}>
             <div role="row" className="grid grid-cols-7 border-b border-line">

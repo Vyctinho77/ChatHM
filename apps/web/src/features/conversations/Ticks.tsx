@@ -14,7 +14,7 @@ function Icon({ status, className }: { status: DeliveryStatus; className?: strin
     case "delivered":
       return <CheckCheck className={cn(cls, "opacity-70")} />;
     case "read":
-      return <CheckCheck className={cn(cls, "text-read")} />;
+      return <CheckCheck className={cn(cls, "text-read [.bg-out_&]:text-white")} />;
     case "failed":
       return <AlertCircle className={cn(cls, "text-danger")} />;
   }

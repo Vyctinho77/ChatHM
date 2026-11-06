@@ -69,7 +69,7 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
                 onClick={() => go(() => opener.openPhone(q))}
                 className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-hover disabled:opacity-60"
               >
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent/15 text-brand-ink">
                   <Phone className="size-4" />
                 </span>
                 <span className="min-w-0">

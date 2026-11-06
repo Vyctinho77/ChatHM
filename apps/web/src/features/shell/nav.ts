@@ -1,7 +1,9 @@
-import { CalendarDays, Contact, Layers, MessageSquareText, Settings, Smartphone, Tag, UsersRound, type LucideIcon } from "lucide-react";
+import { CalendarDays, Contact, Layers, MessageSquareText, Settings, Tag, UsersRound } from "lucide-react";
+import type { ComponentType } from "react";
+import { WhatsAppIcon } from "@/components/WhatsAppIcon";
 import type { Role } from "@/features/auth/api";
 
-export type NavItem = { to: string; label: string; icon: LucideIcon; roles?: Role[] };
+export type NavItem = { to: string; label: string; icon: ComponentType<{ className?: string }>; roles?: Role[] };
 
 export const mainNav: NavItem[] = [
   { to: "/conversas", label: "Conversas", icon: MessageSquareText },
@@ -13,7 +15,7 @@ export const mainNav: NavItem[] = [
 
 export const secondaryNav: NavItem[] = [
   { to: "/equipe", label: "Equipe", icon: UsersRound },
-  { to: "/whatsapp", label: "Conexão WhatsApp", icon: Smartphone, roles: ["admin"] },
+  { to: "/whatsapp", label: "Conectar", icon: WhatsAppIcon, roles: ["admin"] },
 ];
 
 export const settingsNav: NavItem = { to: "/configuracoes", label: "Configurações", icon: Settings };

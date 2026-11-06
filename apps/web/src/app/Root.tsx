@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Outlet } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Spinner } from "@/components/ui";
+import { AppSkeleton } from "@/components/Skeleton";
 import { Alert, Button } from "@/components/ui";
 import { setUnauthorizedHandler } from "@/lib/api";
 import { useSystemThemeSync } from "@/lib/theme";
@@ -32,11 +32,7 @@ export function Root() {
   }, [serverTheme]);
 
   if (me.isPending) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <Spinner className="size-8" />
-      </div>
-    );
+    return <AppSkeleton />;
   }
   if (me.isError) {
     return (

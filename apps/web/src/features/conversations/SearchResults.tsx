@@ -25,7 +25,7 @@ export function SearchResults({
     <div className="mt-2 border-t border-line pt-2">
       {contacts.length > 0 && (
         <section aria-label="Clientes encontrados">
-          <h2 className="px-3 pb-1 pt-1 text-[11.5px] font-medium text-brand">Clientes</h2>
+          <h2 className="px-3 pb-1 pt-1 text-[11.5px] font-medium text-brand-ink">Clientes</h2>
           <ul>
             {contacts.map((c) => (
               <li key={c.id}>
@@ -53,7 +53,7 @@ export function SearchResults({
         </section>
       )}
       <section aria-label="Mensagens encontradas">
-        <h2 className="flex items-center gap-2 px-3 pb-1 pt-2 text-[11.5px] font-medium text-brand">
+        <h2 className="flex items-center gap-2 px-3 pb-1 pt-2 text-[11.5px] font-medium text-brand-ink">
           Mensagens {loading && <Spinner className="size-3" />}
         </h2>
         <ul>

@@ -95,7 +95,7 @@ export function TransferMenu({
               </span>
               {p.teams.length > 0 && <span className="block truncate text-[11px] text-muted">{p.teams.join(", ")}</span>}
             </span>
-            {current && <Check className="size-4 text-accent" aria-label="Atendendo agora" />}
+            {current && <Check className="size-4 text-brand-ink" aria-label="Atendendo agora" />}
           </button>
         );
       })}

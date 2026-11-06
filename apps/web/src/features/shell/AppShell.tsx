@@ -9,8 +9,6 @@ import { useRealtime } from "@/features/realtime/useRealtime";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 
-export const APP_VERSION = "v0.1.0";
-
 export function ResizeHandle() {
   return (
     <Separator className="group relative w-px bg-line outline-none">
@@ -27,7 +25,7 @@ export function AppShell({ me }: { me: Me }) {
 
   return (
     <div className="flex h-full flex-col bg-app">
-      <TopBar onOpenMenu={desktop ? undefined : () => setDrawer(true)} />
+      {!desktop && <TopBar onOpenMenu={() => setDrawer(true)} />}
 
       <div className="min-h-0 flex-1">
         {desktop ? (
@@ -64,10 +62,6 @@ export function AppShell({ me }: { me: Me }) {
         )}
       </div>
 
-      <footer className="hidden h-7 shrink-0 items-center border-t border-line bg-app px-4 text-[11px] text-muted lg:flex">
-        ChatHM {APP_VERSION}
-        {DEMO && <span className="ml-3">· Demonstração com dados fictícios; nada é salvo ao recarregar.</span>}
-      </footer>
     </div>
   );
 }

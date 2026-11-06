@@ -211,11 +211,12 @@ export function MessageBubble({
         transition={{ type: "spring", stiffness: 480, damping: 32, mass: 0.8 }}
         style={{ transformOrigin: out ? "100% 100%" : "0% 100%" }}
         className={cn(
-          "relative max-w-[min(32rem,80%)] rounded-lg text-[13.5px] leading-[1.4] shadow-sm transition-shadow duration-300",
-          m.kind === "image" ? "p-[3px]" : "px-2.5 py-1.5",
+          "relative max-w-[min(28rem,75%)] rounded-lg text-[13.5px] leading-[1.4] shadow-sm transition-shadow duration-300",
+          m.kind === "image" ? "p-[3px]" : "px-2.5 py-[5px]",
           out ? "rounded-tr-sm bg-out" : "rounded-tl-sm bg-in",
-          // Mensagem em foco (busca ou link): texto em azul, sem contorno.
-          emphasis ? "text-accent" : out ? "text-out-fg" : "text-fg",
+          // A busca destaca o balão sem alterar o contraste do texto.
+          out ? "text-out-fg" : "text-in-fg",
+          emphasis && "ring-2 ring-brand-ink ring-offset-2 ring-offset-chat",
           m.status === "failed" && "ring-1 ring-danger",
         )}
       >

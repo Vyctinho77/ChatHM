@@ -1,8 +1,11 @@
 import { useEffect, useState, type FormEvent } from "react";
 import QRCode from "react-qr-code";
 import { AnimatePresence, motion } from "motion/react";
-import { MessageSquarePlus, ShieldAlert, Smartphone, TriangleAlert } from "lucide-react";
-import { Alert, Button, Field, Modal, Spinner } from "@/components/ui";
+import { Check, Copy, MessageSquarePlus, Pencil, Phone, Send, ShieldAlert, TriangleAlert } from "lucide-react";
+import { Avatar } from "@/components/Avatar";
+import { WhatsAppIcon } from "@/components/WhatsAppIcon";
+import { DetailSkeleton } from "@/components/Skeleton";
+import { Alert, Button, Field, IconButton, Modal, Spinner } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { stateDot, stateLabel, useConnect, useConnection, useDisconnect, useSimulateInbound, useRequestHistory } from "./api";
@@ -35,7 +38,7 @@ export function WhatsAppPage() {
           </p>
         </div>
 
-        {isPending && <Spinner className="mx-auto mt-8" />}
+        {isPending && <DetailSkeleton className="px-0" />}
         {error && <Alert>{errorMessage(error)}</Alert>}
 
         {conn && (
@@ -43,12 +46,6 @@ export function WhatsAppPage() {
             <header className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-3.5">
               <span className={cn("size-2.5 rounded-full", stateDot[conn.state], conn.state === "pending_qr" && "animate-pulse")} />
               <span className="font-medium">{conn.state === "pending_qr" && conn.pairingComplete ? "QR Code lido · Confirmando conexão" : stateLabel[conn.state]}</span>
-              {conn.state === "connected" && conn.phone && (
-                <span className="text-[13px] text-muted">
-                  {conn.displayName ? `${conn.displayName} · ` : ""}
-                  {conn.phone}
-                </span>
-              )}
             </header>
 
             <div className="px-5 py-5">
@@ -71,7 +68,7 @@ export function WhatsAppPage() {
                         Nenhum número conectado. Ao conectar, um QR Code temporário aparece aqui.
                       </p>
                       <Button className="w-fit" loading={connect.isPending} onClick={() => connect.mutate()}>
-                        <Smartphone className="size-4" /> Conectar WhatsApp
+                        <WhatsAppIcon className="size-4" /> Conectar WhatsApp
                       </Button>
                     </>
                   )}
@@ -143,16 +140,20 @@ export function WhatsAppPage() {
                         {history.isSuccess && <p className="mt-2 text-xs text-muted">Solicitação enviada. Mantenha o WhatsApp aberto e conectado à internet no celular. As mensagens aparecerão quando o aparelho enviar os dados dos últimos 30 dias; a disponibilidade depende do WhatsApp.</p>}
                         {history.error && <p className="mt-2 text-xs text-danger">{errorMessage(history.error)}</p>}
                       </div>
-                      <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-[13px]">
-                        <dt className="text-muted">Número</dt>
-                        <dd>{conn.phone || "—"}</dd>
-                        <dt className="text-muted">Perfil</dt>
-                        <dd>{conn.displayName || "—"}</dd>
+                      <dl className="space-y-6 py-3 text-sm">
+                        <div>
+                          <dt className="mb-2 text-xs text-muted">Nome no WhatsApp</dt>
+                          <dd className="font-medium">{conn.displayName || "—"}</dd>
+                        </div>
+                        <div>
+                          <dt className="mb-2 text-xs text-muted">Telefone</dt>
+                          <dd><PhoneNumber phone={conn.phone} /></dd>
+                        </div>
                         {conn.connectedAt && (
-                          <>
-                            <dt className="text-muted">Conectado desde</dt>
-                            <dd>{new Date(conn.connectedAt).toLocaleString("pt-BR")}</dd>
-                          </>
+                          <div className="text-xs text-muted">
+                            <dt className="inline">Conectado desde </dt>
+                            <dd className="inline">{new Date(conn.connectedAt).toLocaleString("pt-BR")}</dd>
+                          </div>
                         )}
                       </dl>
                       <Button variant="secondary" className="w-fit" onClick={() => setConfirming(true)}>
@@ -216,29 +217,78 @@ export function WhatsAppPage() {
 /** Formulário de teste: disponível só com o provedor simulado (desenvolvimento). */
 function Simulator() {
   const sim = useSimulateInbound();
+  const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ phone: "5511988887777", name: "Cliente teste", text: "Bom dia, quero emitir uma nota" });
   function submit(e: FormEvent) {
     e.preventDefault();
-    sim.mutate(form);
+    sim.mutate({ ...form, phone: form.phone.replace(/\D/g, "") });
   }
   return (
-    <section className="border-t border-line px-5 py-4">
+    <section className="border-t border-line px-5 py-6">
       <h2 className="flex items-center gap-2 text-[13.5px] font-semibold">
-        <MessageSquarePlus className="size-4" /> Simular mensagem recebida
+        <MessageSquarePlus className="size-4 text-muted" /> Testar uma conversa
       </h2>
-      <p className="mt-0.5 text-[12px] text-muted">Provedor simulado (desenvolvimento). Não aparece em produção.</p>
-      <form onSubmit={submit} className="mt-3 grid gap-3 sm:grid-cols-2">
-        <Field label="Telefone (DDI+DDD+número)" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-        <Field label="Nome no WhatsApp" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-        <Field className="sm:col-span-2" label="Mensagem" value={form.text} onChange={(e) => setForm({ ...form, text: e.target.value })} />
-        <div className="flex items-center gap-3 sm:col-span-2">
-          <Button type="submit" loading={sim.isPending}>
-            Receber
+      <p className="mt-1 text-xs text-muted">Envie uma mensagem fictícia para ver como ela aparece em Conversas.</p>
+      <form onSubmit={submit} className="mt-6 flex flex-col gap-5">
+        <div className="flex items-center gap-3">
+          <Avatar name={form.name} size="md" />
+          <p className="flex-1 text-xs text-muted">Contato de teste</p>
+          <IconButton label={editing ? "Concluir edição do contato" : "Editar contato de teste"} aria-expanded={editing} aria-controls="simulator-contact" onClick={() => setEditing(!editing)}>
+            {editing ? <Check className="size-4" /> : <Pencil className="size-4" />}
+          </IconButton>
+        </div>
+        <div id="simulator-contact">
+          {editing ? <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Nome" required maxLength={120} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <Field label="Telefone com DDI" type="tel" required placeholder="+55 (11) 98888-7777" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+          </div> : <dl className="space-y-5 text-sm">
+            <div><dt className="mb-2 text-xs text-muted">Nome</dt><dd className="font-medium">{form.name || "Sem nome"}</dd></div>
+            <div><dt className="mb-2 text-xs text-muted">Telefone</dt><dd><PhoneNumber phone={form.phone} /></dd></div>
+          </dl>}
+        </div>
+        <label className="flex flex-col gap-2 text-xs text-muted">
+          Mensagem de teste
+          <textarea required rows={3} maxLength={4000} value={form.text} onChange={(e) => setForm({ ...form, text: e.target.value })} className="w-full resize-y rounded-xl border border-line bg-elevated px-4 py-3 text-sm leading-relaxed text-fg outline-none focus:border-brand-ink" />
+        </label>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="submit" loading={sim.isPending} disabled={!form.name.trim() || !form.text.trim() || !form.phone.replace(/\D/g, "")}>
+            <Send className="size-4" /> Enviar teste
           </Button>
           {sim.isSuccess && <span className="text-[12px] text-muted">Entregue. Veja em Conversas.</span>}
           {sim.error && <span className="text-[12px] text-danger">{errorMessage(sim.error)}</span>}
         </div>
+        <p className="text-[11px] text-muted">Disponível apenas no ambiente de desenvolvimento.</p>
       </form>
     </section>
   );
+}
+
+function PhoneNumber({ phone }: { phone: string }) {
+  const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  const digits = phone.replace(/\D/g, "");
+  const formatted = /^55\d{10,11}$/.test(digits)
+    ? `+55 (${digits.slice(2, 4)}) ${digits.slice(4, -4)}-${digits.slice(-4)}`
+    : phone || "—";
+  return <>
+    <div className="flex items-center gap-3">
+      <Phone className="size-4 shrink-0 text-muted" />
+      <span className="min-w-0 flex-1 break-words tabular-nums">{formatted}</span>
+      {phone && <IconButton label={copied ? "Telefone copiado" : "Copiar telefone"} onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(phone);
+          setCopyError(false);
+          setCopied(true);
+        } catch {
+          setCopyError(true);
+        }
+      }}>{copied ? <Check className="size-4 text-brand-ink" /> : <Copy className="size-4" />}</IconButton>}
+    </div>
+    <span role="status" className="text-xs text-muted">{copied ? "Telefone copiado." : copyError ? "Não foi possível copiar. Selecione o número para copiar." : ""}</span>
+  </>;
 }

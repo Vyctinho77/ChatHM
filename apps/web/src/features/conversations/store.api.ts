@@ -82,6 +82,14 @@ export function useConversationActions() {
 
     return {
       markRead,
+      async snooze(id: string, until: string) {
+        await post(`/conversations/${id}/snooze`, { until });
+        await resync();
+      },
+      async resume(id: string) {
+        await post(`/conversations/${id}/resume`);
+        await resync();
+      },
       markAllRead() {
         list()
           .filter((c) => c.unreadCount > 0)

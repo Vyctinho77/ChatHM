@@ -2,6 +2,8 @@ import { useState, type FormEvent } from "react";
 import { ShieldCheck, ShieldOff } from "lucide-react";
 import { Alert, Button, Field } from "@/components/ui";
 import { ApiError, errorMessage, post } from "@/lib/api";
+import { APP_VERSION } from "@/lib/version";
+import { DEMO } from "@/lib/env";
 import { regenerateRecoveryCodes, useMe } from "@/features/auth/api";
 import { ThemeSwitcher } from "@/features/shell/ThemeSwitcher";
 import { HandoverCard } from "./HandoverCard";
@@ -43,7 +45,7 @@ export function SettingsPage() {
           <p className="flex items-center gap-2 text-sm">
             {me.user.mfaEnabled ? (
               <>
-                <ShieldCheck className="size-5 text-brand" /> Ativa neste usuário.
+                <ShieldCheck className="size-5 text-brand-ink" /> Ativa neste usuário.
               </>
             ) : (
               <>
@@ -64,6 +66,11 @@ export function SettingsPage() {
 
         <Card title="Notificações" description="Alertas de novas mensagens no navegador.">
           <p className="text-sm text-muted">Em breve.</p>
+        </Card>
+
+        <Card title="Sobre o app">
+          <p className="text-sm text-muted">ChatHM {APP_VERSION}</p>
+          {DEMO && <p className="mt-2 text-xs text-muted">Demonstração com dados fictícios; nada é salvo ao recarregar.</p>}
         </Card>
       </div>
     </div>

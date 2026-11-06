@@ -54,8 +54,8 @@ export function LoginPage() {
   const ready = byPassword ? password.length > 0 : recovery ? code.trim().length >= 10 : code.length === 6;
 
   return (
-    <AuthLayout title="Entrar no ChatHM" subtitle={byPassword ? "E-mail e senha." : "E-mail e código do app autenticador."}>
-      <form onSubmit={onSubmit} className="flex flex-col gap-4" aria-busy={loading}>
+    <AuthLayout title="Bem-vindo ao ChatHM" subtitle={byPassword ? "Acesse sua conta com e-mail e senha." : "Use seu e-mail e o código do autenticador para entrar."}>
+      <form onSubmit={onSubmit} className="flex flex-col gap-5" aria-busy={loading}>
         {DEMO && (
           <Alert tone="info">
             Demonstração: qualquer código de 6 dígitos serve (ou “Entrar com senha”: <code>demo</code>).
@@ -65,6 +65,7 @@ export function LoginPage() {
         <Field
           label="E-mail"
           type="email"
+          placeholder="voce@escritorio.com.br"
           autoComplete="username"
           autoFocus
           required
@@ -88,24 +89,25 @@ export function LoginPage() {
             onChange={(e) => setCode(e.target.value)}
           />
         ) : (
-          <CodeInput value={code} onChange={setCode} error={fields.code} />
+          <CodeInput value={code} onChange={setCode} error={fields.code} autoFocus={false} disabled={loading} />
         )}
-        <Button type="submit" loading={loading} className="h-10" disabled={!ready}>
+        <Button type="submit" loading={loading} className="h-11 w-full rounded-[10px] text-sm font-semibold" disabled={!ready}>
           Entrar
         </Button>
-        <div className="flex flex-col items-center gap-1.5 text-sm text-muted">
+        <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-muted">
           {!byPassword && (
-            <button type="button" className="hover:text-fg" onClick={() => (setRecovery(!recovery), setCode(""))}>
+            <button type="button" disabled={loading} className="underline-offset-4 transition-colors hover:text-fg hover:underline" onClick={() => (setRecovery(!recovery), setCode(""), setError(""), setFields({}))}>
               {recovery ? "Usar o código do app" : "Perdi o celular"}
             </button>
           )}
-          <button type="button" className="hover:text-fg" onClick={() => (setByPassword(!byPassword), setRecovery(false), setError(""))}>
+          <button type="button" disabled={loading} className="underline-offset-4 transition-colors hover:text-fg hover:underline" onClick={() => (setByPassword(!byPassword), setRecovery(false), setError(""), setFields({}), setCode(""))}>
             {byPassword ? "Entrar com o código do app" : "Entrar com senha"}
           </button>
         </div>
       </form>
-      <div className="mt-5 border-t border-line pt-4">
-        <Button type="button" variant="secondary" className="h-10 w-full" disabled={loading} onClick={() => setView("join")}>
+      <div className="mt-6 border-t border-line pt-5">
+        <p className="mb-3 text-center text-xs text-muted">Primeiro acesso ao escritório?</p>
+        <Button type="button" variant="secondary" className="h-11 w-full rounded-[10px] text-sm" disabled={loading} onClick={() => setView("join")}>
           Sou da equipe
         </Button>
       </div>

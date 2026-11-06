@@ -47,7 +47,7 @@ export function ContactPanel({ conversation: c, onClose }: { conversation: Conve
           <Row
             icon={<UserRound />}
             label="Atendimento"
-            value={`${statusLabel[c.status]}${c.assignee ? ` · ${c.assignee.name}` : ""}`}
+            value={`${c.snoozedUntil ? "Adiado" : statusLabel[c.status]}${c.assignee ? ` · ${c.assignee.name}` : ""}`}
           />
         </dl>
 
