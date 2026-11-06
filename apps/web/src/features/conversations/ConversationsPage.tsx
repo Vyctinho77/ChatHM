@@ -9,6 +9,7 @@ import { ResizeHandle } from "@/features/shell/AppShell";
 import { ChatPanel } from "./ChatPanel";
 import { ContactPanel } from "./ContactPanel";
 import { ConversationList } from "./ConversationList";
+import { GettingStarted } from "./GettingStarted";
 import { useConversations } from "./store";
 
 // Painel sobreposto desliza a partir da direita.
@@ -27,6 +28,7 @@ function EmptyChat() {
       <p className="max-w-sm text-sm">
         Conversas novas chegam pela fila da sua equipe. Ao responder, você assume o atendimento.
       </p>
+      <GettingStarted />
     </div>
   );
 }

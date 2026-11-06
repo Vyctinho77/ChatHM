@@ -67,6 +67,12 @@ export function QueuesPage() {
             <Alert>Não foi possível carregar as filas.</Alert>
           </div>
         )}
+        {!segments.isPending && !segments.isError && segments.data?.length === 0 && (
+          <p className="px-4 pt-6 text-[13px] text-muted">
+            Ainda não há segmentos: todas as conversas ficam na fila Geral.
+            {isAdmin && " Crie os segmentos do escritório em Configurar filas (ícone de ajustes)."}
+          </p>
+        )}
         {!segments.isPending && !segments.isError && (
           <Section
             note="Cada mensagem nova vai para a fila do segmento que combina com ela. Sem correspondência clara, fica na fila Geral."

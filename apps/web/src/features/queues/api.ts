@@ -52,6 +52,8 @@ function useSegmentMutation<V, R = unknown>(fn: (v: V) => Promise<R>) {
   });
 }
 
+/** Importa os segmentos de exemplo (não sobrescreve o que o gestor já tem). */
+export const useImportExamples = () => useSegmentMutation(() => post<void>("/segments/examples"));
 export const useCreateSegment = () =>
   useSegmentMutation((v: { name: string; teamId: string | null }) => post<Segment>("/segments", v));
 export const useUpdateSegment = () =>

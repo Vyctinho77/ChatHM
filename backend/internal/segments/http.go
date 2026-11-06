@@ -21,6 +21,7 @@ func (h *Handler) Routes(r chi.Router) {
 		r.Use(auth.RequireAdmin)
 		r.Post("/segments", h.create)
 		r.Post("/segments/classify", h.classify)
+		r.Post("/segments/examples", h.examples)
 		r.Patch("/segments/{id}", h.update)
 		r.Put("/segments/{id}/team", h.setTeam)
 		r.Delete("/segments/{id}", h.delete)
@@ -178,4 +179,14 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	default:
 		httpx.Internal(w, r, err)
 	}
+}
+
+// examples importa os segmentos de exemplo (somente admin); nunca sobrescreve o que já existe.
+func (h *Handler) examples(w http.ResponseWriter, r *http.Request) {
+	sess := auth.MustFromContext(r.Context())
+	if err := h.svc.ApplyExamples(r.Context(), sess.UserID, httpx.ClientIP(r)); err != nil {
+		httpx.Internal(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
 }

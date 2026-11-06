@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router";
 import { Copy, KeyRound, Pencil, Plus, ShieldCheck, Smartphone, Trash2, UserPlus } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { Alert, Button, Field, IconButton, Modal, Spinner } from "@/components/ui";
@@ -30,7 +31,14 @@ function fieldsOf(err: unknown): FieldErrors {
 export function TeamPage() {
   const { data: me } = useMe();
   const isAdmin = me?.user.role === "admin";
-  const [tab, setTab] = useState<"members" | "teams">(isAdmin ? "members" : "teams");
+  const [params] = useSearchParams();
+  const teamsList = useTeams();
+  // Sem nenhuma equipe ainda, o gestor começa por Equipes (?aba=equipes também abre direto nela).
+  const [chosen, setChosen] = useState<"members" | "teams" | null>(null);
+  const tab: "members" | "teams" = !isAdmin
+    ? "teams"
+    : (chosen ?? (params.get("aba") === "equipes" || teamsList.data?.length === 0 ? "teams" : "members"));
+  const setTab = setChosen;
 
   return (
     <div className="h-full overflow-y-auto bg-app">
@@ -393,7 +401,9 @@ function TeamsTab({ isAdmin }: { isAdmin: boolean }) {
       {teams.isPending && <Spinner className="mx-auto" />}
       {teams.data?.length === 0 && (
         <p className="rounded-xl border border-dashed border-line p-8 text-center text-sm text-muted">
-          {isAdmin ? "Crie a primeira equipe (ex.: Folha de pagamento, Emissão de notas, Clientes novos)." : "Você ainda não participa de nenhuma equipe."}
+          {isAdmin
+            ? "Nenhuma equipe ainda. Crie a primeira com “Nova equipe” (ex.: Folha de pagamento, Fiscal, Atendimento). As equipes definem quais filas cada pessoa enxerga."
+            : "Você ainda não participa de nenhuma equipe."}
         </p>
       )}
       <div className="grid gap-4 md:grid-cols-2">

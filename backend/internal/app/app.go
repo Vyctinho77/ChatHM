@@ -105,8 +105,10 @@ func NewServices(ctx context.Context, cfg config.Config, db *pgxpool.Pool, opt O
 		Segments:      segments.NewService(db),
 		Tags:          tags.NewService(db),
 	}
-	if err := s.Segments.EnsureDefaults(ctx); err != nil {
-		return nil, err
+	if cfg.SeedExampleData {
+		if err := s.Segments.EnsureDefaults(ctx); err != nil {
+			return nil, err
+		}
 	}
 
 	factory := opt.WhatsAppFactory

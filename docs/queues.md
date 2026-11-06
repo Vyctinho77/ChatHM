@@ -115,3 +115,12 @@ que veja a conversa aplica e remove. Etiquetas nunca alteram o segmento.
   assuntos da minha equipe caem na fila da equipe (qualquer integrante assume ao responder); outros assuntos aparecem só
   para as outras equipes. O histórico anterior só é visível a quem podia ver aquele atendimento.
 - Filtros da lista: **Minhas** (atribuídas a mim), **Geral** (fila geral) e **Todas**.
+
+## Começando do zero
+
+Uma instalação nova **não traz segmentos, palavras-chave nem etiquetas**: tudo é definido pelo gestor. Enquanto não existir segmento,
+toda conversa fica na fila Geral. O caminho é: criar **equipes** (Equipe → Equipes → Nova equipe), criar **segmentos** com palavras-chave
+e vincular cada um a uma equipe (Filas → Configurar filas), convidar as pessoas e conectar o WhatsApp — o painel "Primeiros passos"
+na tela de Conversas guia essas etapas. Para adiantar, "Importar exemplos" (`POST /segments/examples`, só admin) acrescenta Clientes novos,
+Folha de pagamento e Emissão de notas, com palavras-chave e etiquetas comuns, sem sobrescrever segmentos de mesmo nome ou chave e
+sem vincular equipes. `SEED_EXAMPLE_DATA=true` faz o mesmo na primeira subida (para desenvolvimento).

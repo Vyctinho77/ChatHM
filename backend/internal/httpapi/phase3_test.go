@@ -52,6 +52,10 @@ func setupWorld(t *testing.T) *world {
 	w.ana, w.ana2 = mk("ana@x.com", "folha"), mk("ana2@x.com", "folha")
 	w.bia, w.caio, w.dani = mk("bia@x.com", "notas"), mk("caio@x.com", "clientes"), mk("dani@x.com")
 
+	// Instalação nova não traz segmentos; estes testes partem dos exemplos importados.
+	if err := e.svcs.Segments.EnsureDefaults(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	segs := w.admin.do("GET", "/api/v1/segments", nil)
 	expect(t, segs, 200)
 	for _, s := range segs.body["segments"].([]any) {
@@ -719,5 +723,30 @@ func TestSegmentAdministration(t *testing.T) {
 	expect(t, w.admin.do("DELETE", "/api/v1/segments/"+created.body["id"].(string), nil), 204)
 	if got := mustConv(t, w.dani, "IR"); got["segment"] != "geral" {
 		t.Fatalf("após excluir o segmento: %v", got["segment"])
+	}
+}
+
+// Instalação nova: nenhum segmento nem etiqueta pronta. O gestor cria os dele ou importa os exemplos (sem sobrescrever nada).
+func TestFreshInstallHasNoSegmentsAndExamplesAreOptIn(t *testing.T) {
+	e := setup(t, opts{fresh: true})
+	e.createUser("adm@x.com", "admin")
+	e.createUser("ana@x.com", "agent")
+	admin, ana := e.client().mustLogin("adm@x.com"), e.client().mustLogin("ana@x.com")
+
+	count := func(path, key string) int { return len(admin.do("GET", path, nil).body[key].([]any)) }
+	if count("/api/v1/segments", "segments") != 0 || count("/api/v1/tags", "tags") != 0 {
+		t.Fatal("instalação nova não deveria ter segmentos nem etiquetas")
+	}
+	expect(t, ana.do("POST", "/api/v1/segments/examples", nil), 403)
+
+	// O gestor cria o próprio segmento, depois importa os exemplos: o dele fica, o resto é acrescentado.
+	expect(t, admin.do("POST", "/api/v1/segments", map[string]any{"name": "Folha de pagamento"}), 201)
+	expect(t, admin.do("POST", "/api/v1/segments/examples", nil), 204)
+	expect(t, admin.do("POST", "/api/v1/segments/examples", nil), 204) // repetir não duplica
+	if n := count("/api/v1/segments", "segments"); n != 3 {
+		t.Fatalf("segmentos após exemplos: %d", n)
+	}
+	if count("/api/v1/tags", "tags") == 0 {
+		t.Fatal("etiquetas de exemplo")
 	}
 }

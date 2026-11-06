@@ -200,6 +200,9 @@ export async function demoApi(method: string, path: string, body: Body = {}): Pr
       const admin = requireSession().role === "admin";
       return { segments: segmentsDb.map((s) => segmentView(s, admin)) };
     }
+    case "POST /segments/examples":
+      requireAdmin();
+      return undefined;
     case "POST /segments": {
       requireAdmin();
       const name = String(body.name ?? "").trim();

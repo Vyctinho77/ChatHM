@@ -53,6 +53,7 @@ type Config struct {
 	ClamAVAddr    string
 	// Cadastro por conta própria (padrão desligado). Ligado, a conta nasce INATIVA e só entra após aprovação do admin.
 	AllowSelfRegister bool
+	SeedExampleData   bool   // SEED_EXAMPLE_DATA: cria segmentos de exemplo na primeira subida (só desenvolvimento)
 	SetupToken        string // SETUP_TOKEN: exigido na tela de configuração inicial (opcional)
 	FFmpegBin         string // FFMPEG_BIN: caminho do ffmpeg (vazio = PATH)
 	FFprobeBin        string // FFPROBE_BIN: caminho do ffprobe (vazio = PATH)
@@ -84,6 +85,7 @@ func Load() (Config, error) {
 		ClamAVAddr:        os.Getenv("CLAMAV_ADDR"),
 		AllowSelfRegister: getbool("ALLOW_SELF_REGISTER", false),
 		SetupToken:        os.Getenv("SETUP_TOKEN"),
+		SeedExampleData:   getbool("SEED_EXAMPLE_DATA", false),
 		FFmpegBin:         os.Getenv("FFMPEG_BIN"),
 		FFprobeBin:        os.Getenv("FFPROBE_BIN"),
 	}

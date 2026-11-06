@@ -5,7 +5,7 @@ import { ListRow, Page, PageBody, PageHeader, Section } from "@/components/list"
 import { Alert, Button, Field, Modal, Spinner } from "@/components/ui";
 import { errorMessage, fieldErrors } from "@/lib/api";
 import { useTeams } from "@/features/team/api";
-import { useClassifyText, useCreateSegment, useSegments, type ClassifyResult, type Segment } from "./api";
+import { useClassifyText, useCreateSegment, useImportExamples, useSegments, type ClassifyResult, type Segment } from "./api";
 import { TeamPicker } from "./SegmentDetailPage";
 
 /** Configuração das filas: testar uma mensagem e escolher um segmento para ajustar. */
@@ -13,12 +13,35 @@ export function QueuesConfigPage() {
   const navigate = useNavigate();
   const segments = useSegments();
   const [creating, setCreating] = useState(false);
+  const examples = useImportExamples();
 
   return (
     <Page>
       <PageHeader title="Configurar filas" onBack={() => navigate("/filas")} />
       <PageBody>
         {segments.isPending && <Spinner className="mx-auto mt-10" />}
+        {segments.data?.length === 0 && (
+          <div className="mx-4 mt-6 rounded-xl border border-dashed border-line p-5 text-sm">
+            <p className="font-medium">Nenhum segmento ainda</p>
+            <p className="mt-1 text-muted">
+              Segmentos organizam as conversas por assunto e as encaminham à equipe certa, por palavras-chave. Até você criar o primeiro,
+              toda conversa fica na fila Geral, visível a todos.
+            </p>
+            {examples.isError && <Alert>{errorMessage(examples.error)}</Alert>}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button onClick={() => setCreating(true)}>
+                <Plus className="size-4" /> Criar o primeiro segmento
+              </Button>
+              <Button variant="secondary" loading={examples.isPending} onClick={() => examples.mutate()}>
+                Importar exemplos
+              </Button>
+            </div>
+            <p className="mt-2 text-xs text-muted">
+              Os exemplos (Clientes novos, Folha de pagamento, Emissão de notas, com palavras-chave e etiquetas comuns) entram sem equipe
+              vinculada; você ajusta, vincula equipes ou apaga o que não servir.
+            </p>
+          </div>
+        )}
         {segments.data && (
           <>
             <Section title="Testar uma mensagem" note="Veja para qual fila uma mensagem de cliente iria, com as palavras atuais.">

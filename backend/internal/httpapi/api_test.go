@@ -48,6 +48,7 @@ type opts struct {
 	waSession       bool // provedor já com sessão salva (simula reinício)
 	selfRegister    bool // habilita POST /auth/register
 	setupToken      string
+	fresh           bool // instalação nova, sem segmentos de exemplo
 }
 
 func setup(t *testing.T, o ...opts) *env {
@@ -89,6 +90,12 @@ func setup(t *testing.T, o ...opts) *env {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !op.fresh {
+		// Instalação nova não traz segmentos; os testes partem dos exemplos importados.
+		if err := svcs.Segments.EnsureDefaults(context.Background()); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := svcs.WhatsApp.Start(context.Background()); err != nil {
 		t.Fatal(err)

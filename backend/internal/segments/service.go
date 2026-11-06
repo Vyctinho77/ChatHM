@@ -387,8 +387,8 @@ func (s *Service) DeleteKeyword(ctx context.Context, actorID, ip, segmentID, key
 	})
 }
 
-// EnsureDefaults cria os segmentos, palavras-chave e etiquetas iniciais uma única vez
-// (marcado em seed_flags): segmentos apagados depois de propósito não voltam.
+// EnsureDefaults aplica os exemplos uma única vez (marcado em seed_flags). Não roda numa instalação
+// nova: só com SEED_EXAMPLE_DATA=true (desenvolvimento) ou nos testes. Quem decide os segmentos é o gestor.
 func (s *Service) EnsureDefaults(ctx context.Context) error {
 	return database.InTx(ctx, s.db, func(tx pgx.Tx) error {
 		var applied string
@@ -399,24 +399,48 @@ func (s *Service) EnsureDefaults(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		for pos, d := range Defaults {
-			var segID string
-			if err := tx.QueryRow(ctx, `INSERT INTO segments (key, name, position) VALUES ($1, $2, $3)
-				ON CONFLICT (key) DO UPDATE SET key = EXCLUDED.key RETURNING id`, d.Key, d.Name, pos).Scan(&segID); err != nil {
-				return err
-			}
-			for _, phrase := range d.Keywords {
-				if _, err := tx.Exec(ctx, `INSERT INTO segment_keywords (segment_id, phrase, normalized) VALUES ($1, $2, $3)
-					ON CONFLICT DO NOTHING`, segID, phrase, Normalize(phrase)); err != nil {
-					return err
-				}
-			}
-		}
-		for _, t := range DefaultTags {
-			if _, err := tx.Exec(ctx, `INSERT INTO tags (name) VALUES ($1) ON CONFLICT DO NOTHING`, t); err != nil {
-				return err
-			}
-		}
-		return nil
+		return applyExamples(ctx, tx)
 	})
+}
+
+// ApplyExamples importa os segmentos de exemplo (Clientes novos, Folha de pagamento, Emissão de notas),
+// suas palavras-chave e etiquetas comuns, sem sobrescrever o que o gestor já tem: chaves existentes
+// são mantidas e nenhuma equipe é vinculada. Pode ser repetido sem efeito colateral.
+func (s *Service) ApplyExamples(ctx context.Context, actorID, ip string) error {
+	return database.InTx(ctx, s.db, func(tx pgx.Tx) error {
+		if err := applyExamples(ctx, tx); err != nil {
+			return err
+		}
+		return audit.Record(ctx, tx, audit.Entry{ActorID: actorID, Action: "segment.examples", IP: ip})
+	})
+}
+
+func applyExamples(ctx context.Context, tx pgx.Tx) error {
+	for _, d := range Defaults {
+		// Quem já tem um segmento com essa chave ou esse nome mantém o seu, sem alterações.
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM segments WHERE key = $1 OR lower(name) = lower($2))`, d.Key, d.Name).Scan(&exists); err != nil {
+			return err
+		}
+		if exists {
+			continue
+		}
+		var segID string
+		if err := tx.QueryRow(ctx, `INSERT INTO segments (key, name, position)
+			VALUES ($1, $2, (SELECT coalesce(max(position), -1) + 1 FROM segments)) RETURNING id`, d.Key, d.Name).Scan(&segID); err != nil {
+			return err
+		}
+		for _, phrase := range d.Keywords {
+			if _, err := tx.Exec(ctx, `INSERT INTO segment_keywords (segment_id, phrase, normalized) VALUES ($1, $2, $3)
+				ON CONFLICT DO NOTHING`, segID, phrase, Normalize(phrase)); err != nil {
+				return err
+			}
+		}
+	}
+	for _, t := range DefaultTags {
+		if _, err := tx.Exec(ctx, `INSERT INTO tags (name) VALUES ($1) ON CONFLICT DO NOTHING`, t); err != nil {
+			return err
+		}
+	}
+	return nil
 }
