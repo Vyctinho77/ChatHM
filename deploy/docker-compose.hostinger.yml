@@ -1,0 +1,36 @@
+# Para o Docker Manager da Hostinger (VPS): o código vem direto do GitHub (repositório público durante o deploy),
+# o banco é o Supabase e o HTTPS é automático (Caddy). As variáveis vêm do campo "environment" do projeto.
+name: chathm
+
+services:
+  app:
+    build:
+      context: https://github.com/Vyctinho77/ChatHM.git#claude/determined-euler-j60et9
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?defina DATABASE_URL}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?defina ENCRYPTION_KEY}
+      ALLOWED_ORIGINS: https://${DOMAIN:?defina DOMAIN}
+      COOKIE_SECURE: "true"
+      REQUIRE_ADMIN_MFA: "true"
+      TRUST_PROXY_HEADERS: "true"
+      WHATSAPP_PROVIDER: whatsmeow
+      SETUP_TOKEN: ${SETUP_TOKEN:?defina SETUP_TOKEN}
+      LOG_LEVEL: info
+    volumes: [attachments:/data]
+    expose: ["8080"]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [app]
+    command: caddy reverse-proxy --from ${DOMAIN} --to app:8080
+    ports: ["80:80", "443:443"]
+    volumes: [caddy_data:/data, caddy_config:/config]
+
+volumes:
+  attachments:
+  caddy_data:
+  caddy_config:
