@@ -40,7 +40,15 @@ function mediaStateLabel(m: Message, what: string) {
   return `${what} recebida · baixando…`;
 }
 
-function ImageBody({ m, showAuthor }: { m: Extract<Message, { kind: "image" }>; showAuthor: boolean }) {
+function ImageBody({
+  m,
+  showAuthor,
+  onOpen,
+}: {
+  m: Extract<Message, { kind: "image" }>;
+  showAuthor: boolean;
+  onOpen?: (id: string) => void;
+}) {
   const author = m.direction === "out" && showAuthor && m.authorName ? m.authorName : "";
   const hasText = !!m.caption || !!author;
   return (
@@ -48,7 +56,12 @@ function ImageBody({ m, showAuthor }: { m: Extract<Message, { kind: "image" }>; 
       {/* Imagem de ponta a ponta: o balão só tem uma borda fina em volta. */}
       <div className="relative overflow-hidden rounded-[5px]">
         {m.url ? (
-          <a href={m.url} target="_blank" rel="noopener noreferrer" className="block">
+          <button
+            type="button"
+            onClick={() => (onOpen ? onOpen(m.id) : window.open(m.url, "_blank", "noopener"))}
+            aria-label="Abrir imagem"
+            className="block w-full cursor-zoom-in"
+          >
             <img
               src={m.url}
               alt={m.caption ?? "Imagem"}
@@ -56,7 +69,7 @@ function ImageBody({ m, showAuthor }: { m: Extract<Message, { kind: "image" }>; 
               height={m.height}
               className="block max-h-80 w-full object-cover"
             />
-          </a>
+          </button>
         ) : (
           <div
             className="flex h-40 w-full flex-col items-center justify-center gap-1.5 bg-black/10 text-[11.5px] opacity-80 dark:bg-black/25"
@@ -84,11 +97,29 @@ function ImageBody({ m, showAuthor }: { m: Extract<Message, { kind: "image" }>; 
   );
 }
 
-function DocumentCard({ m }: { m: Extract<Message, { kind: "document" }> }) {
+function DocumentCard({ m, onOpen }: { m: Extract<Message, { kind: "document" }>; onOpen?: (id: string) => void }) {
   const isPdf = m.mimeType === "application/pdf";
+  const openable = isPdf && !!m.url && !!onOpen;
   const ext = m.fileName.split(".").pop()?.toUpperCase() ?? "ARQ";
   return (
-    <div className="flex min-w-60 max-w-80 items-start gap-3 rounded-lg bg-black/10 p-2.5 dark:bg-black/20">
+    <div
+      className={cn(
+        "flex min-w-60 max-w-80 items-start gap-3 rounded-lg bg-black/10 p-2.5 dark:bg-black/20",
+        openable && "cursor-pointer hover:bg-black/15 dark:hover:bg-black/30",
+      )}
+      {...(openable && {
+        role: "button",
+        tabIndex: 0,
+        title: "Abrir PDF",
+        onClick: () => onOpen(m.id),
+        onKeyDown: (e: React.KeyboardEvent) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onOpen(m.id);
+          }
+        },
+      })}
+    >
       <span
         className={cn(
           "inline-flex h-11 w-9 shrink-0 items-center justify-center rounded-md text-[10px] font-bold text-white",
@@ -108,6 +139,7 @@ function DocumentCard({ m }: { m: Extract<Message, { kind: "document" }> }) {
         <a
           href={m.url}
           download={m.fileName}
+          onClick={(e) => e.stopPropagation()}
           aria-label={`Baixar ${m.fileName}`}
           className="rounded-md p-1 opacity-70 hover:opacity-100"
         >
@@ -141,7 +173,19 @@ function LocationCard({ m }: { m: Extract<Message, { kind: "location" }> }) {
   );
 }
 
-export function MessageBubble({ m, showAuthor, animateIn }: { m: Message; showAuthor: boolean; animateIn?: boolean }) {
+export function MessageBubble({
+  m,
+  showAuthor,
+  animateIn,
+  onOpenImage,
+  onOpenPdf,
+}: {
+  m: Message;
+  showAuthor: boolean;
+  animateIn?: boolean;
+  onOpenImage?: (id: string) => void;
+  onOpenPdf?: (id: string) => void;
+}) {
   const out = m.direction === "out";
   return (
     <div className={cn("flex", out ? "justify-end" : "justify-start")}>
@@ -181,12 +225,12 @@ export function MessageBubble({ m, showAuthor, animateIn }: { m: Message; showAu
 
         {m.kind === "document" && (
           <div className="flex flex-col gap-1 pt-1">
-            <DocumentCard m={m} />
+            <DocumentCard m={m} onOpen={onOpenPdf} />
             <Meta m={m} />
           </div>
         )}
 
-        {m.kind === "image" && <ImageBody m={m} showAuthor={showAuthor} />}
+        {m.kind === "image" && <ImageBody m={m} showAuthor={showAuthor} onOpen={onOpenImage} />}
 
         {m.kind === "unsupported" && (
           <div className="flex flex-wrap items-end">

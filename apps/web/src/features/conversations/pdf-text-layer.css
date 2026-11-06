@@ -1,0 +1,75 @@
+/*
+ * Camada de texto do pdf.js (trecho mínimo de pdfjs-dist/web/pdf_viewer.css): spans
+ * transparentes posicionados sobre o canvas, que tornam o texto do PDF selecionável.
+ * Não importamos o arquivo inteiro (6.500 linhas, com estilos globais).
+ * A escala vem da variável --total-scale-factor, definida em cada página.
+ */
+.pdf-text-layer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  text-align: initial;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  opacity: 1;
+  z-index: 0;
+  forced-color-adjust: none;
+  text-size-adjust: none;
+  transform-origin: 0 0;
+  color-scheme: only light;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.pdf-text-layer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+
+.pdf-text-layer > :not(.markedContent),
+.pdf-text-layer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.pdf-text-layer .markedContent {
+  display: contents;
+}
+
+.pdf-text-layer span[role="img"] {
+  user-select: none;
+  cursor: default;
+}
+
+.pdf-text-layer ::selection {
+  background: rgb(0 90 255 / 0.3);
+  color: transparent;
+}
+
+.pdf-text-layer br::selection {
+  background: transparent;
+}
+
+/* Evita "saltos" da seleção ao arrastar por áreas sem texto. */
+.pdf-text-layer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  cursor: default;
+  user-select: none;
+}
+
+.pdf-text-layer.selecting .endOfContent {
+  top: 0;
+}

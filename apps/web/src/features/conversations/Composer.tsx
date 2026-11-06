@@ -48,8 +48,12 @@ function useRecorder(onDone: (blob: Blob, durationSec: number) => void) {
   }, [recording]);
 
   async function start() {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const r = new MediaRecorder(stream);
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+    // Opus a 64 kbps (o padrão do navegador é bem menor); cai no padrão se não houver suporte.
+    const mimeType = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus"].find((t) => MediaRecorder.isTypeSupported(t));
+    const r = new MediaRecorder(stream, { audioBitsPerSecond: 64_000, ...(mimeType ? { mimeType } : {}) });
     chunks.current = [];
     cancelled.current = false;
     r.ondataavailable = (e) => chunks.current.push(e.data);

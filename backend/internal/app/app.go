@@ -86,7 +86,14 @@ func NewServices(ctx context.Context, cfg config.Config, db *pgxpool.Pool, opt O
 
 	hub := realtime.NewHub(cfg.AllowedOrigins)
 	convs := conversations.NewService(db, hub)
-	convs.SetMedia(store, media.NewService(cfg.MaxAttachment, scanner))
+	mediaSvc := media.NewService(cfg.MaxAttachment, scanner)
+	if cfg.FFmpegBin != "" {
+		mediaSvc.FFmpeg = cfg.FFmpegBin
+	}
+	if cfg.FFprobeBin != "" {
+		mediaSvc.FFprobe = cfg.FFprobeBin
+	}
+	convs.SetMedia(store, mediaSvc)
 	s := &Services{
 		Auth:          authSvc,
 		Users:         users.NewService(db, opt.Hasher),

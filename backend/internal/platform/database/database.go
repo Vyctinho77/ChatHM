@@ -16,6 +16,9 @@ func Connect(ctx context.Context, url string) (*pgxpool.Pool, error) {
 	}
 	cfg.MaxConns = 20
 	cfg.MaxConnIdleTime = 5 * time.Minute
+	// Abrir conexão (TLS + autenticação) com um banco remoto leva segundos: mantém
+	// algumas sempre prontas para o primeiro envio depois de uma pausa não pagar isso.
+	cfg.MinConns = 4
 
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {

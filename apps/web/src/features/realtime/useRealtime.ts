@@ -74,6 +74,27 @@ export function useRealtime(enabled: boolean) {
     let attempt = 0;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // Rede de segurança: enquanto o socket estiver fora, recarrega o que está na tela.
+    let poll: ReturnType<typeof setInterval> | undefined;
+    const resync = () => void qc.invalidateQueries({ queryKey: conversationKeys.list, refetchType: "active" });
+    const startPolling = () => {
+      if (!poll) poll = setInterval(resync, 5_000);
+    };
+    const stopPolling = () => {
+      clearInterval(poll);
+      poll = undefined;
+    };
+    // Aba volta a ficar visível: o navegador pode ter suspendido o socket.
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      if (!ws || ws.readyState === WebSocket.CLOSED) {
+        clearTimeout(timer);
+        attempt = Math.max(attempt, 1);
+        connect();
+      } else {
+        resync();
+      }
+    };
 
     const connect = () => {
       const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -85,6 +106,7 @@ export function useRealtime(enabled: boolean) {
           void qc.invalidateQueries({ queryKey: connectionKey });
         }
         attempt = 0;
+        stopPolling();
       };
       ws.onmessage = (e) => {
         try {
@@ -95,18 +117,23 @@ export function useRealtime(enabled: boolean) {
       };
       ws.onclose = (e) => {
         if (stopped) return;
+        startPolling();
         if (e.code === 4401) {
+          stopPolling();
           void qc.invalidateQueries({ queryKey: meKey }); // sessão encerrada → volta ao login
           return;
         }
-        const delay = Math.min(30_000, 1_000 * 2 ** attempt++);
+        const delay = Math.min(10_000, 1_000 * 2 ** attempt++);
         timer = setTimeout(connect, delay);
       };
     };
 
     connect();
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       stopped = true;
+      document.removeEventListener("visibilitychange", onVisible);
+      stopPolling();
       clearTimeout(timer);
       ws?.close();
     };

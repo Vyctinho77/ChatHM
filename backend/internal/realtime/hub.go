@@ -111,7 +111,7 @@ func (h *Hub) Handler(validate func(ctx context.Context, r *http.Request) bool) 
 		}
 		defer conn.CloseNow()
 
-		c := &Client{UserID: sess.UserID, Admin: sess.IsAdmin(), send: make(chan []byte, 64)}
+		c := &Client{UserID: sess.UserID, Admin: sess.IsAdmin(), send: make(chan []byte, 512)}
 		h.add(c)
 		defer h.remove(c)
 

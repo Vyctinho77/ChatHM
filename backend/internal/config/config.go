@@ -51,6 +51,8 @@ type Config struct {
 	StorageDir    string
 	MaxAttachment int64 // bytes
 	ClamAVAddr    string
+	FFmpegBin     string // FFMPEG_BIN: caminho do ffmpeg (vazio = PATH)
+	FFprobeBin    string // FFPROBE_BIN: caminho do ffprobe (vazio = PATH)
 }
 
 func (c Config) IsDevelopment() bool { return c.Env == "development" }
@@ -77,6 +79,8 @@ func Load() (Config, error) {
 		StorageDriver:     getenv("STORAGE_DRIVER", "fs"),
 		StorageDir:        getenv("STORAGE_DIR", "./data/attachments"),
 		ClamAVAddr:        os.Getenv("CLAMAV_ADDR"),
+		FFmpegBin:         os.Getenv("FFMPEG_BIN"),
+		FFprobeBin:        os.Getenv("FFPROBE_BIN"),
 	}
 	cfg.MaxAttachment = 25 << 20
 	if v := os.Getenv("MAX_ATTACHMENT_MB"); v != "" {

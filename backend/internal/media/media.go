@@ -246,17 +246,39 @@ func (s *Service) toOpus(ctx context.Context, in []byte) ([]byte, int, error) {
 	}
 	cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(cctx, ff, "-nostdin", "-v", "error", "-y", "-i", src, "-vn", "-map_metadata", "-1",
-		"-ac", "1", "-ar", "48000", "-c:a", "libopus", "-b:a", "32k", "-application", "voip", "-f", "ogg", dst)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		_ = out
-		return nil, 0, reject("Não foi possível processar o áudio.")
+	// Opus mono (gravação do navegador, mensagem de voz do WhatsApp) só troca de
+	// "envelope" para Ogg, sem decodificar nem codificar de novo: zero perda de qualidade.
+	// Qualquer outro formato é convertido (reencodar é inevitável aqui).
+	copied := false
+	if s.isMonoOpus(cctx, src) {
+		cmd := exec.CommandContext(cctx, ff, "-nostdin", "-v", "error", "-y", "-i", src, "-vn", "-map_metadata", "-1",
+			"-c:a", "copy", "-f", "ogg", dst)
+		copied = cmd.Run() == nil
+	}
+	if !copied {
+		cmd := exec.CommandContext(cctx, ff, "-nostdin", "-v", "error", "-y", "-i", src, "-vn", "-map_metadata", "-1",
+			"-ac", "1", "-ar", "48000", "-c:a", "libopus", "-b:a", "48k", "-application", "audio", "-f", "ogg", dst)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			_ = out
+			return nil, 0, reject("Não foi possível processar o áudio.")
+		}
 	}
 	b, err := os.ReadFile(dst)
 	if err != nil || len(b) == 0 {
 		return nil, 0, reject("Não foi possível processar o áudio.")
 	}
 	return b, s.duration(cctx, dst), nil
+}
+
+// isMonoOpus diz se o primeiro stream de áudio já é Opus mono (sem ffprobe: false).
+func (s *Service) isMonoOpus(ctx context.Context, path string) bool {
+	fp, err := exec.LookPath(s.FFprobe)
+	if err != nil {
+		return false
+	}
+	out, err := exec.CommandContext(ctx, fp, "-v", "error", "-select_streams", "a:0",
+		"-show_entries", "stream=codec_name,channels", "-of", "csv=p=0", path).Output()
+	return err == nil && strings.TrimSpace(string(out)) == "opus,1"
 }
 
 func (s *Service) duration(ctx context.Context, path string) int {

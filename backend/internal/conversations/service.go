@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -339,8 +340,13 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 		return false, err
 	}
 
-	after := s.publishState(ctx, convID, before)
-	s.publishMessage(ctx, EventMessageCreated, msgID, after)
+	// Histórico chega em rajadas de milhares de mensagens: publicar cada uma
+	// enche o buffer do WebSocket e derruba o navegador como "cliente lento".
+	// O fim de cada lote (whatsapp.sync) já faz o frontend recarregar tudo.
+	if !m.Historical {
+		after := s.publishState(ctx, convID, before)
+		s.publishMessage(ctx, EventMessageCreated, msgID, after)
+	}
 	if !m.Historical && m.Download != nil && s.store != nil && s.media != nil {
 		go func() {
 			s.mediaSlots <- struct{}{} // no máximo alguns downloads simultâneos
@@ -769,14 +775,19 @@ func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInpu
 			status, assigneeName string
 			assignee             *string
 			segID, teamID        *string
+			lastJID              string
 		)
+		// Uma ida ao banco só: o chat_jid da última mensagem vem junto (cada consulta
+		// custa uma viagem de rede inteira até o Postgres).
 		err := tx.QueryRow(ctx, `
-			SELECT c.status, c.assignee_id, coalesce(u.name, ''), c.segment_id, s.team_id
+			SELECT c.status, c.assignee_id, coalesce(u.name, ''), c.segment_id, s.team_id,
+			       coalesce((SELECT m.chat_jid FROM messages m WHERE m.conversation_id = c.id
+			                  ORDER BY m.sent_at DESC, m.created_at DESC LIMIT 1), '')
 			  FROM conversations c
 			  LEFT JOIN segments s ON s.id = c.segment_id
 			  LEFT JOIN users u ON u.id = c.assignee_id
 			 WHERE c.id = $3 AND `+forViewer+`
-			 FOR UPDATE OF c`, v.ID, v.Admin, convID).Scan(&status, &assignee, &assigneeName, &segID, &teamID)
+			 FOR UPDATE OF c`, v.ID, v.Admin, convID).Scan(&status, &assignee, &assigneeName, &segID, &teamID, &lastJID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -832,10 +843,8 @@ func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInpu
 			if !s.sender.Connected() {
 				return ErrUnavailable
 			}
-			if err := tx.QueryRow(ctx, `
-				SELECT chat_jid FROM messages WHERE conversation_id = $1 ORDER BY sent_at DESC, created_at DESC LIMIT 1`,
-				convID).Scan(&chatJID); err != nil {
-				return err
+			if chatJID = lastJID; chatJID == "" {
+				return pgx.ErrNoRows
 			}
 			if assignee == nil {
 				if before, err = s.visibleUsers(ctx, tx, convID); err != nil {
@@ -902,18 +911,30 @@ func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInpu
 		return m, false, err
 	}
 
-	after := s.publishState(ctx, convID, before)
-	if created {
-		s.publishMessage(ctx, EventMessageCreated, msgID, after)
-	} else {
-		s.publishMessage(ctx, EventMessageUpdated, msgID, after)
-	}
+	// Os eventos em tempo real (várias consultas) saem em paralelo: a entrega ao
+	// WhatsApp não espera por eles. O canal garante a ordem "pendente" → "enviada"
+	// para quem está vendo a conversa em outro navegador.
+	bg := context.WithoutCancel(ctx)
+	published := make(chan struct{})
+	go func() {
+		defer close(published)
+		after := s.publishState(bg, convID, before)
+		if created {
+			s.publishMessage(bg, EventMessageCreated, msgID, after)
+		} else {
+			s.publishMessage(bg, EventMessageUpdated, msgID, after)
+		}
+	}()
 	_ = claimed
 
 	// Envio fora da transação (rede). Concluir o registro mesmo se o cliente desistir da requisição.
-	sendCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 45*time.Second)
+	sendCtx, cancel := context.WithTimeout(bg, 45*time.Second)
 	defer cancel()
+	waStart := time.Now()
 	sendErr := s.dispatch(sendCtx, kind, chatJID, externalID, text, payload, attKey, in.Att)
+	if d := time.Since(waStart); d > 3*time.Second {
+		slog.Warn("envio lento ao WhatsApp", "kind", kind, "duration_ms", d.Milliseconds(), "err", sendErr)
+	}
 	if sendErr != nil {
 		if _, err := s.db.Exec(sendCtx, `UPDATE messages SET status = 'failed', error = $2 WHERE id = $1 AND status = 'pending'`,
 			msgID, "Não foi possível enviar pelo WhatsApp."); err != nil {
@@ -922,8 +943,11 @@ func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInpu
 	} else if _, err := s.db.Exec(sendCtx, `UPDATE messages SET status = 'sent' WHERE id = $1 AND status = 'pending'`, msgID); err != nil {
 		return nil, false, err
 	}
-	after = s.publishState(sendCtx, convID, nil)
-	s.publishMessage(sendCtx, EventMessageUpdated, msgID, after)
+	go func() {
+		<-published
+		after := s.publishState(bg, convID, nil)
+		s.publishMessage(bg, EventMessageUpdated, msgID, after)
+	}()
 	m, err := s.message(sendCtx, msgID)
 	return m, created, err
 }

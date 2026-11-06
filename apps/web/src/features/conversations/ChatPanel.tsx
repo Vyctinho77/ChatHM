@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowDown, ArrowLeft, CheckCheck, CircleCheck, EllipsisVertical, PanelRight, Search, UserRoundPlus, X } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
@@ -10,7 +10,12 @@ import { cn } from "@/lib/cn";
 import { formatDayDivider, formatTime, sameDay } from "@/lib/format";
 import { Composer } from "./Composer";
 import { getDraft, setDraft } from "./drafts";
+import { ImageViewer, type ViewableImage } from "./ImageViewer";
 import { MessageBubble } from "./MessageBubble";
+import type { ViewablePdf } from "./PdfViewer";
+
+// pdf.js é pesado: só é baixado quando alguém abre um PDF.
+const PdfViewer = lazy(() => import("./PdfViewer").then((mod) => ({ default: mod.PdfViewer })));
 import { TransferMenu } from "./TransferMenu";
 import { buildOutgoing, capabilities, useConversationActions, useMessages, useSendMessage, type OutgoingDraft } from "./store";
 import { statusLabel } from "./receipts";
@@ -44,6 +49,16 @@ export function ChatPanel({
   const atBottom = useRef(true);
   const scrolledOnce = useRef(false);
   const [showJump, setShowJump] = useState(false);
+  // Imagem aberta no visualizador em tela cheia (navega por todas as imagens da conversa).
+  const [viewerId, setViewerId] = useState<string | null>(null);
+  const closeViewer = useCallback(() => setViewerId(null), []);
+  const [pdfId, setPdfId] = useState<string | null>(null);
+  const closePdf = useCallback(() => setPdfId(null), []);
+  const openPdf = (messages ?? []).find((m): m is ViewablePdf => m.id === pdfId && m.kind === "document" && !!m.url);
+  const viewable = useMemo(
+    () => (messages ?? []).filter((m): m is ViewableImage => m.kind === "image" && !!m.url),
+    [messages],
+  );
 
   useEffect(() => actions.markRead(c.id), [c.id, c.unreadCount, actions]);
 
@@ -290,7 +305,13 @@ export function ChatPanel({
                   </div>
                 )}
                 <div className={cn(showAuthor || (prev && prev.direction !== m.direction) ? "mt-1.5" : "")}>
-                  <MessageBubble m={m} showAuthor={showAuthor} animateIn={new Date(m.sentAt).getTime() > openedAt} />
+                  <MessageBubble
+                    m={m}
+                    showAuthor={showAuthor}
+                    animateIn={new Date(m.sentAt).getTime() > openedAt}
+                    onOpenImage={setViewerId}
+                    onOpenPdf={setPdfId}
+                  />
                 </div>
                 {m.id === lastOutId && !search && (
                   <ReceiptLine
@@ -351,6 +372,14 @@ export function ChatPanel({
         mediaDisabledReason={capabilities.media ? undefined : capabilities.mediaUnavailableReason}
         onSend={submit}
       />
+      {viewerId && (
+        <ImageViewer images={viewable} startId={viewerId} contactName={c.contact.name} onClose={closeViewer} />
+      )}
+      {openPdf && (
+        <Suspense fallback={null}>
+          <PdfViewer pdf={openPdf} onClose={closePdf} />
+        </Suspense>
+      )}
       {transferAt && (
         <TransferMenu
           conversation={c}

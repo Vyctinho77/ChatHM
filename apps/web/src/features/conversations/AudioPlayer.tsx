@@ -5,9 +5,24 @@ import { formatDuration } from "@/lib/format";
 
 const DEMO = import.meta.env.VITE_DEMO === "1";
 
+const BARS = 32;
+
 /** Barras estáveis quando o provedor não envia a forma de onda. */
-function fallbackWave(seed: number, n = 40) {
+function fallbackWave(seed: number, n = BARS) {
   return Array.from({ length: n }, (_, i) => 0.25 + Math.abs(Math.sin(seed * 7.3 + i * 1.7)) * 0.75);
+}
+
+/**
+ * Reamostra para um número fixo de barras (o WhatsApp envia 64): assim a forma de
+ * onda sempre cabe no balão. Cada barra fica com o pico do seu trecho.
+ */
+function resample(wave: number[], n = BARS) {
+  if (wave.length <= n) return wave;
+  return Array.from({ length: n }, (_, i) => {
+    const from = Math.floor((i * wave.length) / n);
+    const to = Math.max(from + 1, Math.floor(((i + 1) * wave.length) / n));
+    return Math.max(...wave.slice(from, to));
+  });
 }
 
 /**
@@ -26,7 +41,7 @@ export function AudioPlayer({
   outgoing?: boolean;
 }) {
   const audio = useRef<HTMLAudioElement>(null);
-  const bars = waveform?.length ? waveform : fallbackWave(durationSec || 1);
+  const bars = waveform?.length ? resample(waveform) : fallbackWave(durationSec || 1);
   const unavailable = !url && !DEMO;
   const [playing, setPlaying] = useState(false);
   const [pos, setPos] = useState(0); // segundos
@@ -51,9 +66,16 @@ export function AudioPlayer({
   }, [playing, url, durationSec]);
 
   function toggle() {
-    if (url && audio.current) {
-      if (playing) audio.current.pause();
-      else void audio.current.play();
+    const el = audio.current;
+    if (url && el) {
+      if (el.paused) {
+        // Só um áudio toca por vez.
+        document.querySelectorAll("audio").forEach((a) => a !== el && a.pause());
+        el.play().catch(() => setPlaying(false));
+      } else {
+        el.pause();
+      }
+      return; // o estado "tocando" vem dos eventos do <audio> (onPlay/onPause)
     }
     setPlaying((p) => !p);
   }
@@ -67,12 +89,15 @@ export function AudioPlayer({
   const progress = durationSec ? pos / durationSec : 0;
 
   return (
-    <div className="flex w-60 max-w-full items-center gap-2.5 py-0.5">
+    <div className="flex w-60 min-w-0 max-w-full items-center gap-2.5 py-0.5">
       {url && (
         <audio
           ref={audio}
           src={url}
           preload="metadata"
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+          onError={() => setPlaying(false)}
           onTimeUpdate={(e) => setPos(e.currentTarget.currentTime)}
           onEnded={() => {
             setPlaying(false);
@@ -98,7 +123,7 @@ export function AudioPlayer({
           aria-valuemin={0}
           aria-valuemax={Math.round(durationSec)}
           aria-valuenow={Math.round(pos)}
-          className="flex h-6 cursor-pointer items-center gap-[2px]"
+          className="flex h-6 cursor-pointer items-center gap-[2px] overflow-hidden"
           onClick={(e) => {
             const r = e.currentTarget.getBoundingClientRect();
             seek((e.clientX - r.left) / r.width);
@@ -112,7 +137,7 @@ export function AudioPlayer({
             <span
               key={i}
               className={cn(
-                "w-[3px] shrink-0 rounded-full",
+                "min-w-0 max-w-[3px] flex-1 rounded-full",
                 i / bars.length < progress
                   ? "bg-read"
                   : outgoing
