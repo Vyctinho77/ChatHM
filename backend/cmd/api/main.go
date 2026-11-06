@@ -64,6 +64,7 @@ func run() error {
 		return err
 	}
 	go svcs.Auth.RunJanitor(ctx, time.Hour)
+	go svcs.Conversations.RunSnoozeWorker(ctx)
 	if err := svcs.WhatsApp.Start(ctx); err != nil {
 		return err
 	}

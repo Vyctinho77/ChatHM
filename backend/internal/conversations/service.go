@@ -292,6 +292,15 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 		unread := 0
 		if !m.FromMe && !m.Historical {
 			unread = 1
+			res, err := tx.Exec(ctx, `UPDATE conversations SET snoozed_until = NULL, snoozed_by = NULL WHERE id = $1 AND snoozed_until IS NOT NULL`, convID)
+			if err != nil {
+				return err
+			}
+			if res.RowsAffected() > 0 {
+				if err := audit.Record(ctx, tx, audit.Entry{Action: "conversation.resume", TargetType: "conversation", TargetID: convID, Metadata: map[string]any{"reason": "inbound_message"}}); err != nil {
+					return err
+				}
+			}
 		}
 		if _, err := tx.Exec(ctx, `
 			UPDATE conversations
@@ -386,17 +395,18 @@ type Ref struct {
 type Message map[string]any
 
 type Conversation struct {
-	ID             string    `json:"id"`
-	Contact        Contact   `json:"contact"`
-	Segment        string    `json:"segment"`     // chave do segmento ("geral" = fila geral)
-	SegmentName    string    `json:"segmentName"` // nome para exibição
-	Classification string    `json:"classification"`
-	Status         string    `json:"status"`
-	Assignee       *Ref      `json:"assignee,omitempty"`
-	UnreadCount    int       `json:"unreadCount"`
-	Tags           []string  `json:"tags"`
-	LastMessage    Message   `json:"lastMessage,omitempty"`
-	UpdatedAt      time.Time `json:"updatedAt"`
+	ID             string     `json:"id"`
+	Contact        Contact    `json:"contact"`
+	Segment        string     `json:"segment"`     // chave do segmento ("geral" = fila geral)
+	SegmentName    string     `json:"segmentName"` // nome para exibição
+	Classification string     `json:"classification"`
+	Status         string     `json:"status"`
+	SnoozedUntil   *time.Time `json:"snoozedUntil,omitempty"`
+	Assignee       *Ref       `json:"assignee,omitempty"`
+	UnreadCount    int        `json:"unreadCount"`
+	Tags           []string   `json:"tags"`
+	LastMessage    Message    `json:"lastMessage,omitempty"`
+	UpdatedAt      time.Time  `json:"updatedAt"`
 }
 
 const messageCols = `m.id, m.conversation_id, m.direction, m.kind, m.body, m.payload, m.status,
@@ -458,7 +468,7 @@ func displayName(name, phone, waID string) string {
 }
 
 const listQuery = `
-	SELECT c.id, c.status, c.unread_count, c.last_message_at, c.classification,
+	SELECT c.id, c.status, c.unread_count, c.last_message_at, c.classification, c.snoozed_until,
 	       ct.id, ct.name, ct.phone, ct.wa_id, ct.company, ct.note,
 	       u.id, u.name,
 	       s.key, s.name::text,
@@ -487,7 +497,7 @@ func scanConversation(row pgx.Row) (Conversation, error) {
 			sentAt, deliveredAt, readAt         *time.Time
 		}
 	)
-	err := row.Scan(&c.ID, &c.Status, &c.UnreadCount, &c.UpdatedAt, &c.Classification,
+	err := row.Scan(&c.ID, &c.Status, &c.UnreadCount, &c.UpdatedAt, &c.Classification, &c.SnoozedUntil,
 		&c.Contact.ID, &name, &phone, &waID, &c.Contact.Company, &c.Contact.Note,
 		&uID, &uName, &segKey, &segName, &c.Tags,
 		&lm.id, &lm.convID, &lm.dir, &lm.kind, &lm.body, &lm.payload, &lm.status, &lm.sentAt, &lm.sender, &lm.deliveredAt, &lm.readAt)
@@ -499,7 +509,7 @@ func scanConversation(row pgx.Row) (Conversation, error) {
 	if c.Contact.Phone == "" {
 		c.Contact.Phone = waID
 	}
-	c.Segment, c.SegmentName = "geral", "Geral"
+	c.Segment, c.SegmentName = "geral", "Não atribuídos"
 	if segKey != nil {
 		c.Segment, c.SegmentName = *segKey, *segName
 	}
@@ -527,11 +537,17 @@ func (s *Service) fetch(ctx context.Context, db database.DBTX, id string) (Conve
 	return c, err
 }
 
-// List devolve as conversas abertas que o viewer pode ver (até 300, mais recentes primeiro).
+// List devolve até 300 conversas ativas e 300 adiadas que o viewer pode ver.
 // Conversas encerradas não aparecem: o contato só volta à lista quando manda uma nova
 // mensagem (que abre uma nova conversa). O histórico continua acessível pelo detalhe.
 func (s *Service) List(ctx context.Context, v Viewer) ([]Conversation, error) {
-	rows, err := s.db.Query(ctx, listQuery+` WHERE c.status <> 'closed' AND `+forViewer+` ORDER BY c.last_message_at DESC LIMIT 300`, v.ID, v.Admin)
+	// Separate limits keep postponed work from displacing the active queue.
+	visibleIDs := `SELECT c.id FROM conversations c LEFT JOIN segments s ON s.id = c.segment_id
+		WHERE c.status <> 'closed' AND ` + forViewer
+	rows, err := s.db.Query(ctx, listQuery+` WHERE c.id IN ((`+visibleIDs+`
+		AND c.snoozed_until IS NULL ORDER BY c.last_message_at DESC LIMIT 300) UNION ALL (`+visibleIDs+`
+		AND c.snoozed_until IS NOT NULL ORDER BY c.snoozed_until LIMIT 300))
+		ORDER BY c.last_message_at DESC`, v.ID, v.Admin)
 	if err != nil {
 		return nil, err
 	}
@@ -779,6 +795,7 @@ func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInpu
 			assignee             *string
 			segID, teamID        *string
 			lastJID, contactWAID string
+			snoozedUntil         *time.Time
 		)
 		// Uma ida ao banco só: o chat_jid da última mensagem vem junto (cada consulta
 		// custa uma viagem de rede inteira até o Postgres).
@@ -786,12 +803,12 @@ func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInpu
 			SELECT c.status, c.assignee_id, coalesce(u.name, ''), c.segment_id, s.team_id,
 			       coalesce((SELECT m.chat_jid FROM messages m WHERE m.conversation_id = c.id
 			                  ORDER BY m.sent_at DESC, m.created_at DESC LIMIT 1), ''),
-			       (SELECT ct.wa_id FROM contacts ct WHERE ct.id = c.contact_id)
+			       (SELECT ct.wa_id FROM contacts ct WHERE ct.id = c.contact_id), c.snoozed_until
 			  FROM conversations c
 			  LEFT JOIN segments s ON s.id = c.segment_id
 			  LEFT JOIN users u ON u.id = c.assignee_id
 			 WHERE c.id = $3 AND `+forViewer+`
-			 FOR UPDATE OF c`, v.ID, v.Admin, convID).Scan(&status, &assignee, &assigneeName, &segID, &teamID, &lastJID, &contactWAID)
+			 FOR UPDATE OF c`, v.ID, v.Admin, convID).Scan(&status, &assignee, &assigneeName, &segID, &teamID, &lastJID, &contactWAID, &snoozedUntil)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -800,6 +817,9 @@ func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInpu
 		}
 
 		// Reenvio da mesma mensagem (duplo clique, "tentar de novo", requisição repetida).
+		if snoozedUntil != nil {
+			return httpx.FieldErrors{"text": "Retome o atendimento antes de enviar uma mensagem."}
+		}
 		var ex struct {
 			conv, dir, ext string
 			sender         *string
@@ -1040,7 +1060,7 @@ func (s *Service) Close(ctx context.Context, v Viewer, convID string) error {
 		if !v.Admin && (assignee == nil || *assignee != v.ID) {
 			return ErrForbidden
 		}
-		if _, err := tx.Exec(ctx, `UPDATE conversations SET status = 'closed', closed_at = now() WHERE id = $1`, convID); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE conversations SET status = 'closed', closed_at = now(), snoozed_until = NULL, snoozed_by = NULL WHERE id = $1`, convID); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE conversation_assignments SET ended_at = now(), ended_reason = 'closed'

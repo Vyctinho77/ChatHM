@@ -36,12 +36,17 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Post("/contacts/{id}/conversation", h.openForContact)
 	r.Post("/conversations/open", h.openByPhone)
 	r.Get("/conversations", h.list)
+	r.Get("/conversation-reminders", h.reminders)
+	r.Put("/conversations/{id}/reminder", h.saveReminder)
+	r.Delete("/conversations/{id}/reminder", h.deleteReminder)
 	r.Get("/conversations/{id}", h.get)
 	r.Get("/conversations/{id}/messages", h.messages)
 	r.Post("/conversations/{id}/messages", h.send)
 	r.Post("/conversations/{id}/read", h.read)
 	r.Get("/attachments/{id}", h.attachment)
 	r.Post("/conversations/{id}/close", h.close)
+	r.Post("/conversations/{id}/snooze", h.snooze)
+	r.Post("/conversations/{id}/resume", h.resume)
 	r.Post("/conversations/{id}/transfer", h.transfer)
 	r.Put("/conversations/{id}/tags/{tagId}", h.addTag)
 	r.Delete("/conversations/{id}/tags/{tagId}", h.removeTag)
@@ -250,6 +255,32 @@ func (h *Handler) attachment(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) read(w http.ResponseWriter, r *http.Request) {
 	if err := h.svc.MarkRead(r.Context(), viewer(r), chi.URLParam(r, "id")); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
+func (h *Handler) snooze(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Until *time.Time `json:"until"`
+	}
+	if !httpx.Decode(w, r, &in) {
+		return
+	}
+	if in.Until == nil {
+		httpx.Validation(w, httpx.FieldErrors{"until": "Escolha quando retomar o atendimento."})
+		return
+	}
+	if err := h.svc.Snooze(r.Context(), viewer(r), chi.URLParam(r, "id"), in.Until); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
+func (h *Handler) resume(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.Snooze(r.Context(), viewer(r), chi.URLParam(r, "id"), nil); err != nil {
 		writeError(w, r, err)
 		return
 	}
