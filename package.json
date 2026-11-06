@@ -7,7 +7,10 @@
   },
   "scripts": {
     "dev": "node scripts/dev.mjs",
-    "dev:web": "pnpm --filter @chathm/web dev",
+    "db:up": "node scripts/dev-db.mjs start",
+    "db:down": "node scripts/dev-db.mjs stop",
+    "test:dev": "node --test scripts/dev-config.test.mjs",
+    "dev:web": "node --import ./scripts/dev-env.mjs ./apps/web/node_modules/vite/bin/vite.js apps/web",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",

@@ -1,5 +1,8 @@
 import './dev-env.mjs';
 import concurrently from 'concurrently';
+import { devDatabase } from './dev-db.mjs';
+
+await devDatabase();
 
 const { result } = concurrently(
   [

@@ -21,3 +21,5 @@ coverage/
 !.vscode/extensions.json
 *.log
 data/
+.local/
+!.env.development.example
