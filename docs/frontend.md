@@ -48,7 +48,7 @@ src/
 - **Filas / Segmentos** (`features/queues`), no padrão de listas do WhatsApp (componentes em `components/list.tsx`):
   - `/filas`: uma linha por fila (ícone, nome, "Equipe X · N em atendimento", contador verde de aguardando, seta).
     Tocar abre a lista de conversas já filtrada (`/conversas?fila=folha`). Atendentes só veem as filas da
-    própria equipe + Geral. A engrenagem (só admin) leva à configuração.
+    própria equipe + Não atribuídos. A engrenagem (só admin) leva à configuração.
   - `/filas/configurar` (admin): testar uma mensagem e lista de segmentos (+ Novo segmento).
   - `/filas/configurar/:key` (admin): Nome, Equipe, interruptor "Classificar mensagens", palavras e
     expressões (tocar edita a prioridade ou remove) e Excluir segmento; edições em janelas simples.

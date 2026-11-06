@@ -4,7 +4,7 @@ No menu de três pontos do chat, use **Adiar atendimento**. Escolha **Em 1 hora*
 **Amanhã às 9h** ou uma data e hora. O horário exibido acompanha o fuso do navegador;
 a API recebe um instante ISO 8601 com fuso e o PostgreSQL guarda `timestamptz`.
 
-A conversa sai de Minhas, Geral e Todas e fica no filtro **Adiadas**, ordenada pelo
+A conversa sai de Minhas, Não atribuídos e Todas e fica no filtro **Adiadas**, ordenada pelo
 horário de retorno. O chat continua disponível para leitura. Para responder,
 use **Retomar agora**. Também é possível alterar o horário.
 

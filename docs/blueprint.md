@@ -29,7 +29,7 @@
 | Item | Função inicial | Acesso |
 |---|---|---|
 | Conversas | Caixa de entrada, busca, filtros Todas, Não lidas, Minhas e Gerais; mensagens e atendimento. | Atendentes e admin, respeitando equipes. |
-| Filas / Segmentos | Filas de Clientes novos, Folha de pagamento, Emissão de notas e Geral; aguardando e em atendimento. | Equipes autorizadas e admin. |
+| Filas / Segmentos | Filas de Clientes novos, Folha de pagamento, Emissão de notas e Não atribuídos; aguardando e em atendimento. | Equipes autorizadas e admin. |
 | Clientes | Contatos com nome, telefone, empresa (opcional), observações e histórico. | Usuários autorizados. |
 | Etiquetas | Criar/aplicar/remover tags (PENDENTE, URGENTE, PGDAS, CERTIFICADO), sem alterar o segmento. | Aplicar: atendentes; catálogo: admin. |
 | Equipe | Listar membros e vínculos; admin cadastra usuários e define equipes. | Consulta conforme permissão; edição pelo admin. |

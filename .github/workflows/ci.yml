@@ -28,7 +28,7 @@ jobs:
       - run: go vet ./...
       - run: go run ./cmd/migrate up
       # Ciclo completo: desce todas as migrações (10) e sobe de novo.
-      - run: for i in 1 2 3 4 5 6 7 8 9 10; do go run ./cmd/migrate down; done && go run ./cmd/migrate up
+      - run: for i in 1 2 3 4 5 6 7 8 9 10 11 12; do go run ./cmd/migrate down; done && go run ./cmd/migrate up
       - run: go test -race ./...
 
   web:

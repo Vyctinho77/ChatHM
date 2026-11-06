@@ -12,7 +12,7 @@ Base: `/api/v1`. Todas as respostas são JSON. Erros seguem o formato:
 - **CSRF**: `login`, `me`, `mfa/verify` e `mfa/enable` devolvem `csrfToken`. Toda requisição `POST/PUT/PATCH/DELETE` autenticada deve enviar o cabeçalho `X-CSRF-Token: <csrfToken>`. Guarde o token em memória e atualize-o a cada resposta que o trouxer (ele muda após o MFA).
 - **Origin**: requisições que alteram estado precisam vir de uma origem em `ALLOWED_ORIGINS`.
 - **Content-Type**: corpos devem ser `application/json` (caso contrário, `415`).
-- **Expiração**: sessão expira após `SESSION_TTL` (padrão 12h) ou `SESSION_IDLE_TIMEOUT` sem uso (padrão 2h). Qualquer `401 unauthenticated` → redirecionar para o login.
+- **Expiração**: sessão expira após `SESSION_TTL` (padrão 720h = 30 dias) ou `SESSION_IDLE_TIMEOUT` sem uso (padrão 720h). Qualquer `401 unauthenticated` → redirecionar para o login.
 
 O cadastro por conta própria (`POST /auth/register`) vem **desligado** (`ALLOW_SELF_REGISTER=false`; responde `404 registration_disabled`).
 Ligado, cria um atendente **inativo**, sem equipe e **sem sessão** (`202 {pending: true}`): a pessoa só consegue entrar
