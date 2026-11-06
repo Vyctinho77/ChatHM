@@ -43,3 +43,10 @@ em `DATABASE_URL`.
   O usuário `postgres` do app ignora o RLS, então nada muda para ele:
   `ALTER TABLE public.<tabela> ENABLE ROW LEVEL SECURITY;` para cada tabela listada em Advisors → Security.
 - As migrações rodam sozinhas ao subir (`AUTO_MIGRATE`); um banco que aplicou a agenda com a versão antiga (por data) é ajustado automaticamente.
+
+## Com a Cloudflare (Tunnel)
+`deploy/docker-compose.tunnel.yml` troca o Caddy por um **Cloudflare Tunnel**: a Cloudflare fornece o HTTPS e o domínio, e o servidor não
+precisa abrir portas (serve até para um computador em casa, desde que fique ligado). Passos: crie o túnel (Zero Trust → Networks → Tunnels),
+copie o token para `TUNNEL_TOKEN` e, em *Public hostname*, aponte seu domínio para `http://app:8080`. O servidor Go precisa estar sempre ligado
+para manter o WhatsApp conectado — por isso não roda em Workers. **Cloudflare Containers** é possível, mas as instâncias podem dormir e reiniciar
+(o disco é temporário), o que derruba a sessão do WhatsApp; use só se aceitar isso, com anexos no R2 (`STORAGE_DRIVER=s3`).

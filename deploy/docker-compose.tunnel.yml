@@ -1,0 +1,34 @@
+# App + Cloudflare Tunnel (HTTPS pela Cloudflare, sem abrir portas e sem Caddy). Banco no Supabase.
+#   docker compose -f deploy/docker-compose.tunnel.yml --env-file deploy/.env up -d --build
+# No painel Cloudflare: Zero Trust → Networks → Tunnels → Create tunnel → copie o token (TUNNEL_TOKEN) e, em
+# "Public hostname", aponte seu domínio para  http://app:8080
+name: chathm
+
+services:
+  app:
+    build: { context: .., dockerfile: Dockerfile }
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?defina DATABASE_URL (Supabase, Session pooler)}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?defina ENCRYPTION_KEY}
+      ALLOWED_ORIGINS: https://${DOMAIN:?defina DOMAIN}
+      COOKIE_SECURE: "true"
+      REQUIRE_ADMIN_MFA: "true"
+      TRUST_PROXY_HEADERS: "true" # IP real vem da Cloudflare (CF-Connecting-IP/X-Forwarded-For)
+      WHATSAPP_PROVIDER: whatsmeow
+      SETUP_TOKEN: ${SETUP_TOKEN:?defina SETUP_TOKEN}
+      LOG_LEVEL: info
+    volumes: [attachments:/data]
+    expose: ["8080"]
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?defina TUNNEL_TOKEN}
+    depends_on: [app]
+
+volumes:
+  attachments:
