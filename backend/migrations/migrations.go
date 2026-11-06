@@ -20,6 +20,10 @@ func provider(dsn string) (*goose.Provider, *sql.DB, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := renameLegacyVersions(db); err != nil {
+		db.Close()
+		return nil, nil, err
+	}
 	p, err := goose.NewProvider(goose.DialectPostgres, db, fs.FS(files))
 	if err != nil {
 		db.Close()
@@ -82,4 +86,18 @@ func Run(ctx context.Context, dsn, command string) error {
 func Create(dir, name string) error {
 	goose.SetSequential(true) // 00008_nome.sql, mantendo a ordem numérica das migrações existentes
 	return goose.Create(nil, dir, name, "sql")
+}
+
+// renameLegacyVersions: a migração da agenda foi criada com versão por data (20261105213059) e depois renumerada
+// para 7. Bancos que já a aplicaram com o número antigo seriam recusados pelo goose ("migração faltando");
+// aqui o registro é corrigido uma única vez, sem reexecutar o SQL. Não faz nada em bancos novos ou já ajustados.
+func renameLegacyVersions(db *sql.DB) error {
+	var exists bool
+	if err := db.QueryRow(`SELECT to_regclass('goose_db_version') IS NOT NULL`).Scan(&exists); err != nil || !exists {
+		return err
+	}
+	_, err := db.Exec(`UPDATE goose_db_version SET version_id = 7
+		WHERE version_id = 20261105213059
+		  AND NOT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 7)`)
+	return err
 }

@@ -32,3 +32,14 @@ informe seus dados e configure o autenticador. Depois, em **Equipe → Acesso da
 O mesmo `Dockerfile` roda em Fly.io, Railway ou Render: crie um Postgres, um volume persistente em `/data` (anexos) e informe as
 variáveis do `deploy/docker-compose.yml` (`DATABASE_URL`, `ENCRYPTION_KEY`, `ALLOWED_ORIGINS=https://seu-dominio`, `COOKIE_SECURE=true`,
 `REQUIRE_ADMIN_MFA=true`, `TRUST_PROXY_HEADERS=true`, `SETUP_TOKEN`). Plano gratuito sem disco persistente perde os anexos a cada reinício.
+
+## Com o banco no Supabase
+O Supabase entrega o **Postgres** (o app conecta direto, como usuário `postgres`); ele **não hospeda** o servidor Go, que precisa rodar
+em um servidor/PaaS (um container). Use `deploy/docker-compose.supabase.yml` e a **Session pooler** (IPv4, porta 5432, usuário `postgres.<ref>`)
+em `DATABASE_URL`.
+- **Só uma instância por banco.** O banco guarda a sessão do WhatsApp: se o app rodar no servidor e também na sua máquina apontando para o
+  mesmo banco, os dois disputam a sessão ("aberta em outro local") e a conexão cai. Pare o local antes de subir o servidor.
+- **Ative o RLS** nas tabelas do app (sem políticas): o app não usa a API REST do Supabase, e assim a chave `anon` não lê nada.
+  O usuário `postgres` do app ignora o RLS, então nada muda para ele:
+  `ALTER TABLE public.<tabela> ENABLE ROW LEVEL SECURITY;` para cada tabela listada em Advisors → Security.
+- As migrações rodam sozinhas ao subir (`AUTO_MIGRATE`); um banco que aplicou a agenda com a versão antiga (por data) é ajustado automaticamente.
