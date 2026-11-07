@@ -13,6 +13,7 @@ export default defineConfig({
     // Mesmo origin no dev: cookies de sessão funcionam sem CORS complicado.
     proxy: {
       "/api": { target: process.env.VITE_API_PROXY ?? "http://localhost:8080", changeOrigin: true, ws: true },
+      "/mcp": { target: process.env.VITE_API_PROXY ?? "http://localhost:8080", changeOrigin: true },
       "/healthz": { target: process.env.VITE_API_PROXY ?? "http://localhost:8080", changeOrigin: true },
     },
   },

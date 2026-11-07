@@ -3,7 +3,23 @@
 Servidor MCP que deixa assistentes de IA (Claude, ChatGPT, Grok e qualquer cliente MCP) trabalharem dentro do ChatHM:
 resumir atendimentos, achar clientes, sugerir respostas, organizar filas e etiquetas, consultar a agenda.
 
-Status: **planejamento** (nada implementado ainda).
+Status: **etapa 1 implementada** (tokens, chave do administrador, `/mcp` com 9 ferramentas de leitura, mascaramento, limite e auditoria).
+Faltam as etapas 2 a 5 (prompts prontos, escrita, rascunho/aprovação de envio e OAuth).
+
+### Etapa 1: como ficou
+
+- **Tela:** Configurações → *Integrações (IA)*. O administrador liga/desliga o acesso e escolhe ocultar CPF/CNPJ (padrão ligado) e telefones.
+  Qualquer pessoa cria seus tokens (nome + validade de 30/90/365 dias); o token aparece **uma vez**, com os comandos de conexão.
+- **API do app:** `GET/PUT /ai/settings`, `GET/POST /ai/tokens`, `DELETE /ai/tokens/{id}` (sessão com autenticador).
+- **Endpoint MCP:** `POST /mcp` (Streamable HTTP sem sessão), `Authorization: Bearer chm_…`. 401 token inválido/expirado/revogado ou pessoa
+  desativada; 403 acesso por IA desligado ou `Origin` de navegador não permitido; 429 acima de 60 chamadas/min por token.
+- **Ferramentas (todas só leitura, `readOnlyHint`):** `list_conversations`, `get_conversation`, `read_messages`, `search`,
+  `list_contacts`, `get_contact`, `list_queues`, `list_tags`, `list_agenda`.
+- **Segurança:** token guardado como SHA-256; tokens são revogados quando o autenticador da pessoa é redefinido; toda resposta traz o
+  aviso de conteúdo de terceiros; fotos/áudios/arquivos nunca saem; auditoria `mcp.call` (ferramenta e prefixo do token, sem conteúdo).
+- **Testes:** visibilidade por equipe (token da Bia não vê a fila da Ana), mascaramento, auditoria sem vazamento, limite, origem,
+  revogação, e um cliente MCP real (SDK oficial) fazendo o handshake completo.
+
 
 ## Decisões
 

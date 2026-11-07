@@ -6,6 +6,7 @@ import { APP_VERSION } from "@/lib/version";
 import { DEMO } from "@/lib/env";
 import { regenerateRecoveryCodes, useMe } from "@/features/auth/api";
 import { ThemeSwitcher } from "@/features/shell/ThemeSwitcher";
+import { AiAccessCard } from "./AiAccessCard";
 import { HandoverCard } from "./HandoverCard";
 import { SoundSettings } from "./SoundSettings";
 
@@ -62,6 +63,8 @@ export function SettingsPage() {
         {me.user.mfaEnabled && <RecoveryCodes />}
 
         <ChangePassword />
+
+        {!DEMO && <AiAccessCard />}
 
         {me.user.role === "admin" && <HandoverCard />}
 

@@ -5,6 +5,7 @@ package httpapi
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"io"
 	"net/http"
 	"strings"
@@ -275,5 +276,57 @@ func TestAIAccessRateLimitOriginAndMFAReset(t *testing.T) {
 	expect(t, w.admin.do("POST", "/api/v1/users/"+uid+"/invite", nil), 200)
 	if st, _ := w.mcpCall(tok, "tools/list", nil); st != 401 {
 		t.Fatalf("depois do reinvite = %d", st)
+	}
+}
+
+type bearerRT struct{ token string }
+
+func (b bearerRT) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	r.Header.Set("Authorization", "Bearer "+b.token)
+	return http.DefaultTransport.RoundTrip(r)
+}
+
+// Cliente MCP real (SDK oficial): handshake completo, lista de ferramentas e uma chamada.
+func TestAIAccessWithRealMCPClient(t *testing.T) {
+	w := setupWorld(t)
+	expect(t, w.admin.do("PUT", "/api/v1/ai/settings", map[string]any{"enabled": true, "maskDocuments": true}), 200)
+	tok := w.mkToken(w.ana, "sdk")
+	w.receive("Cliente SDK", "Bom dia, preciso de ajuda")
+
+	ctx := t.Context()
+	client := mcp.NewClient(&mcp.Implementation{Name: "teste", Version: "1"}, nil)
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{
+		Endpoint:   w.e.srv.URL + "/mcp",
+		HTTPClient: &http.Client{Transport: bearerRT{tok}},
+	}, nil)
+	if err != nil {
+		t.Fatalf("conectando: %v", err)
+	}
+	defer session.Close()
+
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil || len(tools.Tools) != 9 {
+		t.Fatalf("ferramentas: %v %v", err, tools)
+	}
+	for _, tl := range tools.Tools {
+		if tl.Annotations == nil || !tl.Annotations.ReadOnlyHint || tl.Description == "" {
+			t.Fatalf("ferramenta sem descrição/readOnly: %+v", tl)
+		}
+	}
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "list_conversations", Arguments: map[string]any{"filter": "all"}})
+	if err != nil || res.IsError {
+		t.Fatalf("list_conversations: %v %+v", err, res)
+	}
+	if len(res.Content) == 0 {
+		t.Fatal("resposta sem conteúdo de texto (clientes que não leem structuredContent ficariam sem dados)")
+	}
+	if tc, ok := res.Content[0].(*mcp.TextContent); !ok || !strings.Contains(tc.Text, "Cliente SDK") {
+		t.Fatalf("texto da resposta = %+v", res.Content[0])
+	}
+	// Erro de ferramenta vira IsError (não erro de protocolo).
+	bad, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "get_conversation", Arguments: map[string]any{"id": "00000000-0000-0000-0000-000000000000"}})
+	if err != nil || !bad.IsError {
+		t.Fatalf("esperava IsError: %v %+v", err, bad)
 	}
 }
