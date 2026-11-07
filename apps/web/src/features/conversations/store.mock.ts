@@ -166,6 +166,10 @@ export function useConversationActions() {
       patchConversation(id, (x) => ({ ...x, tags }));
       refresh();
     },
+    async setName(id: string, name: string) {
+      patchConversation(id, (x) => ({ ...x, contact: { ...x.contact, name: name || x.contact.name } }));
+      refresh();
+    },
     setNote(id: string, note: string) {
       patchConversation(id, (x) => ({ ...x, contact: { ...x.contact, note } }));
       refresh();

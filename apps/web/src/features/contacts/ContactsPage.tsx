@@ -10,7 +10,8 @@ import { ListSkeleton } from "@/components/Skeleton";
 import { errorMessage } from "@/lib/api";
 import { matches } from "@/lib/search";
 import { useContactOpener } from "@/features/conversations/store";
-import { useContacts } from "./api";
+import { EditableName } from "@/components/EditableName";
+import { useContacts, useRenameContact } from "./api";
 
 export function ContactsPage() {
   const [search, setSearch] = useState("");
@@ -19,6 +20,7 @@ export function ContactsPage() {
   const [failure, setFailure] = useState("");
   const navigate = useNavigate();
   const opener = useContactOpener();
+  const rename = useRenameContact();
   const { contacts, isPending, error } = useContacts();
   const term = search.trim();
   // Sem acento/maiúscula; com 3+ dígitos casa também pedaços do telefone.
@@ -93,9 +95,13 @@ export function ContactsPage() {
             <li key={c.id} className="flex items-center gap-3 py-3">
               <Avatar name={c.name} src={c.avatarUrl} group={c.kind === "group"} />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">
-                  <Highlight text={c.name} term={term} />
-                </p>
+                <div className="text-sm font-medium">
+                  {term ? (
+                    <p className="truncate"><Highlight text={c.name} term={term} /></p>
+                  ) : (
+                    <EditableName value={c.name} label={`Editar nome de ${c.name}`} onSave={(name) => rename(c, name)} />
+                  )}
+                </div>
                 <p className="mt-0.5 truncate text-xs text-muted">
                   <Highlight text={[c.phone, c.company].filter(Boolean).join(" · ") || (c.kind === "group" ? "Grupo do WhatsApp" : "Telefone não informado")} term={term} />
                 </p>

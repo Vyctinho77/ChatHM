@@ -146,3 +146,9 @@ tela Conexão WhatsApp.
   mensagem (no máximo 2 consultas simultâneas; recheca em 7 dias com foto, 1 dia sem foto), guardada em
   `contacts.avatar` e servida por `GET /contacts/{id}/avatar` (exige sessão). O campo `avatarUrl` do contato
   traz a URL com `?v=` para o cache do navegador. Sem foto (ou privada), a interface mostra as iniciais (ou o ícone de grupo).
+
+## Renomear contatos
+
+O lápis ao lado do nome (painel **Dados do contato** e lista **Clientes**) troca o nome exibido (`PATCH /contacts/{id}`, até 120 caracteres).
+O nome definido pela equipe não é sobrescrito pelo nome do WhatsApp nem pelo assunto do grupo (`contacts.name_edited`).
+Apagar o nome volta a seguir o WhatsApp. Quem vê a conversa pode renomear; o administrador também renomeia contatos importados sem conversa.

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Building2, Phone, Plus, UserRound, X } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { Menu, MenuItem } from "@/components/Menu";
+import { EditableName } from "@/components/EditableName";
 import { IconButton } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { capabilities, useConversationActions, useTagCatalog } from "./store";
@@ -29,7 +30,9 @@ export function ContactPanel({ conversation: c, onClose }: { conversation: Conve
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col items-center gap-2 border-b border-line px-6 py-6 text-center">
           <Avatar name={c.contact.name} src={c.contact.avatarUrl} group={c.contact.kind === "group"} size="lg" />
-          <p className="mt-1.5 text-[15px] font-semibold">{c.contact.name}</p>
+          <p className="mt-1.5 flex max-w-full justify-center text-[15px] font-semibold">
+            <EditableName value={c.contact.name} onSave={(name) => actions.setName(c.id, name)} />
+          </p>
           <p className="text-[12.5px] text-muted">{c.contact.phone}</p>
         </div>
 

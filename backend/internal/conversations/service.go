@@ -232,7 +232,7 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 			ON CONFLICT (wa_id) DO UPDATE SET
 			    phone = CASE WHEN contacts.phone = '' THEN EXCLUDED.phone ELSE contacts.phone END,
 			    -- o assunto do grupo acompanha renomeações; nomes de pessoas só são preenchidos se vazios
-			    name  = CASE WHEN contacts.name = '' OR (EXCLUDED.kind = 'group' AND EXCLUDED.name <> '')
+			    name  = CASE WHEN contacts.name = '' OR (EXCLUDED.kind = 'group' AND EXCLUDED.name <> '' AND NOT contacts.name_edited)
 			                 THEN EXCLUDED.name ELSE contacts.name END
 			RETURNING id`,
 			m.ContactWAID, m.ContactPhone, contactName(m), contactKind(m)).Scan(&contactID); err != nil {
@@ -686,12 +686,22 @@ func (s *Service) UpdateContact(ctx context.Context, v Viewer, contactID string,
 	if !httpx.ValidUUID(contactID) {
 		return ErrNotFound
 	}
-	// O viewer precisa poder ver alguma conversa do contato.
+	// O viewer precisa poder ver alguma conversa do contato; o administrador edita também contatos
+	// importados que ainda não têm conversa (lista de Clientes).
 	var convID string
-	err := s.db.QueryRow(ctx, `
+	var err error
+	if v.Admin {
+		err = s.db.QueryRow(ctx, `SELECT id::text FROM contacts WHERE id = $1`, contactID).Scan(&convID)
+		if err == nil { // conversa mais recente (se houver), só para avisar as telas abertas
+			convID = ""
+			_ = s.db.QueryRow(ctx, `SELECT id::text FROM conversations WHERE contact_id = $1 ORDER BY last_message_at DESC LIMIT 1`, contactID).Scan(&convID)
+		}
+	} else {
+		err = s.db.QueryRow(ctx, `
 		SELECT c.id FROM conversations c LEFT JOIN segments s ON s.id = c.segment_id
 		 WHERE c.contact_id = $3 AND `+forViewer+` ORDER BY c.last_message_at DESC LIMIT 1`,
-		v.ID, v.Admin, contactID).Scan(&convID)
+			v.ID, v.Admin, contactID).Scan(&convID)
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	}
@@ -720,11 +730,15 @@ func (s *Service) UpdateContact(ctx context.Context, v Viewer, contactID string,
 		return err
 	}
 	if _, err := s.db.Exec(ctx, `
-		UPDATE contacts SET name = coalesce($2, name), company = coalesce($3, company), note = coalesce($4, note)
+		UPDATE contacts SET name = coalesce($2, name), company = coalesce($3, company), note = coalesce($4, note),
+		       -- nome apagado = volta a seguir o nome do WhatsApp; nome digitado fica fixo
+		       name_edited = CASE WHEN $2::text IS NULL THEN name_edited ELSE $2::text <> '' END
 		 WHERE id = $1`, contactID, in.Name, in.Company, in.Note); err != nil {
 		return err
 	}
-	s.publishState(ctx, convID, nil)
+	if convID != "" {
+		s.publishState(ctx, convID, nil)
+	}
 	return nil
 }
 

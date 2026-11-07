@@ -118,6 +118,13 @@ export function useConversationActions() {
           ...remove.map((n) => del<void>(`/conversations/${id}/tags/${idOf.get(n)}`)),
         ]).catch(resync);
       },
+      /** Renomeia o contato; nome vazio volta a seguir o nome do WhatsApp. Falhas voltam para quem chamou. */
+      async setName(id: string, name: string) {
+        const c = list().find((x) => x.id === id);
+        if (!c) return;
+        await patch(`/contacts/${c.contact.id}`, { name });
+        await Promise.all([qc.invalidateQueries({ queryKey: conversationKeys.list }), qc.invalidateQueries({ queryKey: ["contacts"] })]);
+      },
       setNote(id: string, note: string) {
         const c = list().find((x) => x.id === id);
         if (!c) return;
