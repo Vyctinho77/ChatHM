@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
-import { AnimatePresence, motion } from "motion/react";
-import { Check, FileText, Image, MapPin, Mic, Paperclip, Pencil, Reply, SendHorizontal, Smile, Sparkles, Square, Trash2, X } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { Check, FileText, Image, LoaderCircle, MapPin, Mic, Paperclip, Pencil, Reply, SendHorizontal, Smile, Sparkles, Trash2, X } from "lucide-react";
 import { Menu, MenuItem } from "@/components/Menu";
 import { IconButton } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { formatDuration } from "@/lib/format";
-import { playRecordStartSound } from "@/lib/sounds";
+import { useVoiceRecorder } from "./useVoiceRecorder";
+import { recordingError } from "./voiceCapture";
 import { getDraft, setDraft } from "./drafts";
 import type { OutgoingDraft } from "./store";
 import { AttachmentPreview, type AttachmentSelection } from "./AttachmentPreview";
@@ -16,10 +17,10 @@ const MAX_FILE = 25 * 1024 * 1024; // padrão do servidor (MAX_ATTACHMENT_MB); a
 
 /** Forma de onda real (40 barras de 0 a 1) a partir do áudio gravado; aleatória se o navegador não decodificar. */
 async function waveformOf(blob: Blob, bars = 40): Promise<number[]> {
+  let ctx: AudioContext | undefined;
   try {
-    const ctx = new AudioContext();
+    ctx = new AudioContext();
     const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
-    void ctx.close();
     const data = buf.getChannelData(0);
     const step = Math.max(1, Math.floor(data.length / bars));
     const out = Array.from({ length: bars }, (_, i) => {
@@ -31,53 +32,9 @@ async function waveformOf(blob: Blob, bars = 40): Promise<number[]> {
     return out.map((v) => 0.15 + (v / max) * 0.85);
   } catch {
     return Array.from({ length: bars }, () => 0.25 + Math.random() * 0.75);
+  } finally {
+    if (ctx && ctx.state !== "closed") void ctx.close().catch(() => undefined);
   }
-}
-
-function useRecorder(onDone: (blob: Blob, durationSec: number) => void) {
-  const rec = useRef<MediaRecorder | null>(null);
-  const chunks = useRef<Blob[]>([]);
-  const started = useRef(0);
-  const cancelled = useRef(false);
-  const [elapsed, setElapsed] = useState(0);
-  const [recording, setRecording] = useState(false);
-  const supported = typeof window !== "undefined" && "MediaRecorder" in window && !!navigator.mediaDevices;
-
-  useEffect(() => {
-    if (!recording) return;
-    const t = setInterval(() => setElapsed((performance.now() - started.current) / 1000), 250);
-    return () => clearInterval(t);
-  }, [recording]);
-
-  async function start() {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
-    // Opus a 64 kbps (o padrão do navegador é bem menor); cai no padrão se não houver suporte.
-    const mimeType = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus"].find((t) => MediaRecorder.isTypeSupported(t));
-    const r = new MediaRecorder(stream, { audioBitsPerSecond: 64_000, ...(mimeType ? { mimeType } : {}) });
-    chunks.current = [];
-    cancelled.current = false;
-    r.ondataavailable = (e) => chunks.current.push(e.data);
-    r.onstop = () => {
-      stream.getTracks().forEach((t) => t.stop());
-      const dur = (performance.now() - started.current) / 1000;
-      if (!cancelled.current && dur >= 0.5) onDone(new Blob(chunks.current, { type: r.mimeType }), dur);
-      setRecording(false);
-      setElapsed(0);
-    };
-    rec.current = r;
-    started.current = performance.now();
-    r.start();
-    setRecording(true);
-  }
-
-  function stop(cancel = false) {
-    cancelled.current = cancel;
-    rec.current?.stop();
-  }
-
-  return { supported, recording, elapsed, start, stop };
 }
 
 export function Composer({
@@ -110,16 +67,17 @@ export function Composer({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [attachments, setAttachments] = useState<AttachmentSelection | null>(null);
+  const reducedMotion = useReducedMotion();
   const ta = useRef<HTMLTextAreaElement>(null);
   const docInput = useRef<HTMLInputElement>(null);
   const imgInput = useRef<HTMLInputElement>(null);
   const hdInput = useRef<HTMLInputElement>(null);
 
-  const recorder = useRecorder((blob, durationSec) => {
+  const recorder = useVoiceRecorder((blob, durationSec) => {
     void waveformOf(blob).then((waveform) =>
       onSend({ kind: "audio", url: URL.createObjectURL(blob), durationSec, waveform, file: blob }),
     );
-  });
+  }, setError);
 
   // Auto-altura do campo.
   useEffect(() => {
@@ -208,6 +166,7 @@ export function Composer({
     <div className="shrink-0 px-3 pb-3 pt-2 sm:px-4">
       {attachments && <AttachmentPreview selection={attachments} onClose={() => setAttachments(null)} onSend={onSend} />}
       {error && <p className="px-2 pb-1 text-xs text-danger">{error}</p>}
+      <div className="relative">
       {(reply || edit) && !recorder.recording && (
         <div className="mb-1 flex items-start gap-2 rounded-2xl bg-panel px-3 py-2 shadow-sm">
           <span className="mt-0.5 text-brand-ink [&>svg]:size-4">{edit ? <Pencil /> : <Reply />}</span>
@@ -229,14 +188,7 @@ export function Composer({
             <span className="size-2.5 animate-pulse rounded-full bg-danger" />
             Gravando {formatDuration(recorder.elapsed)}
           </span>
-          <button
-            type="button"
-            onClick={() => recorder.stop()}
-            aria-label="Enviar áudio"
-            className="ml-auto inline-flex size-10 items-center justify-center rounded-full bg-brand text-accent-fg"
-          >
-            <SendHorizontal className="size-5" />
-          </button>
+          <span aria-hidden="true" className="ml-auto size-8 shrink-0" />
         </div>
       ) : (
         <div className="flex items-end gap-1 rounded-2xl bg-panel px-2.5 py-2 shadow-lg shadow-black/5">
@@ -326,25 +278,42 @@ export function Composer({
                   {edit ? <Check className="size-5" /> : <SendHorizontal className="size-5" />}
                 </IconButton>
               ) : (
-                <IconButton
-                  label={
-                    mediaDisabledReason ??
-                    (recorder.supported ? "Gravar áudio" : "Gravação de áudio indisponível neste navegador")
-                  }
-                  disabled={!recorder.supported || !!mediaDisabledReason}
-                  onClick={() => {
-                    void playRecordStartSound();
-                    void recorder.start().catch(() => setError("Permissão de microfone negada."));
-                  }}
-                  className={cn(recorder.recording && "text-danger")}
-                >
-                  {recorder.recording ? <Square className="size-5" /> : <Mic className="size-5" />}
-                </IconButton>
+                <span aria-hidden="true" className="size-8" />
               )}
             </motion.span>
           </AnimatePresence>
         </div>
       )}
+      {!attachments && ((!text.trim() && !edit) || recorder.recording) && (
+        <button
+          type="button"
+          aria-label={recorder.recording ? "Enviar áudio" : mediaDisabledReason ?? (recorder.starting ? "Preparando microfone" : recorder.supported ? "Gravar áudio" : "Gravação de áudio indisponível neste navegador")}
+          disabled={!recorder.supported || recorder.starting || !!mediaDisabledReason}
+          onClick={() => {
+            if (recorder.recording) return recorder.stop();
+            setError("");
+            void recorder.start().catch((error: unknown) => setError(recordingError(error)));
+          }}
+          className={cn("group/voice absolute bottom-0 right-0.5 isolate flex size-12 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-brand", !recorder.recording && "text-muted hover:text-fg disabled:opacity-50")}
+        >
+          <AnimatePresence>
+            {recorder.recording && <motion.span
+              key="recording-circle"
+              aria-hidden="true"
+              initial={{ scale: reducedMotion ? 1 : 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: reducedMotion ? 1 : 0, opacity: 0 }}
+              transition={{ duration: reducedMotion ? 0 : 0.2, ease: "easeOut" }}
+              className="pointer-events-none absolute inset-0 -z-10 rounded-full bg-brand shadow-md"
+            />}
+          </AnimatePresence>
+          <motion.span initial={false} animate={{ scale: recorder.recording ? 1.15 : 1 }} transition={{ duration: reducedMotion ? 0 : 0.18 }} className={cn("pointer-events-none inline-flex", recorder.recording && "text-accent-fg transition-opacity duration-150 group-hover/voice:opacity-0 group-focus-visible/voice:opacity-0 motion-reduce:transition-none")}>
+            {recorder.starting ? <LoaderCircle className="size-5 animate-spin" /> : <Mic className="size-5" />}
+          </motion.span>
+          {recorder.recording && <span aria-hidden="true" className="pointer-events-none absolute inset-0 flex scale-90 items-center justify-center text-accent-fg opacity-0 transition-[opacity,scale] duration-150 group-hover/voice:scale-100 group-hover/voice:opacity-100 group-focus-visible/voice:scale-100 group-focus-visible/voice:opacity-100 motion-reduce:transition-none"><SendHorizontal className="size-5" /></span>}
+        </button>
+      )}
+      </div>
     </div>
   );
 }

@@ -9,6 +9,8 @@ let storage: Map<string, string>;
 let started: string[];
 let contexts: FakeContext[];
 let request: ReturnType<typeof vi.fn>;
+let finishClips: boolean;
+let endClips: (() => void)[];
 
 class FakeContext {
   state = "suspended";
@@ -20,7 +22,12 @@ class FakeContext {
   createGain() { return this.gain; }
   async decodeAudioData(data: ArrayBuffer) { return { url: new TextDecoder().decode(data) } as Decoded; }
   createBufferSource() {
-    const source = { buffer: null as Decoded | null, connect: vi.fn(), disconnect: vi.fn(), stop: vi.fn(), onended: null, start: () => started.push(source.buffer!.url) };
+    const source = { buffer: null as Decoded | null, connect: vi.fn(), disconnect: vi.fn(), stop: vi.fn(), onended: null as (() => void) | null, start: () => {
+      started.push(source.buffer!.url);
+      const end = () => source.onended?.();
+      endClips.push(end);
+      if (finishClips) queueMicrotask(end);
+    } };
     return source;
   }
 }
@@ -32,7 +39,7 @@ beforeEach(async () => {
   vi.resetModules();
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-11-07T16:00:00Z"));
-  storage = new Map(); started = []; contexts = [];
+  storage = new Map(); started = []; contexts = []; finishClips = true; endClips = [];
   documentEvents = Object.assign(new EventTarget(), { visibilityState: "visible", hasFocus: () => true });
   const windowEvents = Object.assign(new EventTarget(), { AudioContext: FakeContext, localStorage: { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value) } });
   vi.stubGlobal("window", windowEvents);
@@ -47,6 +54,33 @@ beforeEach(async () => {
 afterEach(() => { cleanup?.(); cleanup = undefined; vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("app sound effects", () => {
+  it("finishes the microphone cue before resolving and does not throttle it after another message sound", async () => {
+    unlock();
+    await sounds.playSentSound("just-sent", "sent");
+    finishClips = false;
+    let ready = false;
+    const cue = sounds.playRecordStartSound().then(() => { ready = true; });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(started.at(-1)).toContain("record-start");
+    expect(ready).toBe(false);
+    endClips.at(-1)!();
+    await cue;
+    expect(ready).toBe(true);
+  });
+
+  it("silences effects during recording and restores preferences when capture ends", async () => {
+    unlock();
+    await sounds.playRecordStartSound();
+    const release = sounds.silenceSoundsForRecording();
+    await sounds.playSentSound("while-recording", "sent");
+    expect(await sounds.previewNotification("water")).toBe(false);
+    expect(started).toHaveLength(1);
+    release(); release();
+    await vi.advanceTimersByTimeAsync(200);
+    await sounds.playSentSound("after-recording", "sent");
+    expect(started).toHaveLength(2);
+  });
+
   it("plays the microphone click effect and respects message mute and volume", async () => {
     await sounds.playRecordStartSound();
     expect(started).toHaveLength(1);

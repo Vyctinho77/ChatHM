@@ -22,10 +22,12 @@ let preferences = defaults;
 let userId: string | null = null;
 let activeConversation: string | null = null;
 let generation = 0;
+let playbackVersion = 0;
 let context: AudioContext | null = null;
 let master: GainNode | null = null;
 const buffers = new Map<string, Promise<AudioBuffer>>();
 const sources = new Set<AudioBufferSourceNode>();
+const recordingMutes = new Set<symbol>();
 const heard = new Set<string>();
 const listeners = new Set<() => void>();
 const lastPlayed = { messages: -Infinity, notifications: -Infinity };
@@ -61,6 +63,7 @@ export function updateSoundPreferences(change: Partial<SoundPreferences>) {
 }
 
 function stopSounds() {
+  playbackVersion++;
   for (const source of sources) { try { source.stop(); } catch { /* Already ended. */ } }
   sources.clear();
 }
@@ -82,11 +85,20 @@ async function unlockAudio(): Promise<boolean> {
   } catch { return false; }
 }
 
-type SoundKind = "messages" | "notifications" | "preview";
-const enabled = (kind: SoundKind) => !!userId && preferences.volume > 0 && (kind === "preview" || preferences[kind]);
+type SoundKind = "messages" | "notifications" | "preview" | "recording";
+const enabled = (kind: SoundKind) => !!userId && recordingMutes.size === 0 && preferences.volume > 0 && (kind === "preview" || preferences[kind === "recording" ? "messages" : kind]);
 
-async function playClip(url: string, kind: SoundKind, session: number): Promise<boolean> {
+/** Não deixa efeitos do app vazarem para o microfone; a liberação é idempotente. */
+export function silenceSoundsForRecording() {
+  const token = Symbol();
+  recordingMutes.add(token);
+  stopSounds();
+  return () => { recordingMutes.delete(token); };
+}
+
+async function playClip(url: string, kind: SoundKind, session: number, waitForEnd = false): Promise<boolean> {
   const audio = context;
+  const version = playbackVersion;
   if (!audio || audio.state !== "running" || !master || session !== generation || !enabled(kind)) return false;
   try {
     let buffer = buffers.get(url);
@@ -96,8 +108,8 @@ async function playClip(url: string, kind: SoundKind, session: number): Promise<
       void buffer.catch(() => buffers.delete(url));
     }
     const decoded = await buffer;
-    if (session !== generation || audio.state !== "running" || !enabled(kind)) return false;
-    if (kind !== "preview") {
+    if (session !== generation || version !== playbackVersion || audio.state !== "running" || !enabled(kind)) return false;
+    if (kind === "messages" || kind === "notifications") {
       const now = Date.now();
       if (now - lastPlayed[kind] < (kind === "notifications" ? 1800 : 180)) return false;
       lastPlayed[kind] = now;
@@ -106,8 +118,20 @@ async function playClip(url: string, kind: SoundKind, session: number): Promise<
     source.buffer = decoded;
     source.connect(master);
     sources.add(source);
-    source.onended = () => { sources.delete(source); source.disconnect(); };
+    let finish: (() => void) | undefined;
+    const ended = waitForEnd ? new Promise<void>(resolve => {
+      let complete = false;
+      const timer = setTimeout(() => { try { source.stop(); } catch { /* Already ended. */ } finish?.(); }, Math.max(0, decoded.duration || 0.3) * 1000 + 500);
+      finish = () => {
+        if (complete) return;
+        complete = true;
+        clearTimeout(timer);
+        sources.delete(source); source.disconnect(); resolve();
+      };
+    }) : undefined;
+    source.onended = () => { if (finish) finish(); else { sources.delete(source); source.disconnect(); } };
     source.start();
+    if (ended) await ended;
     return true;
   } catch { return false; }
 }
@@ -145,7 +169,7 @@ export async function playSentSound(id: string, status?: string) {
 export async function playRecordStartSound() {
   if (!enabled("messages")) return;
   const session = generation;
-  if (await unlockAudio()) await playClip(recordURL, "messages", session);
+  if (await unlockAudio()) await playClip(recordURL, "recording", session, true);
 }
 
 export async function playIncomingSound(message: { id: string; conversationId: string; direction: string; sentAt: string; historical?: boolean }) {

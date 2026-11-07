@@ -7,7 +7,7 @@ Os arquivos originais estão em `sonoros/`. As cópias usadas no build ficam em
 |---|---|
 | `Enviar mensagem novo.mp3` | Envio confirmado pelo servidor |
 | `receber mensagem novo.mp3` | Nova mensagem na conversa aberta, com a aba em foco |
-| `efeito para botão de audio.mp3` | Clique no botão de gravar áudio (respeita sons da conversa e volume) |
+| `Efeito do botão de audio.mp3` | Clique no botão de gravar áudio (respeita sons da conversa e volume) |
 | `padrão.mp3` | Notificação padrão para mensagens fora da conversa aberta |
 | `águas.mp3` | Tom de notificação Águas |
 | `Noites.mp3` | Tom de notificação Noites |
@@ -20,6 +20,12 @@ ajustar o volume. As preferências são salvas por conta neste navegador.
 O navegador libera o áudio após uma interação com o app. O `AudioContext` é
 reutilizado e os arquivos são baixados e decodificados apenas quando necessários.
 Falhas de áudio não interrompem mensagens nem geram erros na conversa.
+
+Ao iniciar a captura do microfone, os efeitos em reprodução são interrompidos e
+novos efeitos ficam silenciados até finalizar ou descartar a gravação. Isso evita
+que os sons do próprio app entrem no áudio. As preferências de volume são preservadas.
+O efeito do botão toca até terminar antes de abrir a captura. Sua cópia usada no
+build tem o silêncio inicial/final removido, mantendo o arquivo original em `sonoros/`.
 
 Histórico, carregamento inicial, recibos e eventos duplicados não disparam sons.
 Envios com falha ou pendentes também não. Rajadas têm um intervalo mínimo e os
