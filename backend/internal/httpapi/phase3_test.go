@@ -466,7 +466,7 @@ func TestSendValidationAndIdempotencyAndRetry(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("mensagens = %d", count)
 	}
-	if sent := w.e.wa.Sent()[0]; sent.Text != "Segue o resumo das férias." || !strings.HasSuffix(sent.ChatJID, "@s.whatsapp.net") {
+	if sent := w.e.wa.Sent()[0]; sent.Text != "*ana:*\nSegue o resumo das férias." || !strings.HasSuffix(sent.ChatJID, "@s.whatsapp.net") {
 		t.Fatalf("envio = %+v", sent)
 	}
 

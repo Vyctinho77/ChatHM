@@ -1068,7 +1068,15 @@ func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInpu
 	sendCtx, cancel := context.WithTimeout(bg, 45*time.Second)
 	defer cancel()
 	waStart := time.Now()
-	sendErr := s.dispatch(sendCtx, kind, chatJID, externalID, text, payload, attKey, in.Att)
+	var author string
+	if err := s.db.QueryRow(sendCtx, `SELECT sender_name FROM messages WHERE id = $1`, msgID).Scan(&author); err != nil {
+		return nil, false, err
+	}
+	wireText := text
+	if kind == "text" || ((kind == "image" || kind == "document") && text != "") {
+		wireText = signedText(author, text)
+	}
+	sendErr := s.dispatch(sendCtx, kind, chatJID, externalID, wireText, payload, attKey, in.Att)
 	if d := time.Since(waStart); d > 3*time.Second {
 		slog.Warn("envio lento ao WhatsApp", "kind", kind, "duration_ms", d.Milliseconds(), "err", sendErr)
 	}
@@ -1087,6 +1095,15 @@ func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInpu
 	}()
 	m, err := s.message(sendCtx, msgID)
 	return m, created, err
+}
+
+// A identificação vai só para o WhatsApp; o corpo armazenado permanece limpo no app.
+func signedText(author, text string) string {
+	author = strings.Join(strings.Fields(strings.ReplaceAll(author, "*", "")), " ")
+	if author == "" {
+		return text
+	}
+	return "*" + author + ":*\n" + text
 }
 
 // dispatch entrega a mensagem ao WhatsApp. No reenvio de uma mídia, o arquivo é relido do armazenamento.

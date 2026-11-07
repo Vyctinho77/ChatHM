@@ -21,6 +21,24 @@ func msgList(t *testing.T, c *client, convID string) []map[string]any {
 	return out
 }
 
+func TestSignatureUsesSendingAttendant(t *testing.T) {
+	w := setupWorld(t)
+	for name, agent := range map[string]*client{"ana": w.ana, "bia": w.bia} {
+		contact := "Cliente de " + name
+		w.receive(contact, "oi")
+		cid := mustConv(t, agent, contact)["id"].(string)
+		r := agent.do("POST", "/api/v1/conversations/"+cid+"/messages", map[string]any{"text": "Bom dia!"})
+		expect(t, r, 201)
+		if r.body["text"] != "Bom dia!" || r.body["authorName"] != name {
+			t.Fatalf("texto ou autor no app: %v", r.body)
+		}
+		sent := w.e.wa.Sent()
+		if got := sent[len(sent)-1].Text; got != "*"+name+":*\nBom dia!" {
+			t.Fatalf("assinatura de %s no WhatsApp: %q", name, got)
+		}
+	}
+}
+
 func TestReplyEditDeleteForward(t *testing.T) {
 	w := setupWorld(t)
 	phone := w.receive("Cliente Ações", "Preciso da certidão negativa")
@@ -32,6 +50,9 @@ func TestReplyEditDeleteForward(t *testing.T) {
 	rid := uuid.NewString()
 	r := w.ana.do("POST", "/api/v1/conversations/"+cid+"/messages", map[string]any{"id": rid, "text": "Claro, envio hoje.", "replyTo": in["id"]})
 	expect(t, r, 201)
+	if r.body["text"] != "Claro, envio hoje." {
+		t.Fatalf("o app deve receber o texto sem assinatura: %v", r.body)
+	}
 	q, _ := r.body["quoted"].(map[string]any)
 	if q == nil || q["text"] != "Preciso da certidão negativa" || q["fromMe"] != false || q["id"] != in["id"] {
 		t.Fatalf("citação = %v", r.body["quoted"])
@@ -41,7 +62,7 @@ func TestReplyEditDeleteForward(t *testing.T) {
 	}
 	sent := w.e.wa.Sent()
 	last := sent[len(sent)-1]
-	if last.Quote == nil || last.Quote.ExternalID == "" || last.Text != "Claro, envio hoje." {
+	if last.Quote == nil || last.Quote.ExternalID == "" || last.Text != "*ana:*\nClaro, envio hoje." {
 		t.Fatalf("o WhatsApp não recebeu a citação: %+v", last)
 	}
 	// Mensagem de outra conversa/contato ou inexistente não pode ser citada.
@@ -57,7 +78,7 @@ func TestReplyEditDeleteForward(t *testing.T) {
 	var edit *whatsapp.InboundMessage
 	_ = edit
 	sent = w.e.wa.Sent()
-	if e := sent[len(sent)-1]; e.EditOf == "" || e.Text != "Claro, envio hoje à tarde." {
+	if e := sent[len(sent)-1]; e.EditOf == "" || e.Text != "*ana:*\nClaro, envio hoje à tarde." {
 		t.Fatalf("edição não chegou ao WhatsApp: %+v", e)
 	}
 	got := msgList(t, w.ana, cid)
@@ -119,7 +140,7 @@ func TestReplyEditDeleteForward(t *testing.T) {
 	if res["ok"] != true {
 		t.Fatalf("encaminhamento = %v", res)
 	}
-	if s := w.e.wa.Sent(); len(s) != before+1 || s[len(s)-1].Text != "Claro, envio hoje à tarde." {
+	if s := w.e.wa.Sent(); len(s) != before+1 || s[len(s)-1].Text != "*ana:*\nClaro, envio hoje à tarde." {
 		t.Fatalf("encaminhada não foi enviada: %+v", s[len(s)-1])
 	}
 	expect(t, w.ana.do("POST", "/api/v1/messages/"+rid+"/forward", map[string]any{"conversationIds": []string{}}), 422)

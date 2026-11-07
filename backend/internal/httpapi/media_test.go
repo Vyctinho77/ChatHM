@@ -132,7 +132,7 @@ func TestSendImageStandardAndHD(t *testing.T) {
 	r := w.attach(w.ana, id, "image", "foto.png", big, map[string]string{"text": "segue"})
 	expect(t, r, 201)
 	s := lastSent(t, w)
-	if s.Media == nil || s.Media.Kind != whatsapp.KindImage || s.Media.Width != 1600 || s.Media.Height != 800 || s.Media.Caption != "segue" {
+	if s.Media == nil || s.Media.Kind != whatsapp.KindImage || s.Media.Width != 1600 || s.Media.Height != 800 || s.Media.Caption != "*ana:*\nsegue" {
 		t.Fatalf("envio comum deveria reduzir a 1600 px: %+v", s.Media)
 	}
 

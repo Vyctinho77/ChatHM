@@ -109,7 +109,18 @@ func (s *Service) resolveReply(ctx context.Context, tx pgx.Tx, convID, replyTo s
 func (s *Service) ingestChange(ctx context.Context, m whatsapp.InboundMessage) error {
 	var msgID, convID string
 	if m.EditOf != "" {
-		err := s.db.QueryRow(ctx, `
+		// O eco de uma edição do WhatsApp traz a assinatura que só o cliente vê.
+		var author string
+		err := s.db.QueryRow(ctx, `SELECT sender_name FROM messages
+			WHERE chat_jid = $1 AND external_id = $2 AND direction = 'out' AND sender_user_id IS NOT NULL`,
+			m.ChatJID, m.EditOf).Scan(&author)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		if author != "" {
+			m.Body = strings.TrimPrefix(m.Body, signedText(author, ""))
+		}
+		err = s.db.QueryRow(ctx, `
 			UPDATE messages SET body = $3, edited_at = now()
 			 WHERE chat_jid = $1 AND external_id = $2 AND deleted_at IS NULL AND kind IN ('text', 'image', 'document')
 			   AND body <> $3
@@ -167,6 +178,7 @@ func (s *Service) ingestChange(ctx context.Context, m whatsapp.InboundMessage) e
 
 type ownMsg struct {
 	id, convID, chatJID, ext, dir, kind, body string
+	senderName                                string
 	status                                    *string
 	sentAt                                    time.Time
 	senderUser                                *string
@@ -181,9 +193,9 @@ func (s *Service) loadMessage(ctx context.Context, v Viewer, msgID string) (ownM
 	}
 	err := s.db.QueryRow(ctx, `
 		SELECT m.id::text, m.conversation_id::text, m.chat_jid, m.external_id, m.direction, m.kind, m.body, m.status,
-		       m.sent_at, m.sender_user_id::text, m.deleted_at IS NOT NULL
+		       m.sent_at, m.sender_user_id::text, m.deleted_at IS NOT NULL, m.sender_name
 		  FROM messages m WHERE m.id = $1`, msgID).
-		Scan(&r.id, &r.convID, &r.chatJID, &r.ext, &r.dir, &r.kind, &r.body, &r.status, &r.sentAt, &r.senderUser, &r.deleted)
+		Scan(&r.id, &r.convID, &r.chatJID, &r.ext, &r.dir, &r.kind, &r.body, &r.status, &r.sentAt, &r.senderUser, &r.deleted, &r.senderName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return r, Conversation{}, ErrNotFound
 	}
@@ -227,7 +239,11 @@ func (s *Service) EditMessage(ctx context.Context, v Viewer, msgID, text string)
 	if text == r.body {
 		return s.message(ctx, msgID)
 	}
-	if err := s.sender.EditText(ctx, r.chatJID, r.ext, text); err != nil {
+	wireText := text
+	if r.senderUser != nil {
+		wireText = signedText(r.senderName, text)
+	}
+	if err := s.sender.EditText(ctx, r.chatJID, r.ext, wireText); err != nil {
 		return nil, httpx.FieldErrors{"text": "Não foi possível editar pelo WhatsApp."}
 	}
 	if _, err := s.db.Exec(ctx, `UPDATE messages SET body = $2, edited_at = now() WHERE id = $1`, msgID, text); err != nil {
