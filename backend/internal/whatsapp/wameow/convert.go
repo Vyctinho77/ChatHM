@@ -2,6 +2,7 @@ package wameow
 
 import (
 	"context"
+	"encoding/base64"
 
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
@@ -100,6 +101,10 @@ func convertMessage(ctx context.Context, cli *whatsmeow.Client, e *events.Messag
 		out.Payload["lng"] = l.GetDegreesLongitude()
 		out.Payload["name"] = l.GetName()
 		out.Payload["address"] = l.GetAddress()
+		// Miniatura do mapa que o próprio WhatsApp gera (JPEG pequeno).
+		if t := l.GetJPEGThumbnail(); len(t) > 0 && len(t) <= 64<<10 {
+			out.Payload["thumb"] = "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(t)
+		}
 	case m.GetVideoMessage() != nil:
 		out.Kind, out.Body = whatsapp.KindUnsupported, m.GetVideoMessage().GetCaption()
 		out.Payload["label"] = "Vídeo"

@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { motion } from "motion/react";
-import { Ban, Download, ExternalLink, FileText, Image as ImageIcon, MapPin } from "lucide-react";
+import { Ban, Download, FileText, Image as ImageIcon, MapPin } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { formatBytes, formatTime } from "@/lib/format";
 import { AudioPlayer } from "./AudioPlayer";
@@ -159,6 +160,49 @@ function DocumentCard({ m, onOpen, term }: { m: Extract<Message, { kind: "docume
   );
 }
 
+const TILE = 256;
+const ZOOM = 16;
+const MAP_W = 288;
+const MAP_H = 144;
+
+/** Mapinha como no WhatsApp: usa a miniatura enviada pelo celular; senão monta os blocos do OpenStreetMap. */
+function LocationMap({ lat, lng, thumb }: { lat: number; lng: number; thumb?: string }) {
+  const [failed, setFailed] = useState(false);
+  const n = 2 ** ZOOM;
+  const fx = ((lng + 180) / 360) * n;
+  const rad = (lat * Math.PI) / 180;
+  const fy = ((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) * n;
+  const tx = Math.floor(fx);
+  const ty = Math.floor(fy);
+  const left = MAP_W / 2 - (fx - tx) * TILE;
+  const top = MAP_H / 2 - (fy - ty) * TILE;
+  return (
+    <div className="relative h-36 w-full overflow-hidden bg-[rgb(128_128_128/.18)]">
+      {thumb ? (
+        <img src={thumb} alt="" className="size-full object-cover" />
+      ) : (
+        !failed &&
+        [-1, 0, 1].flatMap((dy) =>
+          [-1, 0, 1].map((dx) => (
+            <img
+              key={`${dx},${dy}`}
+              src={`https://tile.openstreetmap.org/${ZOOM}/${tx + dx}/${ty + dy}.png`}
+              alt=""
+              draggable={false}
+              loading="lazy"
+              referrerPolicy="no-referrer"
+              onError={() => setFailed(true)}
+              className="absolute max-w-none select-none dark:[filter:invert(1)_hue-rotate(180deg)_brightness(.85)_contrast(.9)]"
+              style={{ width: TILE, height: TILE, left: left + dx * TILE, top: top + dy * TILE }}
+            />
+          )),
+        )
+      )}
+      <MapPin className="absolute left-1/2 top-1/2 size-8 -translate-x-1/2 -translate-y-full fill-red-500 text-red-700 drop-shadow" />
+    </div>
+  );
+}
+
 function LocationCard({ m }: { m: Extract<Message, { kind: "location" }> }) {
   const href = `https://www.google.com/maps?q=${m.lat},${m.lng}`;
   return (
@@ -166,18 +210,18 @@ function LocationCard({ m }: { m: Extract<Message, { kind: "location" }> }) {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="block w-72 max-w-full overflow-hidden rounded-lg bg-black/10 dark:bg-black/20"
+      aria-label={`Abrir no mapa${m.name ? `: ${m.name}` : ""}`}
+      className="block w-72 max-w-full"
     >
-      <div className="relative flex h-28 items-center justify-center bg-[linear-gradient(90deg,rgb(128_128_128/.12)_1px,transparent_1px),linear-gradient(rgb(128_128_128/.12)_1px,transparent_1px)] bg-[size:16px_16px]">
-        <MapPin className="size-8 fill-red-500 text-red-700" />
+      <div className="overflow-hidden rounded-lg">
+        <LocationMap lat={m.lat} lng={m.lng} thumb={m.thumb} />
       </div>
-      <div className="p-2.5">
-        {m.name && <p className="text-[13px] font-semibold">{m.name}</p>}
-        {m.address && <p className="text-[12px] opacity-80">{m.address}</p>}
-        <p className="mt-1 flex items-center gap-1 text-xs text-read">
-          Abrir no mapa <ExternalLink className="size-3" />
-        </p>
-      </div>
+      {(m.name || m.address) && (
+        <div className="px-0.5 pt-1.5">
+          {m.name && <p className="text-[13px] font-semibold">{m.name}</p>}
+          {m.address && <p className="text-[12px] opacity-80">{m.address}</p>}
+        </div>
+      )}
     </a>
   );
 }

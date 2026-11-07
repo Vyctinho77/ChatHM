@@ -53,6 +53,16 @@ func TestConvertMessage(t *testing.T) {
 	if !ok || got.Kind != whatsapp.KindLocation || got.Payload["lat"] != -3.1 {
 		t.Fatalf("localização = %+v", got)
 	}
+	if _, has := got.Payload["thumb"]; has {
+		t.Fatalf("sem miniatura não deve haver thumb: %+v", got.Payload)
+	}
+
+	got, ok = convertMessage(ctx, nil, msgEvent(pn, &waE2E.Message{LocationMessage: &waE2E.LocationMessage{
+		DegreesLatitude: proto.Float64(-3.1), DegreesLongitude: proto.Float64(-60.0), JPEGThumbnail: []byte{0xff, 0xd8, 0xff},
+	}}))
+	if th, _ := got.Payload["thumb"].(string); !ok || th != "data:image/jpeg;base64,/9j/" {
+		t.Fatalf("miniatura = %+v", got.Payload)
+	}
 
 	got, ok = convertMessage(ctx, nil, msgEvent(pn, &waE2E.Message{VideoMessage: &waE2E.VideoMessage{}}))
 	if !ok || got.Kind != whatsapp.KindUnsupported || got.Payload["label"] != "Vídeo" {
