@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/vyctinho77/chathm/backend/internal/agenda"
+	"github.com/vyctinho77/chathm/backend/internal/aiaccess"
 	"github.com/vyctinho77/chathm/backend/internal/auth"
 	"github.com/vyctinho77/chathm/backend/internal/config"
 	"github.com/vyctinho77/chathm/backend/internal/conversations"
@@ -40,6 +41,7 @@ type Deps struct {
 	Tags          *tags.Service
 	WhatsApp      *whatsapp.Manager
 	Instance      *instance.Service
+	AI            *aiaccess.Service
 	// Simulate habilita POST /dev/whatsapp/inbound (provedor fake em development).
 	Simulate func(whatsapp.InboundMessage)
 }
@@ -82,7 +84,14 @@ func NewRouter(d Deps) http.Handler {
 	tagsH := tags.NewHandler(d.Tags)
 	waH := whatsapp.NewHTTPHandler(d.WhatsApp, d.Simulate)
 	waH.SetSetupGate(d.Auth.CheckSetupOpen)
-	agendaH := agenda.NewHandler(agenda.NewService(d.DB, d.Conversations))
+	agendaSvc := agenda.NewService(d.DB, d.Conversations)
+	agendaH := agenda.NewHandler(agendaSvc)
+	aiSvc := d.AI
+	if aiSvc == nil {
+		aiSvc = aiaccess.NewService(d.DB)
+	}
+	aiH := aiaccess.NewHandler(aiSvc)
+	mcpH := aiaccess.NewMCP(aiSvc, d.Conversations, d.Segments, d.Tags, agendaSvc, d.Config.AllowedOrigins, d.Logger)
 
 	// O WebSocket revalida a sessão periodicamente (logout/desativação encerram a conexão).
 	validateWS := func(ctx context.Context, r *http.Request) bool {
@@ -93,6 +102,9 @@ func NewRouter(d Deps) http.Handler {
 		_, err = d.Auth.Authenticate(ctx, c.Value)
 		return err == nil
 	}
+
+	// MCP (acesso por IA): só token Bearer, sem cookie; independe da sessão do app.
+	r.Handle("/mcp", mcpH)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(d.Auth.LoadSession)
@@ -118,6 +130,7 @@ func NewRouter(d Deps) http.Handler {
 			tagsH.Routes(r)
 			waH.Routes(r)
 			agendaH.Routes(r)
+			aiH.Routes(r)
 			r.Get("/ws", d.Hub.Handler(validateWS))
 
 			r.Group(func(r chi.Router) {

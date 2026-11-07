@@ -520,6 +520,9 @@ func ResetMFA(ctx context.Context, db *pgxpool.Pool, userID string) error {
 		if err := RevokeUserSessions(ctx, tx, userID, ""); err != nil {
 			return err
 		}
+		if _, err := tx.Exec(ctx, `UPDATE api_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, userID); err != nil {
+			return err
+		}
 		return audit.Record(ctx, tx, audit.Entry{Action: audit.MFAReset, TargetType: "user", TargetID: userID})
 	})
 }

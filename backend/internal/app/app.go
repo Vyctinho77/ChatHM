@@ -3,6 +3,7 @@ package app
 
 import (
 	"context"
+	"github.com/vyctinho77/chathm/backend/internal/aiaccess"
 	"log/slog"
 	"time"
 
@@ -36,6 +37,7 @@ type Services struct {
 	Tags          *tags.Service
 	WhatsApp      *whatsapp.Manager
 	Instance      *instance.Service
+	AI            *aiaccess.Service
 	// Simulate entrega mensagens fictícias (somente provedor fake em development).
 	Simulate func(whatsapp.InboundMessage)
 }
@@ -106,6 +108,7 @@ func NewServices(ctx context.Context, cfg config.Config, db *pgxpool.Pool, opt O
 		Conversations: convs,
 		Segments:      segments.NewService(db),
 		Tags:          tags.NewService(db),
+		AI:            aiaccess.NewService(db),
 	}
 	if cfg.SeedExampleData {
 		if err := s.Segments.EnsureDefaults(ctx); err != nil {

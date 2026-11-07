@@ -85,6 +85,10 @@ func (s *Service) Reinvite(ctx context.Context, actorID, ip, id string) (InviteR
 		if err := auth.RevokeUserSessions(ctx, tx, id, ""); err != nil {
 			return err
 		}
+		// Autenticador redefinido: tokens de acesso por IA da pessoa também deixam de valer.
+		if _, err := tx.Exec(ctx, `UPDATE api_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, id); err != nil {
+			return err
+		}
 		if code, exp, err = auth.IssueInvite(ctx, tx, id, actorID); err != nil {
 			return err
 		}
