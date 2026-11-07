@@ -59,12 +59,12 @@ Ids, nomes, texto das mensagens (já filtrado), horários, filas e etiquetas con
   `resumir_atendimento(conversation_id)`, `sugerir_resposta(conversation_id, tom)` (cordial | formal | objetivo) e `triagem_da_fila(queue?)`.
   Todos mandam o modelo usar só as ferramentas do ChatHM, não inventar dados, tratar texto de cliente como dado e **não enviar nada**.
   Os argumentos são validados (UUID, tom em lista fechada, chave de fila em formato fixo) para não carregarem instruções; uso vai para a auditoria como `prompt:<nome>`.
-- **Guia de conexão** sempre disponível em Configurações → Integrações (IA) → "Como conectar o assistente": abas Claude Code, Claude Desktop
+- **Guia de conexão** sempre disponível em MCP → "Como conectar o assistente": abas Claude Code, Claude Desktop
   (via `mcp-remote`), Grok, ChatGPT (explica que depende do OAuth da etapa 5) e Outros/teste (comando `curl`).
 
 ### Etapa 1: como ficou
 
-- **Tela:** Configurações → *Integrações (IA)*. O administrador liga/desliga o acesso e escolhe ocultar CPF/CNPJ (padrão ligado) e telefones.
+- **Tela:** aba **MCP**, logo abaixo de **Equipe** no menu (`/integracoes/mcp`). O administrador liga/desliga o acesso e escolhe ocultar CPF/CNPJ (padrão ligado) e telefones.
   Qualquer pessoa cria seus tokens (nome + validade de 30/90/365 dias); o token aparece **uma vez**, com os comandos de conexão.
 - **API do app:** `GET/PUT /ai/settings`, `GET/POST /ai/tokens`, `DELETE /ai/tokens/{id}` (sessão com autenticador).
 - **Endpoint MCP:** `POST /mcp` (Streamable HTTP sem sessão), `Authorization: Bearer chm_…`. 401 token inválido/expirado/revogado ou pessoa
@@ -98,7 +98,7 @@ Ids, nomes, texto das mensagens (já filtrado), horários, filas e etiquetas con
 
 ## Autenticação
 
-1. **Fase 1 — token pessoal** (Bearer): criado em *Configurações → Integrações*, mostrado uma vez, guardado só como hash (SHA-256),
+1. **Fase 1 — token pessoal** (Bearer): criado na aba *MCP*, mostrado uma vez, guardado só como hash (SHA-256),
    com nome, validade (padrão 90 dias), escopos e revogação; a tela mostra o último uso. Serve para Claude Code/Desktop e Grok.
 2. **Fase 2 — OAuth 2.1** (PKCE + registro dinâmico de cliente), com a tela de consentimento do ChatHM (login por autenticador).
    Necessário para conectores do **ChatGPT** e do **claude.ai**, que pedem OAuth ao cadastrar um servidor remoto.

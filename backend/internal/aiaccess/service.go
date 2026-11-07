@@ -185,10 +185,10 @@ func (s *Service) Create(ctx context.Context, userID, ip, name string, ttlDays i
 		return "", Token{}, ErrDisabled
 	}
 	if contains(granted, ScopeSend) && !st.AllowSend {
-		return "", Token{}, httpx.FieldErrors{"scopes": "O administrador ainda não liberou pedidos de envio pela IA (Configurações → Integrações)."}
+		return "", Token{}, httpx.FieldErrors{"scopes": "O administrador ainda não liberou pedidos de envio pela IA (aba MCP)."}
 	}
 	if len(granted) > 1 && !st.AllowWrite {
-		return "", Token{}, httpx.FieldErrors{"scopes": "O administrador ainda não liberou alterações pela IA (Configurações → Integrações)."}
+		return "", Token{}, httpx.FieldErrors{"scopes": "O administrador ainda não liberou alterações pela IA (aba MCP)."}
 	}
 	var active int
 	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM api_tokens WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()`, userID).Scan(&active); err != nil {

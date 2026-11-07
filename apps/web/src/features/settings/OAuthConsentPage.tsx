@@ -75,7 +75,7 @@ export function OAuthConsentPage() {
 
             <p className="flex items-start gap-1.5 text-xs text-muted">
               <ShieldCheck className="mt-0.5 size-4 shrink-0" />
-              Depois de autorizar, você volta para <strong>{preview.data.redirectHost}</strong>. Você pode desconectar o aplicativo quando quiser em Configurações → Integrações (IA).
+              Depois de autorizar, você volta para <strong>{preview.data.redirectHost}</strong>. Você pode desconectar o aplicativo quando quiser na aba MCP.
             </p>
             {error && <Alert>{error}</Alert>}
             <div className="flex justify-end gap-2">

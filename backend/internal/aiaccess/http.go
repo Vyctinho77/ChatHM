@@ -53,7 +53,7 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, conversations.ErrNotFound):
 		httpx.Error(w, http.StatusNotFound, "not_found", "Registro não encontrado.")
 	case errors.Is(err, ErrDisabled):
-		httpx.Error(w, http.StatusConflict, "ai_disabled", "O acesso por IA está desligado. Peça a um administrador para ligar em Configurações → Integrações.")
+		httpx.Error(w, http.StatusConflict, "ai_disabled", "O acesso por IA está desligado. Peça a um administrador para ligar na aba MCP.")
 	case errors.Is(err, ErrNotFound):
 		httpx.Error(w, http.StatusNotFound, "not_found", "Registro não encontrado.")
 	default:

@@ -1,10 +1,12 @@
-import { useState, type FormEvent } from "react";
+import { useId, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, KeyRound, Plus, Trash2 } from "lucide-react";
+import { Check, ChevronDown, Copy, KeyRound, LogIn, Plus, Settings2, ShieldCheck, Trash2 } from "lucide-react";
 import { Alert, Button, Field, Modal } from "@/components/ui";
 import { api, del, errorMessage, fieldErrors, get, post } from "@/lib/api";
 import { cn } from "@/lib/cn";
+import { Skeleton } from "@/components/Skeleton";
 import { useMe } from "@/features/auth/api";
+import { DomainInput } from "./DomainInput";
 
 type AiSettings = { enabled: boolean; maskDocuments: boolean; maskPhones: boolean; allowWrite: boolean; allowSend: boolean; maskEmails: boolean; strictPrivacy: boolean; allowOauth: boolean; oauthRedirectHosts: string[] };
 type Grant = { id: string; client: string; level: "read" | "write" | "send"; createdAt: string; lastUsedAt?: string; owner?: string };
@@ -27,12 +29,18 @@ const tokensKey = (all: boolean) => ["ai", "tokens", all] as const;
 const date = (iso: string) => new Date(iso).toLocaleDateString("pt-BR");
 
 function Toggle({ checked, onChange, label, hint, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string; disabled?: boolean }) {
+  const hintId = useId();
   return (
-    <label className={cn("flex items-start gap-3 py-1.5", disabled ? "opacity-60" : "cursor-pointer")}>
-      <input type="checkbox" role="switch" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} className="mt-1 size-4 accent-[var(--c-accent)]" />
-      <span>
+    <label className={cn("flex items-center justify-between gap-6 py-3", disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer")}>
+      <span className="min-w-0">
         <span className="block text-sm font-medium">{label}</span>
-        {hint && <span className="block text-xs text-muted">{hint}</span>}
+        {hint && <span id={hintId} className="mt-1 block text-xs leading-relaxed text-muted">{hint}</span>}
+      </span>
+      <span className="relative shrink-0">
+        <input type="checkbox" role="switch" aria-label={label} aria-describedby={hint ? hintId : undefined} checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} className="peer sr-only" />
+        <span aria-hidden="true" className="block h-6 w-10 rounded-full bg-muted/30 transition-colors peer-checked:bg-brand peer-focus-visible:ring-2 peer-focus-visible:ring-brand peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-panel peer-checked:[&>span]:translate-x-4 motion-reduce:transition-none">
+          <span className="absolute left-0.5 top-0.5 size-5 rounded-full bg-white shadow-sm transition-transform motion-reduce:transition-none" />
+        </span>
       </span>
     </label>
   );
@@ -273,7 +281,7 @@ export function AiAccessCard() {
   const save = useMutation({
     mutationFn: (next: AiSettings) => api<AiSettings>("PUT", "/ai/settings", next),
     onSuccess: (s) => qc.setQueryData(settingsKey, s),
-    onError: (e) => setError(errorMessage(e)),
+    onError: (e) => { if (!fieldErrors(e).oauthRedirectHosts) setError(errorMessage(e)); },
   });
   const grants = useQuery({
     queryKey: ["ai", "grants", showAll],
@@ -291,77 +299,100 @@ export function AiAccessCard() {
     onError: (e) => setError(errorMessage(e)),
   });
 
-  if (!settings.data) return null;
+  if (!settings.data) return (
+    <section id="integracoes-ia" className="scroll-mt-6 border-t border-line py-6">
+      <h2 className="font-semibold">Integrações de IA (MCP)</h2>
+      {settings.isPending ? (
+        <div role="status" aria-label="Carregando integrações MCP" aria-busy="true" className="mt-4 space-y-3">
+          <Skeleton className="h-4 w-3/4" />
+          <Skeleton className="h-9 w-full" />
+        </div>
+      ) : (
+        <div className="mt-3 space-y-3">
+          <Alert>Não foi possível carregar as integrações. {errorMessage(settings.error)}</Alert>
+          <Button variant="secondary" onClick={() => void settings.refetch()}>Tentar novamente</Button>
+        </div>
+      )}
+    </section>
+  );
   const s = settings.data;
   const change = (patch: Partial<AiSettings>) => (setError(""), save.mutate({ ...s, ...patch }));
 
   return (
-    <section className="border-t border-line py-6">
-      <h2 className="font-semibold">Integrações (IA)</h2>
-      <p className="mt-0.5 text-sm text-muted">
-        Deixe um assistente de IA (Claude, Grok e outros que usam MCP) consultar o ChatHM em seu nome (por padrão só para leitura). Ele enxerga e faz apenas o que você já pode ver e fazer, e nunca envia mensagens sozinho: o que for para clientes só sai com a sua aprovação.
-      </p>
-
-      <div className="mt-3">
+    <section id="integracoes-ia" className="scroll-mt-6 divide-y divide-line/60">
+      <div id="mcp-access" tabIndex={-1} className="scroll-mt-6 pb-5 outline-none">
+        <h2 className="text-base font-semibold">Integrações de IA (MCP)</h2>
         {admin ? (
-          <>
-            <Toggle checked={s.enabled} disabled={save.isPending} onChange={(v) => change({ enabled: v })} label="Permitir acesso por IA" hint="Desligado, nenhum token funciona. Os dados vão para o provedor de IA que a pessoa escolher: avise a equipe." />
-            {s.enabled && (
-              <div className="ml-7 border-l border-line pl-3">
-                <Toggle checked={s.maskDocuments} disabled={save.isPending} onChange={(v) => change({ maskDocuments: v })} label="Ocultar CPF e CNPJ" hint="Recomendado. A IA vê “[CPF oculto]” no lugar." />
-                <Toggle checked={s.maskPhones} disabled={save.isPending} onChange={(v) => change({ maskPhones: v })} label="Ocultar telefones" hint="Mostra só os 4 últimos dígitos." />
-                <Toggle checked={s.maskEmails} disabled={save.isPending} onChange={(v) => change({ maskEmails: v })} label="Ocultar e-mails" hint="Recomendado. Aparece “[e-mail oculto]”." />
-                <Toggle checked={s.allowOauth} disabled={save.isPending} onChange={(v) => change({ allowOauth: v })} label="Permitir conectar aplicativos por login (ChatGPT, claude.ai)" hint="Liga o login OAuth: o aplicativo pede, você autoriza na tela do ChatHM. Eles sempre recebem os dados com privacidade máxima. Desligado, as conexões feitas deixam de funcionar na hora." />
-                {s.allowOauth && (
-                  <label className="mb-1 ml-7 block text-xs">
-                    <span className="font-medium">Sites autorizados a receber o retorno do login</span>
-                    <input
-                      defaultValue={s.oauthRedirectHosts.join(", ")}
-                      disabled={save.isPending}
-                      onBlur={(e) => {
-                        const hosts = e.target.value.split(/[\s,;]+/).filter(Boolean);
-                        if (hosts.join(",") !== s.oauthRedirectHosts.join(",")) change({ oauthRedirectHosts: hosts });
-                      }}
-                      className="mt-1 h-9 w-full rounded-lg border border-line bg-elevated px-2.5 text-xs outline-none focus:border-accent"
-                      aria-label="Sites autorizados"
-                    />
-                    <span className="mt-0.5 block text-muted">Só estes sites podem registrar um aplicativo. Padrão: chatgpt.com, platform.openai.com, chat.openai.com, claude.ai, claude.com.</span>
-                  </label>
-                )}
-                <Toggle checked={s.strictPrivacy} disabled={save.isPending} onChange={(v) => change({ strictPrivacy: v })} label="Modo estrito" hint="Nomes de pessoas viram “Nome S.” e as observações internas dos contatos não saem." />
-                <p className="mt-1 rounded-lg bg-elevated p-2.5 text-xs text-muted">
-                  Sempre ocultos, para qualquer assistente e sem opção de desligar: senhas, códigos e chaves de acesso, cartões, agência/conta, chave PIX e boletos.
-                  Aplicativos conectados por login (ChatGPT, claude.ai) recebem tudo oculto, inclusive telefone e observações internas.
-                </p>
-                <Toggle checked={s.allowWrite} disabled={save.isPending} onChange={(v) => change({ allowWrite: v })} label="Permitir que a IA faça alterações" hint="Etiquetar, acrescentar observações, renomear contatos, adiar, lembretes, agenda, transferir e deixar rascunhos, sempre como a pessoa do token. Desligado, tokens de escrita deixam de alterar na hora." />
-                <Toggle checked={s.allowSend} disabled={save.isPending || !s.allowWrite} onChange={(v) => change({ allowSend: v })} label="Permitir que a IA peça envios (com aprovação)" hint="A IA pode pedir o envio de uma mensagem a um cliente; quem tem o token aprova cada uma na conversa. Nada sai sozinho. Exige as alterações liberadas." />
-              </div>
-            )}
-          </>
+          <Toggle checked={s.enabled} disabled={save.isPending} onChange={(v) => change({ enabled: v })} label="Permitir acesso por IA" hint={s.enabled ? "Ativo. Cada assistente usa apenas os acessos de quem o conectou." : "Ative para conectar seus assistentes. Desligado, todos os acessos ficam suspensos."} />
         ) : (
-          <p className="text-sm">{s.enabled ? "O acesso por IA está ligado neste escritório." : "O acesso por IA está desligado. Peça a um administrador para ligar."}</p>
+          <p className="py-3 text-sm text-muted">{s.enabled ? "O acesso por IA está ativo neste escritório." : "Peça a um administrador para ativar o acesso por IA."}</p>
         )}
+        <p className="flex items-start gap-2 pt-1 text-xs leading-relaxed text-muted"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-brand-ink" />Você revisa e aprova cada mensagem antes do envio ao cliente.</p>
       </div>
 
       {error && <div className="mt-3"><Alert>{error}</Alert></div>}
 
-      {enabled && (
-        <div className="mt-5">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="flex items-center gap-2 text-sm font-medium"><KeyRound className="size-4" /> Tokens de acesso</h3>
-            <Button type="button" variant="secondary" onClick={() => setCreating(true)}><Plus className="size-4" /> Novo token</Button>
+      {admin && enabled && <div className="divide-y divide-line/60">
+        <details id="mcp-permissions" className="group/options scroll-mt-6">
+          <summary className="flex cursor-pointer list-none items-center gap-3 py-5 [&::-webkit-details-marker]:hidden">
+            <Settings2 className="size-4 shrink-0 text-muted" />
+            <span className="flex-1"><span className="block text-sm font-medium">Permissões</span><span className="mt-0.5 block text-xs text-muted">{s.allowWrite ? "Alterações permitidas" : "Somente leitura"}{s.allowSend ? " · Pedidos de envio liberados" : ""}</span></span>
+            <ChevronDown className="size-4 text-muted transition-transform group-open/options:rotate-180 motion-reduce:transition-none" />
+          </summary>
+          <div className="divide-y divide-line/60 border-t border-line/60 pb-4">
+            <Toggle checked={s.allowWrite} disabled={save.isPending} onChange={v => change({ allowWrite: v })} label="Permitir alterações" hint="Etiquetas, observações, lembretes, agenda e rascunhos, conforme os acessos da pessoa." />
+            <Toggle checked={s.allowSend} disabled={save.isPending || !s.allowWrite} onChange={v => change({ allowSend: v })} label="Permitir pedidos de envio" hint={s.allowWrite ? "O assistente sugere a mensagem e você decide se envia." : "Ative as alterações para liberar pedidos de envio."} />
           </div>
-          {admin && (
-            <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-muted">
-              <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} className="size-3.5 accent-[var(--c-accent)]" /> Ver tokens de toda a equipe
-            </label>
-          )}
-          <details className="mt-3 rounded-lg border border-line px-3 py-2">
-            <summary className="cursor-pointer text-sm font-medium">Como conectar o assistente</summary>
+        </details>
+        <details id="mcp-privacy" className="group/options scroll-mt-6">
+          <summary className="flex cursor-pointer list-none items-center gap-3 py-5 [&::-webkit-details-marker]:hidden">
+            <ShieldCheck className="size-4 shrink-0 text-muted" />
+            <span className="flex-1"><span className="block text-sm font-medium">Privacidade</span><span className="mt-0.5 block text-xs text-muted">{s.strictPrivacy ? "Proteção adicional de nomes e observações" : "Escolha quais dados ocultar dos assistentes"}</span></span>
+            <ChevronDown className="size-4 text-muted transition-transform group-open/options:rotate-180 motion-reduce:transition-none" />
+          </summary>
+          <div className="divide-y divide-line/60 border-t border-line/60">
+            <Toggle checked={s.maskDocuments} disabled={save.isPending} onChange={v => change({ maskDocuments: v })} label="Ocultar CPF e CNPJ" hint="Documentos são substituídos por uma indicação de dado oculto." />
+            <Toggle checked={s.maskPhones} disabled={save.isPending} onChange={v => change({ maskPhones: v })} label="Ocultar telefones" hint="Exibe apenas os quatro últimos dígitos." />
+            <Toggle checked={s.maskEmails} disabled={save.isPending} onChange={v => change({ maskEmails: v })} label="Ocultar e-mails" />
+            <Toggle checked={s.strictPrivacy} disabled={save.isPending} onChange={v => change({ strictPrivacy: v })} label="Proteção adicional" hint="Abrevia sobrenomes e oculta as observações internas dos contatos." />
+          </div>
+          <p className="border-t border-line/60 pb-5 pt-3 text-xs leading-relaxed text-muted">Senhas, chaves de acesso e dados financeiros ficam sempre ocultos. Aplicativos conectados por login também recebem telefones e observações protegidos.</p>
+        </details>
+        <details id="mcp-login" className="group/options scroll-mt-6">
+          <summary className="flex cursor-pointer list-none items-center gap-3 py-5 [&::-webkit-details-marker]:hidden">
+            <LogIn className="size-4 shrink-0 text-muted" />
+            <span className="flex-1"><span className="block text-sm font-medium">Conexão por login</span><span className="mt-0.5 block text-xs text-muted">{s.allowOauth ? "Disponível para aplicativos autorizados" : "Conecte ChatGPT e outros assistentes por autorização"}</span></span>
+            <ChevronDown className="size-4 text-muted transition-transform group-open/options:rotate-180 motion-reduce:transition-none" />
+          </summary>
+          <div className="border-t border-line/60 pb-5">
+            <Toggle checked={s.allowOauth} disabled={save.isPending} onChange={v => change({ allowOauth: v })} label="Permitir conexão por login" hint="Você autoriza o aplicativo pelo ChatHM e pode desconectá-lo quando quiser." />
+            {s.allowOauth && <details className="mt-1 text-xs">
+              <summary className="cursor-pointer py-2 text-muted hover:text-fg">Sites autorizados</summary>
+              <DomainInput domains={s.oauthRedirectHosts} disabled={save.isPending} onSave={hosts => {
+                setError("");
+                return save.mutateAsync({ ...s, oauthRedirectHosts: hosts });
+              }} />
+            </details>}
+          </div>
+        </details>
+      </div>}
+
+      {enabled && (
+        <div id="mcp-tokens" tabIndex={-1} className="scroll-mt-6 py-6 outline-none">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 text-sm font-semibold"><KeyRound className="size-4 text-muted" /> Tokens de acesso</h2>
+            <Button type="button" onClick={() => setCreating(true)}><Plus className="size-4" /> Novo token</Button>
+          </div>
+          <p className="mt-2 text-xs leading-relaxed text-muted">Crie um acesso para cada assistente. Você pode revogá-lo a qualquer momento.</p>
+          {admin && <Toggle checked={showAll} onChange={setShowAll} label="Ver acessos de toda a equipe" />}
+          <details id="mcp-connect-guide" className="mt-2 scroll-mt-6 border-t border-line pt-3">
+            <summary className="cursor-pointer text-sm text-brand-ink">Como conectar o assistente</summary>
             <div className="mt-3"><ConnectGuide /></div>
           </details>
           <ul className="mt-2 divide-y divide-line">
-            {tokens.data?.length === 0 && <li className="py-4 text-sm text-muted">Nenhum token ainda.</li>}
+            {tokens.isPending && <li className="py-4"><Skeleton className="h-10 w-full" /></li>}
+            {tokens.isError && <li className="py-4"><Alert>{errorMessage(tokens.error)}</Alert></li>}
+            {tokens.data?.length === 0 && <li className="py-5 text-center text-sm text-muted">Nenhum token criado.</li>}
             {tokens.data?.map((t) => {
               const inactive = t.revoked || t.expired;
               return (
@@ -384,10 +415,13 @@ export function AiAccessCard() {
         </div>
       )}
       {enabled && s.allowOauth && (
-        <div className="mt-5">
-          <h3 className="text-sm font-medium">Aplicativos conectados por login</h3>
+        <div className="py-6">
+          <h2 className="text-sm font-semibold">Aplicativos conectados</h2>
+          <p className="mt-2 text-xs leading-relaxed text-muted">Conexões autorizadas pelo login do ChatHM.</p>
           <ul className="mt-2 divide-y divide-line">
-            {grants.data?.length === 0 && <li className="py-3 text-sm text-muted">Nenhum aplicativo conectado.</li>}
+            {grants.isPending && <li className="py-4"><Skeleton className="h-10 w-full" /></li>}
+            {grants.isError && <li className="py-4"><Alert>{errorMessage(grants.error)}</Alert></li>}
+            {grants.data?.length === 0 && <li className="py-5 text-center text-sm text-muted">Nenhum aplicativo conectado.</li>}
             {grants.data?.map((g) => (
               <li key={g.id} className="flex items-center gap-3 py-2.5">
                 <div className="min-w-0 flex-1">

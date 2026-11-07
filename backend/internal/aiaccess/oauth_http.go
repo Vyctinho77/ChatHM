@@ -252,7 +252,7 @@ func (h *Handler) oauthFail(w http.ResponseWriter, r *http.Request, err error) b
 	var oe *OAuthError
 	switch {
 	case errors.Is(err, ErrOAuthDisabled):
-		httpx.Error(w, http.StatusConflict, "oauth_disabled", "A conexão de aplicativos por login está desligada neste escritório. Peça a um administrador para ligar em Configurações → Integrações.")
+		httpx.Error(w, http.StatusConflict, "oauth_disabled", "A conexão de aplicativos por login está desligada neste escritório. Peça a um administrador para ligar na aba MCP.")
 	case errors.As(err, &oe):
 		httpx.Error(w, http.StatusBadRequest, oe.Code, oe.Description)
 	default:

@@ -6,7 +6,6 @@ import { APP_VERSION } from "@/lib/version";
 import { DEMO } from "@/lib/env";
 import { regenerateRecoveryCodes, useMe } from "@/features/auth/api";
 import { ThemeSwitcher } from "@/features/shell/ThemeSwitcher";
-import { AiAccessCard } from "./AiAccessCard";
 import { HandoverCard } from "./HandoverCard";
 import { SoundSettings } from "./SoundSettings";
 
@@ -64,8 +63,6 @@ export function SettingsPage() {
 
         <ChangePassword />
 
-        {!DEMO && <AiAccessCard />}
-
         {me.user.role === "admin" && <HandoverCard />}
 
         <Card title="Sons e notificações" description="Efeitos de mensagem e avisos sonoros.">
@@ -110,7 +107,7 @@ function ChangePassword() {
 
   return (
     <Card title="Trocar senha" description="As outras sessões abertas serão encerradas.">
-      <form onSubmit={submit} className="flex flex-col gap-4">
+      <form onSubmit={submit} className="flex w-full max-w-sm flex-col gap-4">
         {ok && <Alert tone="info">Senha alterada.</Alert>}
         {error && <Alert>{error}</Alert>}
         <Field label="Senha atual" type="password" autoComplete="current-password" value={current} error={fields.currentPassword} onChange={(e) => setCurrent(e.target.value)} />

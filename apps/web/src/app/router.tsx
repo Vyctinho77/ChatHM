@@ -8,6 +8,7 @@ import { QueuesPage } from "@/features/queues/QueuesPage";
 import { SegmentDetailPage } from "@/features/queues/SegmentDetailPage";
 import { OAuthConsentPage } from "@/features/settings/OAuthConsentPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
+import { McpPage } from "@/features/mcp/McpPage";
 import { TagsPage } from "@/features/tags/TagsPage";
 import { TeamPage } from "@/features/team/TeamPage";
 import { WhatsAppPage } from "@/features/whatsapp/WhatsAppPage";
@@ -25,6 +26,7 @@ const routes: RouteObject[] = [
       { path: "clientes", element: <ContactsPage /> },
       { path: "etiquetas", element: <TagsPage /> },
       { path: "equipe", element: <TeamPage /> },
+      { path: "integracoes/mcp", element: <McpPage /> },
       {
         element: <AdminOnly />,
         children: [
