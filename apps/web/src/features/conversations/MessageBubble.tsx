@@ -6,6 +6,7 @@ import { formatBytes, formatTime } from "@/lib/format";
 import { AudioPlayer } from "./AudioPlayer";
 import { receiptDetails } from "./receipts";
 import { Highlight } from "@/components/Highlight";
+import { RichText } from "@/components/RichText";
 import { Ticks } from "./Ticks";
 import type { Message } from "./types";
 
@@ -94,7 +95,7 @@ function ImageBody({
           <div className="flex flex-wrap items-end">
             {m.caption && (
               <p className="whitespace-pre-wrap break-words">
-                <Highlight text={m.caption} term={term} />
+                <RichText text={m.caption} term={term} />
               </p>
             )}
             <Meta m={m} />
@@ -270,7 +271,7 @@ export function MessageBubble({
         {m.kind === "text" && (
           <div className="flex flex-wrap items-end">
             <p className="whitespace-pre-wrap break-words">
-              <Highlight text={m.text} term={term} />
+              <RichText text={m.text} term={term} />
             </p>
             <Meta m={m} />
           </div>
