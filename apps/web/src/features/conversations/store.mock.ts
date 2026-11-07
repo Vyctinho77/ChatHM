@@ -124,7 +124,7 @@ export function useContactOpener() {
         if (digits.length < 10) throw new Error("Informe o telefone com DDD.");
         const found = getDB(who.id, who.name).conversations.find((c) => c.contact.phone.replace(/\D/g, "").endsWith(digits.slice(-10)));
         if (found && found.status !== "closed") return open(found);
-        return create({ id: `p${Date.now()}`, name: name || `+55 ${digits}`, phone: `+55 ${digits}`, note: "" });
+        return create({ id: `p${Date.now()}`, name: name || `+55 ${digits}`, saved: !!name.trim(), phone: `+55 ${digits}`, note: "" });
       },
     };
   }, [qc, who.id, who.name]);
@@ -167,7 +167,7 @@ export function useConversationActions() {
       refresh();
     },
     async setName(id: string, name: string) {
-      patchConversation(id, (x) => ({ ...x, contact: { ...x.contact, name: name || x.contact.name } }));
+      patchConversation(id, (x) => ({ ...x, contact: { ...x.contact, name: name || x.contact.name, saved: !!name.trim() } }));
       refresh();
     },
     async editMessage(conversationId: string, messageId: string, text: string) {

@@ -59,6 +59,8 @@ export type Message = Base &
 export type Contact = {
   id: string;
   name: string;
+  /** Nome definido pela equipe ou contato salvo na agenda sincronizada. */
+  saved?: boolean;
   phone: string;
   company?: string;
   avatarUrl?: string;

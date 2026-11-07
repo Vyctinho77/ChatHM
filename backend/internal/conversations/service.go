@@ -423,6 +423,7 @@ type Contact struct {
 	Phone   string `json:"phone"`
 	Company string `json:"company,omitempty"`
 	Note    string `json:"note"`
+	Saved   bool   `json:"saved"`
 	// Kind: "person" ou "group". Avatar: URL da foto de perfil (vazio = iniciais).
 	Kind   string `json:"kind"`
 	Avatar string `json:"avatarUrl,omitempty"`
@@ -545,7 +546,7 @@ func displayName(name, phone, waID string) string {
 
 const listQuery = `
 	SELECT c.id, c.status, c.unread_count, c.last_message_at, c.classification, c.snoozed_until,
-	       ct.id, ct.name, ct.phone, ct.wa_id, ct.company, ct.note, ct.kind, (CASE WHEN ct.avatar IS NULL THEN 0 ELSE ct.avatar_version END),
+	       ct.id, ct.name, ct.phone, ct.wa_id, ct.company, ct.note, ct.kind, (CASE WHEN ct.avatar IS NULL THEN 0 ELSE ct.avatar_version END), (ct.name_edited OR ct.whatsapp_saved),
 	       u.id, u.name,
 	       s.key, s.name::text,
 	       coalesce((SELECT array_agg(t.name::text ORDER BY t.name) FROM conversation_tags cg
@@ -577,7 +578,7 @@ func scanConversation(row pgx.Row) (Conversation, error) {
 		}
 	)
 	err := row.Scan(&c.ID, &c.Status, &c.UnreadCount, &c.UpdatedAt, &c.Classification, &c.SnoozedUntil,
-		&c.Contact.ID, &name, &phone, &waID, &c.Contact.Company, &c.Contact.Note, &kind, &avatarVer,
+		&c.Contact.ID, &name, &phone, &waID, &c.Contact.Company, &c.Contact.Note, &kind, &avatarVer, &c.Contact.Saved,
 		&uID, &uName, &segKey, &segName, &c.Tags,
 		&lm.id, &lm.convID, &lm.dir, &lm.kind, &lm.body, &lm.payload, &lm.status, &lm.sentAt, &lm.sender, &lm.deliveredAt, &lm.readAt, &lm.editedAt, &lm.deletedAt)
 	if err != nil {

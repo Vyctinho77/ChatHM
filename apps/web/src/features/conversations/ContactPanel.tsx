@@ -30,6 +30,7 @@ export function ContactPanel({ conversation: c, onClose }: { conversation: Conve
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col items-center gap-2 border-b border-line px-6 py-6 text-center">
           <ViewableAvatar name={c.contact.name} src={c.contact.avatarUrl} group={c.contact.kind === "group"} size="lg" />
+          {!c.contact.saved && c.contact.kind !== "group" && <p className="mt-1 text-xs text-muted">Nome no WhatsApp</p>}
           <p className="mt-1.5 flex max-w-full justify-center text-[15px] font-semibold">
             <EditableName value={c.contact.name} onSave={(name) => actions.setName(c.id, name)} />
           </p>

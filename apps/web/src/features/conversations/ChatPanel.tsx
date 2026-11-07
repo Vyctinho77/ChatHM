@@ -46,6 +46,7 @@ export function ChatPanel({
   const { data: messages, isPending } = useMessages(c.id);
   const actions = useConversationActions();
   const typing = useTyping(c.id);
+  const contactTitle = c.contact.kind === "group" || c.contact.saved ? c.contact.name : c.contact.phone || c.contact.name;
   const send = useSendMessage(c.id);
   const { data: me } = useMe();
   const isAdmin = me?.user.role === "admin";
@@ -259,14 +260,14 @@ export function ChatPanel({
         <ViewableAvatar name={c.contact.name} src={c.contact.avatarUrl} group={c.contact.kind === "group"} />
         <button
           type="button"
-          onClick={onToggleContact}
+          onClick={() => { if (!contactOpen) onToggleContact(); }}
           aria-expanded={contactOpen}
           aria-label="Ver dados do contato"
           className="flex min-w-0 items-center gap-2.5 rounded-lg py-1 pl-1.5 pr-2.5 text-left hover:bg-hover"
         >
           <span className="min-w-0">
             <span className="flex min-w-0 items-center gap-2">
-              <span className="truncate text-[13.5px] font-semibold">{c.contact.name}</span>
+              <span className="truncate text-[13.5px] font-semibold">{contactTitle}</span>
               <span
                 title={
                   c.classification === "conflict"
@@ -283,9 +284,7 @@ export function ChatPanel({
                 {segmentLabel(c)}
               </span>
             </span>
-            {typing ? <TypingIndicator announce className="text-[11.5px]" /> : c.contact.phone !== c.contact.name && (
-              <span className="block truncate text-[11.5px] text-muted">{c.contact.phone}</span>
-            )}
+            {typing && <TypingIndicator announce className="text-[11.5px]" />}
           </span>
         </button>
         </div>

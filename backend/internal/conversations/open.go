@@ -122,10 +122,11 @@ func (s *Service) OpenByPhone(ctx context.Context, v Viewer, phone, name string)
 	}
 	var contactID string
 	if err := s.db.QueryRow(ctx, `
-		INSERT INTO contacts (wa_id, phone, name) VALUES ($1, $2, $3)
+		INSERT INTO contacts (wa_id, phone, name, name_edited) VALUES ($1, $2, $3, $3 <> '')
 		ON CONFLICT (wa_id) DO UPDATE SET
 		    phone = CASE WHEN contacts.phone = '' THEN EXCLUDED.phone ELSE contacts.phone END,
-		    name  = CASE WHEN contacts.name = '' THEN EXCLUDED.name ELSE contacts.name END
+		    name  = CASE WHEN EXCLUDED.name <> '' AND NOT contacts.name_edited THEN EXCLUDED.name ELSE contacts.name END,
+		    name_edited = contacts.name_edited OR EXCLUDED.name_edited
 		RETURNING id`, digits, "+"+digits, name).Scan(&contactID); err != nil {
 		return Conversation{}, err
 	}
@@ -227,7 +228,7 @@ func (s *Service) Search(ctx context.Context, v Viewer, q string) (SearchResult,
 	}
 	res := SearchResult{Contacts: []ContactRecord{}, Messages: []MessageHit{}}
 
-	crows, err := s.db.Query(ctx, `SELECT ct.id, ct.name, ct.phone, ct.wa_id, ct.company, ct.note, ct.kind, (CASE WHEN ct.avatar IS NULL THEN 0 ELSE ct.avatar_version END), lc.id::text
+	crows, err := s.db.Query(ctx, `SELECT ct.id, ct.name, ct.phone, ct.wa_id, ct.company, ct.note, ct.kind, (CASE WHEN ct.avatar IS NULL THEN 0 ELSE ct.avatar_version END), (ct.name_edited OR ct.whatsapp_saved), lc.id::text
 		FROM contacts ct LEFT JOIN LATERAL (
 		  SELECT c.id FROM conversations c LEFT JOIN segments s ON s.id = c.segment_id
 		   WHERE c.contact_id = ct.id AND c.status <> 'closed' AND `+forViewer+`
@@ -248,7 +249,7 @@ func (s *Service) Search(ctx context.Context, v Viewer, q string) (SearchResult,
 		var c ContactRecord
 		var name, phone, waID, kind string
 		var ver int64
-		if err := crows.Scan(&c.ID, &name, &phone, &waID, &c.Company, &c.Note, &kind, &ver, &c.ConversationID); err != nil {
+		if err := crows.Scan(&c.ID, &name, &phone, &waID, &c.Company, &c.Note, &kind, &ver, &c.Saved, &c.ConversationID); err != nil {
 			return res, err
 		}
 		c.finish(name, phone, waID, kind, ver)

@@ -187,6 +187,7 @@ type Factory func(h Handler) Provider
 
 type HistoryContact struct {
 	WAID, Phone, Name string
+	Saved             bool // nome da agenda; PushName sozinho não identifica um contato salvo
 }
 
 type HistoryProgress struct {

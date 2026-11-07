@@ -10,7 +10,7 @@ type ContactRecord struct {
 // Admin sees the imported directory. Agents only see contacts associated with
 // conversations they can already access, including the history visibility rules.
 func (s *Service) ListContacts(ctx context.Context, v Viewer) ([]ContactRecord, error) {
-	rows, err := s.db.Query(ctx, `SELECT ct.id,ct.name,ct.phone,ct.wa_id,ct.company,ct.note,ct.kind,(CASE WHEN ct.avatar IS NULL THEN 0 ELSE ct.avatar_version END),lc.id::text
+	rows, err := s.db.Query(ctx, `SELECT ct.id,ct.name,ct.phone,ct.wa_id,ct.company,ct.note,ct.kind,(CASE WHEN ct.avatar IS NULL THEN 0 ELSE ct.avatar_version END),(ct.name_edited OR ct.whatsapp_saved),lc.id::text
  FROM contacts ct LEFT JOIN LATERAL (
   SELECT c.id FROM conversations c LEFT JOIN segments s ON s.id=c.segment_id
   WHERE c.contact_id=ct.id AND c.status <> 'closed' AND `+forViewer+`
@@ -29,7 +29,7 @@ func (s *Service) ListContacts(ctx context.Context, v Viewer) ([]ContactRecord, 
 		var c ContactRecord
 		var name, phone, waID, kind string
 		var ver int64
-		if err := rows.Scan(&c.ID, &name, &phone, &waID, &c.Company, &c.Note, &kind, &ver, &c.ConversationID); err != nil {
+		if err := rows.Scan(&c.ID, &name, &phone, &waID, &c.Company, &c.Note, &kind, &ver, &c.Saved, &c.ConversationID); err != nil {
 			return nil, err
 		}
 		c.finish(name, phone, waID, kind, ver)

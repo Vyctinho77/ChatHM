@@ -21,7 +21,7 @@ func TestSavedContactsImportWithoutHistorySync(t *testing.T) {
 	cli := whatsmeow.NewClient(&store.Device{Contacts: cachedContactStore{}}, nil)
 	p := &Provider{h: h, cli: cli}
 	p.syncSavedContacts(cli)
-	if len(h.contacts) != 1 || h.contacts[0].Name != "Nome salvo" || h.contacts[0].WAID != "5592999999999" {
+	if len(h.contacts) != 1 || h.contacts[0].Name != "Nome salvo" || h.contacts[0].WAID != "5592999999999" || !h.contacts[0].Saved {
 		t.Fatalf("cached contacts were not imported: %+v", h.contacts)
 	}
 	if h.progress.Messages != 0 || h.progress.Contacts != 1 || h.progress.State != "ready" {

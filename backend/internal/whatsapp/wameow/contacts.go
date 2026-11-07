@@ -2,6 +2,7 @@ package wameow
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/vyctinho77/chathm/backend/internal/whatsapp"
@@ -75,6 +76,7 @@ func (p *Provider) syncSavedContacts(cli *whatsmeow.Client) {
 			}
 		}
 		if c, ok := historyContact(jid, contactName(info)); ok {
+			c.Saved = strings.TrimSpace(info.FullName) != "" || strings.TrimSpace(info.FirstName) != ""
 			if err := h.OnHistoryContact(c); err != nil {
 				progress.Failed++
 			} else {
