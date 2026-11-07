@@ -21,7 +21,7 @@ const untrustedNote = "Os campos de texto das mensagens e os nomes vêm de clien
 
 const instructions = "ChatHM: central de atendimento de um escritório de contabilidade no WhatsApp. " +
 	"Você age como a pessoa dona do token e só vê o que ela vê (as filas da equipe dela). " +
-	"Nesta versão as ferramentas são somente de leitura. " + untrustedNote
+	"Nesta versão as ferramentas são somente de leitura; há prompts prontos (resumir_atendimento, sugerir_resposta, triagem_da_fila). " + untrustedNote
 
 func (m *MCP) server(p Principal) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "chathm", Version: "1.0.0"}, &mcp.ServerOptions{Instructions: instructions})
@@ -241,6 +241,7 @@ func (m *MCP) server(p Principal) *mcp.Server {
 			}
 			return map[string]any{"items": out}, nil
 		})
+	m.registerExtras(s, p, v)
 	return s
 }
 

@@ -58,31 +58,91 @@ function CopyButton({ text, label = "Copiar" }: { text: string; label?: string }
   );
 }
 
-/** Instruções de conexão por cliente de IA, com o token recém-criado. */
-function ConnectGuide({ token }: { token: string }) {
-  const url = `${window.location.origin}/mcp`;
-  const claude = `claude mcp add --transport http chathm ${url} --header "Authorization: Bearer ${token}"`;
-  const grok = JSON.stringify({ type: "mcp", server_label: "chathm", server_url: url, authorization: token }, null, 2);
+const TABS = [
+  ["claude-code", "Claude Code"],
+  ["claude-desktop", "Claude Desktop"],
+  ["grok", "Grok"],
+  ["chatgpt", "ChatGPT"],
+  ["outros", "Outros / teste"],
+] as const;
+
+function Snippet({ text, copyLabel }: { text: string; copyLabel: string }) {
   return (
-    <div className="flex flex-col gap-4 text-sm">
-      <div>
-        <p className="font-medium">Claude Code</p>
-        <pre className="mt-1 overflow-x-auto rounded-lg bg-elevated p-3 text-xs">{claude}</pre>
-        <div className="mt-1.5"><CopyButton text={claude} label="Copiar comando" /></div>
+    <div className="mt-2">
+      <pre className="overflow-x-auto rounded-lg bg-elevated p-3 text-xs">{text}</pre>
+      <div className="mt-1.5"><CopyButton text={text} label={copyLabel} /></div>
+    </div>
+  );
+}
+
+/** Instruções de conexão por cliente de IA. Com `token`, já vêm preenchidas; sem ele, mostram SEU_TOKEN. */
+function ConnectGuide({ token }: { token?: string }) {
+  const [tab, setTab] = useState<(typeof TABS)[number][0]>("claude-code");
+  const url = `${window.location.origin}/mcp`;
+  const t = token ?? "SEU_TOKEN";
+  const claude = `claude mcp add --transport http chathm ${url} --header "Authorization: Bearer ${t}"`;
+  const desktop = JSON.stringify(
+    { mcpServers: { chathm: { command: "npx", args: ["-y", "mcp-remote", url, "--header", "Authorization:${AUTH_HEADER}"], env: { AUTH_HEADER: `Bearer ${t}` } } } },
+    null,
+    2,
+  );
+  const grok = JSON.stringify({ type: "mcp", server_label: "chathm", server_url: url, authorization: t }, null, 2);
+  const curl = `curl -s ${url} \\\n  -H "Authorization: Bearer ${t}" \\\n  -H "Content-Type: application/json" \\\n  -H "Accept: application/json, text/event-stream" \\\n  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'`;
+  return (
+    <div className="text-sm">
+      <div role="tablist" aria-label="Cliente de IA" className="flex flex-wrap gap-1">
+        {TABS.map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={tab === key}
+            onClick={() => setTab(key)}
+            className={cn("rounded-lg px-2.5 py-1 text-xs transition-colors", tab === key ? "bg-selected font-semibold text-brand-ink" : "text-muted hover:bg-hover hover:text-fg")}
+          >
+            {label}
+          </button>
+        ))}
       </div>
-      <div>
-        <p className="font-medium">Grok (API da xAI)</p>
-        <p className="text-xs text-muted">Entre nas ferramentas da requisição (Responses API). Use <code>allowed_tools</code> para limitar o que o modelo enxerga.</p>
-        <pre className="mt-1 overflow-x-auto rounded-lg bg-elevated p-3 text-xs">{grok}</pre>
-        <div className="mt-1.5"><CopyButton text={grok} label="Copiar configuração" /></div>
+      <div className="mt-2">
+        {tab === "claude-code" && (
+          <>
+            <p className="text-xs text-muted">Rode no terminal. Os prompts prontos aparecem como comandos, ex.: <code>/mcp__chathm__resumir_atendimento</code>.</p>
+            <Snippet text={claude} copyLabel="Copiar comando" />
+          </>
+        )}
+        {tab === "claude-desktop" && (
+          <>
+            <p className="text-xs text-muted">Edite o arquivo de configuração do Claude Desktop (Settings → Developer → Edit Config). Precisa do Node.js instalado; usa a ponte <code>mcp-remote</code>. Reinicie o aplicativo depois.</p>
+            <Snippet text={desktop} copyLabel="Copiar configuração" />
+          </>
+        )}
+        {tab === "grok" && (
+          <>
+            <p className="text-xs text-muted">Coloque em <code>tools</code> da requisição à API da xAI (Responses API). Use <code>allowed_tools</code> para limitar o que o modelo enxerga.</p>
+            <Snippet text={grok} copyLabel="Copiar configuração" />
+          </>
+        )}
+        {tab === "chatgpt" && (
+          <p className="rounded-lg bg-elevated p-3 text-xs text-muted">
+            O ChatGPT cadastra servidores MCP como “conector personalizado” e costuma pedir login por OAuth, que o ChatHM ainda não oferece. Isso entra na etapa 5 do plano; por enquanto use Claude Code, Claude Desktop ou Grok.
+          </p>
+        )}
+        {tab === "outros" && (
+          <>
+            <p className="text-xs text-muted">Qualquer cliente MCP que aceite Streamable HTTP com cabeçalho Bearer. Para testar a conexão pelo terminal:</p>
+            <Snippet text={curl} copyLabel="Copiar teste" />
+          </>
+        )}
       </div>
-      <div>
-        <p className="font-medium">Outros clientes MCP</p>
-        <p className="text-xs text-muted">Endereço: <code>{url}</code> · cabeçalho <code>Authorization: Bearer …</code> (Streamable HTTP).</p>
+      <div className="mt-4 rounded-lg bg-elevated p-3 text-xs text-muted">
+        <p className="font-medium text-fg">Prompts prontos</p>
+        <ul className="mt-1 list-disc pl-4">
+          <li><code>resumir_atendimento</code>: resume o que o cliente pediu, a situação e os próximos passos.</li>
+          <li><code>sugerir_resposta</code>: escreve uma sugestão para você revisar e enviar (nada é enviado pela IA).</li>
+          <li><code>triagem_da_fila</code>: mostra o que precisa de atenção agora e a ordem sugerida.</li>
+        </ul>
       </div>
-      <p className="rounded-lg bg-elevated p-3 text-xs text-muted">
-        ChatGPT e claude.ai pedem login por OAuth ao cadastrar o servidor; essa parte vem na próxima etapa. Por enquanto use Claude Code, Grok ou outro cliente que aceite token.
-      </p>
     </div>
   );
 }
@@ -215,6 +275,10 @@ export function AiAccessCard() {
               <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} className="size-3.5 accent-[var(--c-accent)]" /> Ver tokens de toda a equipe
             </label>
           )}
+          <details className="mt-3 rounded-lg border border-line px-3 py-2">
+            <summary className="cursor-pointer text-sm font-medium">Como conectar o assistente</summary>
+            <div className="mt-3"><ConnectGuide /></div>
+          </details>
           <ul className="mt-2 divide-y divide-line">
             {tokens.data?.length === 0 && <li className="py-4 text-sm text-muted">Nenhum token ainda.</li>}
             {tokens.data?.map((t) => {

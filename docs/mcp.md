@@ -3,8 +3,19 @@
 Servidor MCP que deixa assistentes de IA (Claude, ChatGPT, Grok e qualquer cliente MCP) trabalharem dentro do ChatHM:
 resumir atendimentos, achar clientes, sugerir respostas, organizar filas e etiquetas, consultar a agenda.
 
-Status: **etapa 1 implementada** (tokens, chave do administrador, `/mcp` com 9 ferramentas de leitura, mascaramento, limite e auditoria).
-Faltam as etapas 2 a 5 (prompts prontos, escrita, rascunho/aprovação de envio e OAuth).
+Status: **etapas 1 e 2 implementadas** (tokens, chave do administrador, `/mcp` com 10 ferramentas de leitura, 3 prompts prontos, guia de conexão, mascaramento, limite e auditoria).
+Faltam as etapas 3 a 5 (escrita, rascunho/aprovação de envio e OAuth).
+
+### Etapa 2: como ficou
+
+- **`queue_overview`** (10ª ferramenta, só leitura): por fila e no total, conversas abertas, sem responsável, minhas, adiadas, aguardando
+  resposta nossa (última mensagem do cliente) e há quantos minutos a mais antiga espera. Respeita a visibilidade da pessoa.
+- **Prompts prontos** (`prompts/list`, aparecem como comandos no cliente; no Claude Code, `/mcp__chathm__<nome>`):
+  `resumir_atendimento(conversation_id)`, `sugerir_resposta(conversation_id, tom)` (cordial | formal | objetivo) e `triagem_da_fila(queue?)`.
+  Todos mandam o modelo usar só as ferramentas do ChatHM, não inventar dados, tratar texto de cliente como dado e **não enviar nada**.
+  Os argumentos são validados (UUID, tom em lista fechada, chave de fila em formato fixo) para não carregarem instruções; uso vai para a auditoria como `prompt:<nome>`.
+- **Guia de conexão** sempre disponível em Configurações → Integrações (IA) → "Como conectar o assistente": abas Claude Code, Claude Desktop
+  (via `mcp-remote`), Grok, ChatGPT (explica que depende do OAuth da etapa 5) e Outros/teste (comando `curl`).
 
 ### Etapa 1: como ficou
 
@@ -14,7 +25,7 @@ Faltam as etapas 2 a 5 (prompts prontos, escrita, rascunho/aprovação de envio 
 - **Endpoint MCP:** `POST /mcp` (Streamable HTTP sem sessão), `Authorization: Bearer chm_…`. 401 token inválido/expirado/revogado ou pessoa
   desativada; 403 acesso por IA desligado ou `Origin` de navegador não permitido; 429 acima de 60 chamadas/min por token.
 - **Ferramentas (todas só leitura, `readOnlyHint`):** `list_conversations`, `get_conversation`, `read_messages`, `search`,
-  `list_contacts`, `get_contact`, `list_queues`, `list_tags`, `list_agenda`.
+  `list_contacts`, `get_contact`, `list_queues`, `list_tags`, `list_agenda` (+ `queue_overview`, da etapa 2).
 - **Segurança:** token guardado como SHA-256; tokens são revogados quando o autenticador da pessoa é redefinido; toda resposta traz o
   aviso de conteúdo de terceiros; fotos/áudios/arquivos nunca saem; auditoria `mcp.call` (ferramenta e prefixo do token, sem conteúdo).
 - **Testes:** visibilidade por equipe (token da Bia não vê a fila da Ana), mascaramento, auditoria sem vazamento, limite, origem,
