@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/vyctinho77/chathm/backend/internal/audit"
+	"github.com/vyctinho77/chathm/backend/internal/conversations"
 	"github.com/vyctinho77/chathm/backend/internal/platform/database"
 	"github.com/vyctinho77/chathm/backend/internal/platform/httpx"
 )
@@ -26,6 +27,7 @@ const (
 	tokenPrefix      = "chm_"
 	ScopeRead        = "read"
 	ScopeWrite       = "write"
+	ScopeSend        = "send"
 	maxTokensPerUser = 10
 	defaultTTLDays   = 90
 	maxTTLDays       = 365
@@ -45,6 +47,8 @@ type Settings struct {
 	MaskPhones    bool `json:"maskPhones"`
 	// AllowWrite libera tokens com escopo de escrita (etiquetar, anotar, adiar, agenda, transferir...).
 	AllowWrite bool `json:"allowWrite"`
+	// AllowSend libera tokens que PEDEM envios: a IA nunca envia; uma pessoa aprova cada mensagem na conversa.
+	AllowSend bool `json:"allowSend"`
 }
 
 // Token é um token pessoal (nunca inclui o segredo).
@@ -72,10 +76,14 @@ type Principal struct {
 	Scopes  []string
 	// Write: o token tem escopo de escrita E o administrador liberou alterações.
 	Write bool
+	// Send: o token tem escopo "send" E o administrador liberou pedidos de envio (continuam dependendo de aprovação humana).
+	Send bool
 }
 
 type Service struct {
-	db *pgxpool.Pool
+	db    *pgxpool.Pool
+	convs *conversations.Service
+	pub   Publisher
 
 	mu      sync.Mutex
 	buckets map[string]*bucket // limite por token
@@ -95,8 +103,8 @@ func NewService(db *pgxpool.Pool) *Service {
 
 func (s *Service) Settings(ctx context.Context) (Settings, error) {
 	var st Settings
-	err := s.db.QueryRow(ctx, `SELECT enabled, mask_documents, mask_phones, allow_write FROM ai_settings WHERE id`).
-		Scan(&st.Enabled, &st.MaskDocuments, &st.MaskPhones, &st.AllowWrite)
+	err := s.db.QueryRow(ctx, `SELECT enabled, mask_documents, mask_phones, allow_write, allow_send FROM ai_settings WHERE id`).
+		Scan(&st.Enabled, &st.MaskDocuments, &st.MaskPhones, &st.AllowWrite, &st.AllowSend)
 	return st, err
 }
 
@@ -104,11 +112,11 @@ func (s *Service) Settings(ctx context.Context) (Settings, error) {
 func (s *Service) SetSettings(ctx context.Context, actorID, ip string, in Settings) (Settings, error) {
 	err := database.InTx(ctx, s.db, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `UPDATE ai_settings SET enabled = $1, mask_documents = $2, mask_phones = $3,
-			allow_write = $5, updated_at = now(), updated_by = $4 WHERE id`, in.Enabled, in.MaskDocuments, in.MaskPhones, actorID, in.AllowWrite); err != nil {
+			allow_write = $5, allow_send = $6, updated_at = now(), updated_by = $4 WHERE id`, in.Enabled, in.MaskDocuments, in.MaskPhones, actorID, in.AllowWrite, in.AllowSend); err != nil {
 			return err
 		}
 		return audit.Record(ctx, tx, audit.Entry{ActorID: actorID, Action: "ai.settings.update", TargetType: "ai_settings", IP: ip,
-			Metadata: map[string]any{"enabled": in.Enabled, "maskDocuments": in.MaskDocuments, "maskPhones": in.MaskPhones, "allowWrite": in.AllowWrite}})
+			Metadata: map[string]any{"enabled": in.Enabled, "maskDocuments": in.MaskDocuments, "maskPhones": in.MaskPhones, "allowWrite": in.AllowWrite, "allowSend": in.AllowSend}})
 	})
 	if err != nil {
 		return Settings{}, err
@@ -140,7 +148,16 @@ func (s *Service) Create(ctx context.Context, userID, ip, name string, ttlDays i
 		switch sc {
 		case ScopeRead:
 		case ScopeWrite:
-			granted = append(granted, ScopeWrite)
+			if !contains(granted, ScopeWrite) {
+				granted = append(granted, ScopeWrite)
+			}
+		case ScopeSend:
+			// Pedir envio inclui alterar (rascunhos e pedidos ficam na conversa).
+			for _, x := range []string{ScopeWrite, ScopeSend} {
+				if !contains(granted, x) {
+					granted = append(granted, x)
+				}
+			}
 		default:
 			return "", Token{}, httpx.FieldErrors{"scopes": "Escopo inválido."}
 		}
@@ -151,6 +168,9 @@ func (s *Service) Create(ctx context.Context, userID, ip, name string, ttlDays i
 	}
 	if !st.Enabled {
 		return "", Token{}, ErrDisabled
+	}
+	if contains(granted, ScopeSend) && !st.AllowSend {
+		return "", Token{}, httpx.FieldErrors{"scopes": "O administrador ainda não liberou pedidos de envio pela IA (Configurações → Integrações)."}
 	}
 	if len(granted) > 1 && !st.AllowWrite {
 		return "", Token{}, httpx.FieldErrors{"scopes": "O administrador ainda não liberou alterações pela IA (Configurações → Integrações)."}
@@ -267,6 +287,9 @@ func (s *Service) Authenticate(ctx context.Context, raw string) (Principal, erro
 		if sc == ScopeWrite && st.AllowWrite {
 			p.Write = true
 		}
+		if sc == ScopeSend && st.AllowSend && st.AllowWrite {
+			p.Send = true
+		}
 	}
 	if last == nil || time.Since(*last) > time.Minute {
 		_, _ = s.db.Exec(ctx, `UPDATE api_tokens SET last_used_at = now() WHERE id = $1`, p.TokenID)
@@ -320,4 +343,13 @@ func (s *Service) Record(ctx context.Context, p Principal, tool string, meta map
 	}
 	meta["tool"], meta["tokenPrefix"], meta["ok"] = tool, p.Prefix, ok
 	_ = audit.Record(context.WithoutCancel(ctx), s.db, audit.Entry{ActorID: p.UserID, Action: "mcp.call", TargetType: "api_token", TargetID: p.TokenID, Metadata: meta})
+}
+
+func contains(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }

@@ -20,6 +20,8 @@ import type { ViewablePdf } from "./PdfViewer";
 // pdf.js é pesado: só é baixado quando alguém abre um PDF.
 const PdfViewer = lazy(() => import("./PdfViewer").then((mod) => ({ default: mod.PdfViewer })));
 import { TransferMenu } from "./TransferMenu";
+import { DEMO } from "@/lib/env";
+import { AiSuggestions } from "./AiSuggestions";
 import { DeleteDialog, ForwardDialog, MessageInfoDialog, MessageMenu } from "./MessageActions";
 import { buildOutgoing, capabilities, useConversationActions, useMessages, useSendMessage, type OutgoingDraft } from "./store";
 import { statusLabel } from "./receipts";
@@ -528,6 +530,17 @@ export function ChatPanel({
             </span>
           </Alert>
         </div>
+      )}
+      {!DEMO && (
+        <AiSuggestions
+          conversationId={c.id}
+          canSend={!lockedByOther && !closed && !c.snoozedUntil && capabilities.send}
+          sendBlockedReason={closed ? "Atendimento encerrado." : c.snoozedUntil ? "Atendimento adiado." : lockedByOther ? `${c.assignee?.name} está atendendo.` : capabilities.sendUnavailableReason}
+          onUse={(text) => {
+            setDraft(c.id, text);
+            setComposerKey((k) => k + 1);
+          }}
+        />
       )}
       <Composer
         key={`${c.id}:${composerKey}:${editing?.id ?? ""}`}

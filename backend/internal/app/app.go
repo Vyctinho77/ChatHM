@@ -110,6 +110,7 @@ func NewServices(ctx context.Context, cfg config.Config, db *pgxpool.Pool, opt O
 		Tags:          tags.NewService(db),
 		AI:            aiaccess.NewService(db),
 	}
+	s.AI.Attach(convs, hub)
 	if cfg.SeedExampleData {
 		if err := s.Segments.EnsureDefaults(ctx); err != nil {
 			return nil, err

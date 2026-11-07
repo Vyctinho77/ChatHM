@@ -3,8 +3,23 @@
 Servidor MCP que deixa assistentes de IA (Claude, ChatGPT, Grok e qualquer cliente MCP) trabalharem dentro do ChatHM:
 resumir atendimentos, achar clientes, sugerir respostas, organizar filas e etiquetas, consultar a agenda.
 
-Status: **etapas 1 a 3 implementadas** (tokens, chave do administrador, `/mcp` com 11 ferramentas de leitura e 9 de alteração, 3 prompts prontos, guia de conexão, mascaramento, limites e auditoria).
-Faltam as etapas 4 e 5 (rascunho/aprovação de envio e OAuth).
+Status: **etapas 1 a 4 implementadas** (tokens, chave do administrador, `/mcp` com 11 ferramentas de leitura, 9 de alteração e 2 de rascunho/pedido de envio, 3 prompts prontos, guia de conexão, mascaramento, limites e auditoria).
+Falta a etapa 5 (OAuth 2.1, para ChatGPT e claude.ai).
+
+### Etapa 4: como ficou
+
+- **A IA nunca envia.** Duas ferramentas deixam uma **sugestão** (`ai_suggestions`) para a pessoa do token aprovar:
+  `draft_reply(conversation_id, text, reply_to?)` (escopo de escrita) e `send_message(conversation_id, text, reply_to?)` (escopo **`send`**, que o administrador
+  libera em *"Permitir que a IA peça envios (com aprovação)"*, `ai_settings.allow_send`, exige as alterações liberadas). As duas respondem
+  `{status: "aguardando_aprovacao"}` e nada sai ao cliente.
+- **Na conversa**, um cartão acima do campo de mensagem (aparece sozinho, por tempo real, só para a pessoa do token) mostra o texto e três ações:
+  **Enviar** (aprova: sai pelo caminho normal do app, como a pessoa, com assinatura, regras de fila, citação se houver `reply_to`), **Editar no campo**
+  (leva o texto ao campo de mensagem, sem enviar) e **Descartar**. A API: `GET /ai/suggestions`, `POST /ai/suggestions/{id}/send|use|discard`.
+- **Regras:** só o dono da sugestão decide; uma sugestão pendente por conversa e pessoa (a nova substitui a anterior), no máximo 10 pendentes, valem 24 h;
+  aprovação dupla é bloqueada (estado intermediário `sending`); se a aprovação falha (outra pessoa assumiu, conversa encerrada) a sugestão volta a pendente.
+  A IA não cria sugestão em conversa adiada, encerrada ou que é de outra pessoa.
+- **Auditoria:** `ai.suggestion.send|use|discard` e as chamadas `mcp.call`, com ids e se o texto foi editado, nunca o texto.
+- **Prompt `sugerir_resposta`** passa a mandar usar `draft_reply` quando a ferramenta existir.
 
 ### Etapa 3: como ficou
 

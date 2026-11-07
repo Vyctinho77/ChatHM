@@ -265,3 +265,37 @@ func writeErr(err error) error {
 	}
 	return fmt.Errorf("não foi possível concluir: %w", err)
 }
+
+// registerSend: a IA propõe uma mensagem ao cliente; quem envia é a pessoa do token, ao aprovar na conversa.
+func (m *MCP) registerSend(s *mcp.Server, p Principal) {
+	type draftIn struct {
+		ConversationID string `json:"conversation_id" jsonschema:"id da conversa"`
+		Text           string `json:"text" jsonschema:"mensagem para o cliente, pronta para enviar (até 4000 caracteres, em português, estilo WhatsApp)"`
+		ReplyTo        string `json:"reply_to,omitempty" jsonschema:"id de uma mensagem da conversa a responder com citação (opcional)"`
+	}
+	const note = " NADA é enviado ao cliente: a mensagem fica na conversa, no ChatHM da pessoa do token, e só sai quando ela aprovar. Uma sugestão pendente por conversa (a nova substitui a anterior); vale 24 horas."
+	respond := func(sg Suggestion, what string) map[string]any {
+		return map[string]any{"ok": true, "status": "aguardando_aprovacao", "suggestionId": sg.ID, "conversationId": sg.ConversationID,
+			"aviso": what + " Nada foi enviado ao cliente; a pessoa precisa revisar e aprovar no ChatHM."}
+	}
+	if p.Write {
+		addWrite(m, s, p, "draft_reply", "Deixa um RASCUNHO de resposta para a pessoa revisar, editar e enviar."+note+writeRule, false,
+			func(ctx context.Context, in draftIn) (any, map[string]any, error) {
+				sg, err := m.svc.CreateSuggestion(ctx, p, in.ConversationID, "draft", in.Text, in.ReplyTo)
+				if err != nil {
+					return nil, nil, writeErr(err)
+				}
+				return respond(sg, "Rascunho salvo."), map[string]any{"conversationId": in.ConversationID, "suggestionId": sg.ID, "intent": "draft"}, nil
+			})
+	}
+	if p.Send {
+		addWrite(m, s, p, "send_message", "PEDE o envio de uma mensagem ao cliente, que a pessoa precisa aprovar na conversa (botão Enviar)."+note+writeRule, false,
+			func(ctx context.Context, in draftIn) (any, map[string]any, error) {
+				sg, err := m.svc.CreateSuggestion(ctx, p, in.ConversationID, "send", in.Text, in.ReplyTo)
+				if err != nil {
+					return nil, nil, writeErr(err)
+				}
+				return respond(sg, "Pedido de envio registrado."), map[string]any{"conversationId": in.ConversationID, "suggestionId": sg.ID, "intent": "send"}, nil
+			})
+	}
+}

@@ -6,7 +6,7 @@ import { api, del, errorMessage, fieldErrors, get, post } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { useMe } from "@/features/auth/api";
 
-type AiSettings = { enabled: boolean; maskDocuments: boolean; maskPhones: boolean; allowWrite: boolean };
+type AiSettings = { enabled: boolean; maskDocuments: boolean; maskPhones: boolean; allowWrite: boolean; allowSend: boolean };
 type AiToken = {
   id: string;
   name: string;
@@ -147,16 +147,16 @@ function ConnectGuide({ token }: { token?: string }) {
   );
 }
 
-function NewToken({ onClose, allowWrite }: { onClose: () => void; allowWrite: boolean }) {
+function NewToken({ onClose, allowWrite, allowSend }: { onClose: () => void; allowWrite: boolean; allowSend: boolean }) {
   const qc = useQueryClient();
   const [name, setName] = useState("");
   const [days, setDays] = useState(90);
-  const [write, setWrite] = useState(false);
+  const [level, setLevel] = useState<"read" | "write" | "send">("read");
   const [error, setError] = useState("");
   const [nameError, setNameError] = useState("");
   const [created, setCreated] = useState<Created | null>(null);
   const create = useMutation({
-    mutationFn: () => post<Created>("/ai/tokens", { name, expiresInDays: days, scopes: write ? ["read", "write"] : ["read"] }),
+    mutationFn: () => post<Created>("/ai/tokens", { name, expiresInDays: days, scopes: level === "send" ? ["read", "write", "send"] : level === "write" ? ["read", "write"] : ["read"] }),
     onSuccess: (c) => {
       setCreated(c);
       void qc.invalidateQueries({ queryKey: ["ai", "tokens"] });
@@ -200,22 +200,31 @@ function NewToken({ onClose, allowWrite }: { onClose: () => void; allowWrite: bo
           <fieldset className="flex flex-col gap-2 text-sm">
             <legend className="mb-1 font-medium">O que o token pode fazer</legend>
             <label className="flex cursor-pointer items-start gap-2.5">
-              <input type="radio" name="scope" checked={!write} onChange={() => setWrite(false)} className="mt-1 accent-[var(--c-accent)]" />
+              <input type="radio" name="scope" checked={level === "read"} onChange={() => setLevel("read")} className="mt-1 accent-[var(--c-accent)]" />
               <span><span className="font-medium">Só ler (recomendado)</span><span className="block text-xs text-muted">Conversas, mensagens, contatos, filas, etiquetas e agenda que <strong>você</strong> já enxerga.</span></span>
             </label>
             <label className={cn("flex items-start gap-2.5", allowWrite ? "cursor-pointer" : "opacity-60")}>
-              <input type="radio" name="scope" checked={write} disabled={!allowWrite} onChange={() => setWrite(true)} className="mt-1 accent-[var(--c-accent)]" />
+              <input type="radio" name="scope" checked={level === "write"} disabled={!allowWrite} onChange={() => setLevel("write")} className="mt-1 accent-[var(--c-accent)]" />
               <span>
-                <span className="font-medium">Ler e fazer alterações</span>
+                <span className="font-medium">Ler, alterar e deixar rascunhos</span>
                 <span className="block text-xs text-muted">
                   {allowWrite
-                    ? "Também etiqueta, acrescenta observações, renomeia contatos, adia, cria lembretes e compromissos e transfere conversas, sempre dentro do que você pode fazer."
+                    ? "Também etiqueta, acrescenta observações, renomeia contatos, adia, cria lembretes e compromissos, transfere conversas e deixa rascunhos de resposta para você revisar."
                     : "Um administrador precisa liberar alterações pela IA primeiro."}
                 </span>
               </span>
             </label>
+            <label className={cn("flex items-start gap-2.5", allowSend ? "cursor-pointer" : "opacity-60")}>
+              <input type="radio" name="scope" checked={level === "send"} disabled={!allowSend} onChange={() => setLevel("send")} className="mt-1 accent-[var(--c-accent)]" />
+              <span>
+                <span className="font-medium">Tudo isso e pedir envios (você aprova)</span>
+                <span className="block text-xs text-muted">
+                  {allowSend ? "A IA pode pedir o envio de uma mensagem ao cliente, mas ela só sai quando você clicar em Enviar na conversa." : "Um administrador precisa liberar pedidos de envio primeiro."}
+                </span>
+              </span>
+            </label>
           </fieldset>
-          <p className="text-xs text-muted">Em nenhum caso o token envia mensagens a clientes.</p>
+          <p className="text-xs text-muted">A IA nunca envia mensagens sozinha: rascunhos e pedidos aparecem na conversa e só saem com a sua aprovação.</p>
           {error && !nameError && <Alert>{error}</Alert>}
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
@@ -262,7 +271,7 @@ export function AiAccessCard() {
     <section className="border-t border-line py-6">
       <h2 className="font-semibold">Integrações (IA)</h2>
       <p className="mt-0.5 text-sm text-muted">
-        Deixe um assistente de IA (Claude, Grok e outros que usam MCP) consultar o ChatHM em seu nome (por padrão só para leitura). Ele enxerga e faz apenas o que você já pode ver e fazer, e nunca envia mensagens.
+        Deixe um assistente de IA (Claude, Grok e outros que usam MCP) consultar o ChatHM em seu nome (por padrão só para leitura). Ele enxerga e faz apenas o que você já pode ver e fazer, e nunca envia mensagens sozinho: o que for para clientes só sai com a sua aprovação.
       </p>
 
       <div className="mt-3">
@@ -273,7 +282,8 @@ export function AiAccessCard() {
               <div className="ml-7 border-l border-line pl-3">
                 <Toggle checked={s.maskDocuments} disabled={save.isPending} onChange={(v) => change({ maskDocuments: v })} label="Ocultar CPF e CNPJ" hint="Recomendado. A IA vê “[CPF oculto]” no lugar." />
                 <Toggle checked={s.maskPhones} disabled={save.isPending} onChange={(v) => change({ maskPhones: v })} label="Ocultar telefones" hint="Mostra só os 4 últimos dígitos." />
-                <Toggle checked={s.allowWrite} disabled={save.isPending} onChange={(v) => change({ allowWrite: v })} label="Permitir que a IA faça alterações" hint="Etiquetar, acrescentar observações, renomear contatos, adiar, lembretes, agenda e transferir, sempre como a pessoa do token. Desligado, tokens de escrita deixam de alterar na hora. Nunca envia mensagens." />
+                <Toggle checked={s.allowWrite} disabled={save.isPending} onChange={(v) => change({ allowWrite: v })} label="Permitir que a IA faça alterações" hint="Etiquetar, acrescentar observações, renomear contatos, adiar, lembretes, agenda, transferir e deixar rascunhos, sempre como a pessoa do token. Desligado, tokens de escrita deixam de alterar na hora." />
+                <Toggle checked={s.allowSend} disabled={save.isPending || !s.allowWrite} onChange={(v) => change({ allowSend: v })} label="Permitir que a IA peça envios (com aprovação)" hint="A IA pode pedir o envio de uma mensagem a um cliente; quem tem o token aprova cada uma na conversa. Nada sai sozinho. Exige as alterações liberadas." />
               </div>
             )}
           </>
@@ -308,7 +318,7 @@ export function AiAccessCard() {
                   <div className={cn("min-w-0 flex-1", inactive && "opacity-60")}>
                     <p className="truncate text-sm font-medium">{t.name}{t.owner && <span className="font-normal text-muted"> · {t.owner}</span>}</p>
                     <p className="text-xs text-muted">
-                      <code>{t.prefix}…</code> · {t.scopes.includes("write") ? "leitura e escrita" : "só leitura"} · {t.revoked ? "revogado" : t.expired ? "expirado" : `vale até ${date(t.expiresAt)}`} · {t.lastUsedAt ? `usado em ${date(t.lastUsedAt)}` : "nunca usado"}
+                      <code>{t.prefix}…</code> · {t.scopes.includes("send") ? "leitura, escrita e pedidos de envio" : t.scopes.includes("write") ? "leitura e escrita" : "só leitura"} · {t.revoked ? "revogado" : t.expired ? "expirado" : `vale até ${date(t.expiresAt)}`} · {t.lastUsedAt ? `usado em ${date(t.lastUsedAt)}` : "nunca usado"}
                     </p>
                   </div>
                   {!inactive && (
@@ -322,7 +332,7 @@ export function AiAccessCard() {
           </ul>
         </div>
       )}
-      {creating && <NewToken allowWrite={s.allowWrite} onClose={() => setCreating(false)} />}
+      {creating && <NewToken allowWrite={s.allowWrite} allowSend={s.allowSend} onClose={() => setCreating(false)} />}
     </section>
   );
 }

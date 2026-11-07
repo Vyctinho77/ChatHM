@@ -615,3 +615,154 @@ func TestAIAccessWriteRateLimitAndSwitchOff(t *testing.T) {
 }
 
 func mustJSON(v any) []byte { b, _ := json.Marshal(v); return b }
+
+func (w *world) mkScopedToken(c *client, name string, scopes ...string) string {
+	w.e.t.Helper()
+	r := c.do("POST", "/api/v1/ai/tokens", map[string]any{"name": name, "scopes": scopes})
+	expect(w.e.t, r, 201)
+	return r.body["token"].(string)
+}
+
+func TestAIAccessDraftAndSendNeedHumanApproval(t *testing.T) {
+	w := setupWorld(t)
+	set := func(send bool) {
+		expect(t, w.admin.do("PUT", "/api/v1/ai/settings", map[string]any{"enabled": true, "maskDocuments": true, "allowWrite": true, "allowSend": send}), 200)
+	}
+	set(false)
+	// Pedir envio exige a liberação do administrador.
+	expect(t, w.ana.do("POST", "/api/v1/ai/tokens", map[string]any{"name": "x", "scopes": []string{"send"}}), 422)
+	set(true)
+	writeTok := w.mkWriteToken(w.ana, "rascunho")
+	sendTok := w.mkScopedToken(w.ana, "envio", "send")
+	biaTok := w.mkWriteToken(w.bia, "bia")
+
+	rw, rs := toolNames(w, writeTok), toolNames(w, sendTok)
+	if !rw["draft_reply"] || rw["send_message"] || !rs["draft_reply"] || !rs["send_message"] {
+		t.Fatalf("ferramentas: escrita=%v envio=%v", rw["send_message"], rs["draft_reply"])
+	}
+
+	w.receive("Cliente Aprovação", "Pode me mandar o DAS de outubro?")
+	cid := mustConv(t, w.ana, "Cliente Aprovação")["id"].(string)
+	in := msgList(t, w.ana, cid)[0]
+	sentBefore := len(w.e.wa.Sent())
+
+	// 1) Rascunho: nada sai para o cliente; só a ana vê a sugestão.
+	out, isErr := w.tool(writeTok, "draft_reply", map[string]any{"conversation_id": cid, "text": "Claro! Envio o DAS hoje.", "reply_to": in["id"]})
+	if isErr || out["status"] != "aguardando_aprovacao" || out["suggestionId"] == nil {
+		t.Fatalf("draft_reply: %v", out)
+	}
+	if len(w.e.wa.Sent()) != sentBefore {
+		t.Fatal("o rascunho da IA não pode enviar mensagem")
+	}
+	listFor := func(c *client) []any {
+		r := c.do("GET", "/api/v1/ai/suggestions?conversationId="+cid, nil)
+		expect(t, r, 200)
+		return r.body["suggestions"].([]any)
+	}
+	if l := listFor(w.ana); len(l) != 1 || l[0].(map[string]any)["intent"] != "draft" {
+		t.Fatalf("sugestões da ana = %v", l)
+	}
+	if l := listFor(w.bia); len(l) != 0 {
+		t.Fatalf("a Bia viu sugestão da Ana: %v", l)
+	}
+	sid := listFor(w.ana)[0].(map[string]any)["id"].(string)
+	expect(t, w.bia.do("POST", "/api/v1/ai/suggestions/"+sid+"/send", map[string]any{}), 404) // só o dono aprova
+	expect(t, w.bia.do("POST", "/api/v1/ai/suggestions/"+sid+"/discard", nil), 404)
+
+	// Nova sugestão substitui a pendente.
+	w.tool(writeTok, "draft_reply", map[string]any{"conversation_id": cid, "text": "Segunda versão do rascunho."})
+	if l := listFor(w.ana); len(l) != 1 || l[0].(map[string]any)["text"] != "Segunda versão do rascunho." {
+		t.Fatalf("a nova deveria substituir a antiga: %v", l)
+	}
+
+	// 2) "Usar no campo": devolve o texto e sai da fila; continua sem enviar.
+	sid = listFor(w.ana)[0].(map[string]any)["id"].(string)
+	r := w.ana.do("POST", "/api/v1/ai/suggestions/"+sid+"/use", nil)
+	expect(t, r, 200)
+	if r.body["text"] != "Segunda versão do rascunho." || len(listFor(w.ana)) != 0 || len(w.e.wa.Sent()) != sentBefore {
+		t.Fatalf("use: %v", r.body)
+	}
+	expect(t, w.ana.do("POST", "/api/v1/ai/suggestions/"+sid+"/use", nil), 404) // não vale duas vezes
+
+	// 3) Pedido de envio: só sai quando a ana aprova (com o texto editado por ela), pelo caminho normal.
+	out, isErr = w.tool(sendTok, "send_message", map[string]any{"conversation_id": cid, "text": "Segue o DAS em anexo.", "reply_to": in["id"]})
+	if isErr || out["status"] != "aguardando_aprovacao" || len(w.e.wa.Sent()) != sentBefore {
+		t.Fatalf("send_message não pode enviar sozinho: %v", out)
+	}
+	sid = listFor(w.ana)[0].(map[string]any)["id"].(string)
+	r = w.ana.do("POST", "/api/v1/ai/suggestions/"+sid+"/send", map[string]any{"text": "Segue o DAS de outubro em anexo."})
+	expect(t, r, 200)
+	if r.body["text"] != "Segue o DAS de outubro em anexo." || r.body["authorName"] != "ana" {
+		t.Fatalf("mensagem enviada = %v", r.body)
+	}
+	if q, _ := r.body["quoted"].(map[string]any); q == nil || q["id"] != in["id"] {
+		t.Fatalf("a resposta deveria citar a mensagem do cliente: %v", r.body["quoted"])
+	}
+	sent := w.e.wa.Sent()
+	if last := sent[len(sent)-1]; len(sent) != sentBefore+1 || last.Text != "*ana:*\nSegue o DAS de outubro em anexo." || last.Quote == nil {
+		t.Fatalf("envio ao WhatsApp = %+v", last)
+	}
+	expect(t, w.ana.do("POST", "/api/v1/ai/suggestions/"+sid+"/send", map[string]any{}), 404) // aprovação dupla
+
+	// 4) Se outra pessoa assumiu a conversa, a aprovação falha e a sugestão continua pendente.
+	w.tool(writeTok, "draft_reply", map[string]any{"conversation_id": cid, "text": "Outra sugestão."})
+	sid = listFor(w.ana)[0].(map[string]any)["id"].(string)
+	expect(t, w.admin.do("POST", "/api/v1/conversations/"+cid+"/transfer", map[string]any{"userId": mustUserID(t, w, "ana2")}), 204)
+	expect(t, w.ana.do("POST", "/api/v1/ai/suggestions/"+sid+"/send", map[string]any{}), 404) // a ana nem enxerga mais
+	// e a IA da ana não deixa novas sugestões numa conversa de outra pessoa
+	if _, isErr := w.tool(writeTok, "draft_reply", map[string]any{"conversation_id": cid, "text": "x"}); !isErr {
+		t.Fatal("não pode sugerir em conversa que é de outra pessoa")
+	}
+
+	// 5) Visibilidade, conversa inexistente, texto vazio e longo demais.
+	other := w.receive("Cliente Folha 2", "Quero a folha")
+	_ = other
+	ocid := mustConv(t, w.ana, "Cliente Folha 2")["id"].(string)
+	if _, isErr := w.tool(biaTok, "draft_reply", map[string]any{"conversation_id": ocid, "text": "oi"}); !isErr {
+		t.Fatal("a Bia não enxerga a fila Folha")
+	}
+	if _, isErr := w.tool(writeTok, "draft_reply", map[string]any{"conversation_id": ocid, "text": "   "}); !isErr {
+		t.Fatal("texto vazio deveria falhar")
+	}
+	if _, isErr := w.tool(writeTok, "draft_reply", map[string]any{"conversation_id": ocid, "text": strings.Repeat("a", 4001)}); !isErr {
+		t.Fatal("texto longo demais deveria falhar")
+	}
+	if _, isErr := w.tool(writeTok, "draft_reply", map[string]any{"conversation_id": ocid, "text": "ok", "reply_to": "nao-uuid"}); !isErr {
+		t.Fatal("reply_to inválido deveria falhar")
+	}
+	// Adiada ou encerrada: sem sugestão.
+	expect(t, w.send(w.ana, ocid, "Olá!"), 201) // assume o atendimento (só o responsável adia)
+	until := time.Now().Add(time.Hour).Format(time.RFC3339)
+	expect(t, w.ana.do("POST", "/api/v1/conversations/"+ocid+"/snooze", map[string]any{"until": until}), 204)
+	if _, isErr := w.tool(writeTok, "draft_reply", map[string]any{"conversation_id": ocid, "text": "oi"}); !isErr {
+		t.Fatal("conversa adiada não recebe sugestão")
+	}
+
+	// 6) Expiradas somem e não podem ser aprovadas.
+	expect(t, w.ana.do("POST", "/api/v1/conversations/"+ocid+"/resume", nil), 204)
+	w.tool(writeTok, "draft_reply", map[string]any{"conversation_id": ocid, "text": "vai expirar"})
+	if _, err := w.e.pool.Exec(t.Context(), `UPDATE ai_suggestions SET expires_at = now() - interval '1 minute' WHERE status = 'pending'`); err != nil {
+		t.Fatal(err)
+	}
+	if l := w.ana.do("GET", "/api/v1/ai/suggestions", nil).body["suggestions"].([]any); len(l) != 0 {
+		t.Fatalf("sugestão expirada apareceu: %v", l)
+	}
+
+	// 7) Auditoria: registra a aprovação sem o conteúdo das mensagens.
+	var n int
+	var leaked bool
+	_ = w.e.pool.QueryRow(t.Context(), `SELECT count(*), bool_or(metadata::text ILIKE '%DAS%' OR metadata::text ILIKE '%rascunho%')
+		FROM audit_logs WHERE action LIKE 'ai.suggestion.%' OR (action = 'mcp.call' AND metadata->>'tool' IN ('draft_reply','send_message'))`).Scan(&n, &leaked)
+	if n < 5 || leaked {
+		t.Fatalf("auditoria: %d registros, vazou conteúdo=%v", n, leaked)
+	}
+}
+
+func mustUserID(t *testing.T, w *world, name string) string {
+	t.Helper()
+	id := w.users[name]
+	if id == "" {
+		t.Fatalf("usuário %s não encontrado em w.users", name)
+	}
+	return id
+}

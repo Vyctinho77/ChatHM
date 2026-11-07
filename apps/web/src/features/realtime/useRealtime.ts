@@ -18,7 +18,8 @@ type ServerEvent =
   | { type: "whatsapp.status"; data: Omit<Connection, "qr" | "simulator"> }
   | { type: "whatsapp.qr"; data: Connection["qr"] };
 // History import progresses independently from the live connection.
-type HistoryEvent = { type: "whatsapp.sync"; data: HistoryProgress } | { type: "contact.avatar"; data: { contactId: string } };
+type HistoryEvent = { type: "whatsapp.sync"; data: HistoryProgress } | { type: "contact.avatar"; data: { contactId: string } }
+  | { type: "ai.suggestion"; data: { conversationId: string; id: string } };
 
 const sortByLast = (a: Conversation, b: Conversation) =>
   (b.lastMessage?.sentAt ?? "").localeCompare(a.lastMessage?.sentAt ?? "");
@@ -73,6 +74,10 @@ export function applyRealtimeEvent(qc: QueryClient, ev: ServerEvent | HistoryEve
       break;
     case "whatsapp.qr":
       qc.setQueryData<Connection>(connectionKey, (old) => (old && old.state === "pending_qr" && !old.pairingComplete ? { ...old, qr: ev.data } : old));
+      break;
+    case "ai.suggestion":
+      // A IA deixou um rascunho/pedido de envio para esta pessoa aprovar.
+      void qc.invalidateQueries({ queryKey: ["ai", "suggestions", ev.data.conversationId] });
       break;
     case "contact.avatar":
       // Nova foto de perfil: recarrega listas que mostram avatares.

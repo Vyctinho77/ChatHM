@@ -7,6 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/vyctinho77/chathm/backend/internal/auth"
+	"github.com/vyctinho77/chathm/backend/internal/conversations"
 	"github.com/vyctinho77/chathm/backend/internal/platform/httpx"
 )
 
@@ -22,13 +23,28 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Get("/ai/tokens", h.listTokens)
 	r.Post("/ai/tokens", h.createToken)
 	r.Delete("/ai/tokens/{id}", h.revokeToken)
+	r.Get("/ai/suggestions", h.listSuggestions)
+	r.Post("/ai/suggestions/{id}/send", h.sendSuggestion)
+	r.Post("/ai/suggestions/{id}/use", h.useSuggestion)
+	r.Post("/ai/suggestions/{id}/discard", h.discardSuggestion)
 }
 
 func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 	var fe httpx.FieldErrors
+	var taken *conversations.TakenError
 	switch {
 	case errors.As(err, &fe):
 		httpx.Validation(w, fe)
+	case errors.As(err, &taken):
+		httpx.Error(w, http.StatusConflict, "conversation_taken", "Outra pessoa já assumiu este atendimento.")
+	case errors.Is(err, ErrSuggestionGone):
+		httpx.Error(w, http.StatusNotFound, "suggestion_gone", "Esta sugestão não existe mais (já foi decidida ou expirou).")
+	case errors.Is(err, conversations.ErrClosed):
+		httpx.Error(w, http.StatusConflict, "conversation_closed", "Este atendimento está encerrado.")
+	case errors.Is(err, conversations.ErrUnavailable):
+		httpx.Error(w, http.StatusServiceUnavailable, "whatsapp_unavailable", "O WhatsApp está desconectado.")
+	case errors.Is(err, conversations.ErrNotFound):
+		httpx.Error(w, http.StatusNotFound, "not_found", "Registro não encontrado.")
 	case errors.Is(err, ErrDisabled):
 		httpx.Error(w, http.StatusConflict, "ai_disabled", "O acesso por IA está desligado. Peça a um administrador para ligar em Configurações → Integrações.")
 	case errors.Is(err, ErrNotFound):
@@ -103,4 +119,51 @@ func (h *Handler) revokeToken(w http.ResponseWriter, r *http.Request) {
 
 func clientIP(r *http.Request) string {
 	return httpx.ClientIP(r)
+}
+
+func (h *Handler) listSuggestions(w http.ResponseWriter, r *http.Request) {
+	sess := auth.MustFromContext(r.Context())
+	list, err := h.svc.Suggestions(r.Context(), sess.UserID, r.URL.Query().Get("conversationId"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"suggestions": list})
+}
+
+// sendSuggestion: a pessoa aprova (opcionalmente com o texto editado) e a mensagem sai como dela.
+func (h *Handler) sendSuggestion(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Text string `json:"text"`
+	}
+	if !httpx.Decode(w, r, &in) {
+		return
+	}
+	sess := auth.MustFromContext(r.Context())
+	msg, err := h.svc.Send(r.Context(), conversations.Viewer{ID: sess.UserID, Name: sess.Name, Admin: sess.IsAdmin()}, httpx.ClientIP(r), chi.URLParam(r, "id"), in.Text)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, msg)
+}
+
+// useSuggestion: devolve o texto para a pessoa editar no campo de mensagem.
+func (h *Handler) useSuggestion(w http.ResponseWriter, r *http.Request) {
+	sess := auth.MustFromContext(r.Context())
+	sg, err := h.svc.Use(r.Context(), sess.UserID, httpx.ClientIP(r), chi.URLParam(r, "id"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, sg)
+}
+
+func (h *Handler) discardSuggestion(w http.ResponseWriter, r *http.Request) {
+	sess := auth.MustFromContext(r.Context())
+	if err := h.svc.Discard(r.Context(), sess.UserID, httpx.ClientIP(r), chi.URLParam(r, "id")); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
 }
