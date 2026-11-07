@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { ArrowDown, ArrowLeft, CheckCheck, ChevronDown, ChevronUp, CircleCheck, Clock3, EllipsisVertical, PanelRight, Search, UserRoundPlus, X } from "lucide-react";
 import { useSearchParams } from "react-router";
 import { fold, matches } from "@/lib/search";
-import { Avatar } from "@/components/Avatar";
+import { ViewableAvatar } from "@/components/AvatarViewer";
 import { Menu, MenuItem } from "@/components/Menu";
 import { Alert, IconButton } from "@/components/ui";
 import { ChatSkeleton } from "@/components/Skeleton";
@@ -216,14 +216,15 @@ export function ChatPanel({
             <ArrowLeft className="size-5" />
           </IconButton>
         )}
+        <div className="flex min-w-0 items-center gap-1 pl-1">
+        <ViewableAvatar name={c.contact.name} src={c.contact.avatarUrl} group={c.contact.kind === "group"} />
         <button
           type="button"
           onClick={onToggleContact}
           aria-expanded={contactOpen}
           aria-label="Ver dados do contato"
-          className="flex min-w-0 items-center gap-2.5 rounded-lg py-1 pl-1 pr-2.5 text-left hover:bg-hover"
+          className="flex min-w-0 items-center gap-2.5 rounded-lg py-1 pl-1.5 pr-2.5 text-left hover:bg-hover"
         >
-          <Avatar name={c.contact.name} src={c.contact.avatarUrl} group={c.contact.kind === "group"} />
           <span className="min-w-0">
             <span className="flex min-w-0 items-center gap-2">
               <span className="truncate text-[13.5px] font-semibold">{c.contact.name}</span>
@@ -248,6 +249,7 @@ export function ChatPanel({
             )}
           </span>
         </button>
+        </div>
         <div className="ml-auto flex items-center">
           {showAttendanceStatus && !statusExpanded && (
             <IconButton label="Mostrar status do atendimento" aria-expanded={false} onClick={() => setStatusExpanded(true)}>

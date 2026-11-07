@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { MessageSquarePlus, MessageSquareText, Search } from "lucide-react";
-import { Avatar } from "@/components/Avatar";
+import { ViewableAvatar } from "@/components/AvatarViewer";
 import { cn } from "@/lib/cn";
 import { Highlight } from "@/components/Highlight";
 import { Page, PageHeader } from "@/components/list";
@@ -93,7 +93,7 @@ export function ContactsPage() {
         <ul className="divide-y divide-line">
           {visible.map((c) => (
             <li key={c.id} className="flex items-center gap-3 py-3">
-              <Avatar name={c.name} src={c.avatarUrl} group={c.kind === "group"} />
+              <ViewableAvatar name={c.name} src={c.avatarUrl} group={c.kind === "group"} />
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium">
                   {term ? (

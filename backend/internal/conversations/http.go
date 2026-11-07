@@ -437,9 +437,16 @@ func (h *Handler) avatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b []byte
-	if err := h.svc.db.QueryRow(r.Context(), `SELECT avatar FROM contacts WHERE id = $1`, id).Scan(&b); err != nil || len(b) == 0 {
+	var waID string
+	if err := h.svc.db.QueryRow(r.Context(), `SELECT avatar, wa_id FROM contacts WHERE id = $1`, id).Scan(&b, &waID); err != nil || len(b) == 0 {
 		http.NotFound(w, r)
 		return
+	}
+	if r.URL.Query().Get("full") == "1" {
+		// Tamanho grande: buscado no WhatsApp na hora e guardado em memória; sem foto grande, vale a miniatura.
+		if big := h.svc.fullAvatar(r.Context(), id, waID); len(big) > 0 {
+			b = big
+		}
 	}
 	hd := w.Header()
 	hd.Set("Content-Type", "image/jpeg")

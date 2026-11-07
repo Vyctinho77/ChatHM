@@ -210,4 +210,4 @@ func (p *Provider) Receipt(status whatsapp.ReceiptStatus, ids ...string) {
 }
 
 // ProfilePicture: o provedor simulado não tem fotos.
-func (p *Provider) ProfilePicture(context.Context, string) ([]byte, error) { return nil, nil }
+func (p *Provider) ProfilePicture(context.Context, string, bool) ([]byte, error) { return nil, nil }

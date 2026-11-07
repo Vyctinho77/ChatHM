@@ -10,7 +10,7 @@ type ContactRecord struct {
 // Admin sees the imported directory. Agents only see contacts associated with
 // conversations they can already access, including the history visibility rules.
 func (s *Service) ListContacts(ctx context.Context, v Viewer) ([]ContactRecord, error) {
-	rows, err := s.db.Query(ctx, `SELECT ct.id,ct.name,ct.phone,ct.wa_id,ct.company,ct.note,ct.kind,ct.avatar_version,lc.id::text
+	rows, err := s.db.Query(ctx, `SELECT ct.id,ct.name,ct.phone,ct.wa_id,ct.company,ct.note,ct.kind,(CASE WHEN ct.avatar IS NULL THEN 0 ELSE ct.avatar_version END),lc.id::text
  FROM contacts ct LEFT JOIN LATERAL (
   SELECT c.id FROM conversations c LEFT JOIN segments s ON s.id=c.segment_id
   WHERE c.contact_id=ct.id AND c.status <> 'closed' AND `+forViewer+`

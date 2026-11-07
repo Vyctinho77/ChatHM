@@ -14,7 +14,7 @@ import (
 	"go.mau.fi/whatsmeow/types"
 )
 
-const maxAvatarBytes = 512 << 10
+const maxAvatarBytes = 4 << 20
 
 var avatarClient = &http.Client{Timeout: 15 * time.Second}
 
@@ -33,8 +33,8 @@ func avatarHostOK(raw string) bool {
 	return false
 }
 
-// ProfilePicture baixa a miniatura da foto de perfil de um contato ou grupo.
-func (p *Provider) ProfilePicture(ctx context.Context, jid string) ([]byte, error) {
+// ProfilePicture baixa a foto de perfil (miniatura ou grande) de um contato ou grupo.
+func (p *Provider) ProfilePicture(ctx context.Context, jid string, preview bool) ([]byte, error) {
 	cli, err := p.client()
 	if err != nil {
 		return nil, err
@@ -43,7 +43,7 @@ func (p *Provider) ProfilePicture(ctx context.Context, jid string) ([]byte, erro
 	if err != nil {
 		return nil, err
 	}
-	info, err := cli.GetProfilePictureInfo(ctx, to.ToNonAD(), &whatsmeow.GetProfilePictureParams{Preview: true})
+	info, err := cli.GetProfilePictureInfo(ctx, to.ToNonAD(), &whatsmeow.GetProfilePictureParams{Preview: preview})
 	if errors.Is(err, whatsmeow.ErrProfilePictureNotSet) || errors.Is(err, whatsmeow.ErrProfilePictureUnauthorized) {
 		return nil, nil
 	}

@@ -71,6 +71,7 @@ type Sender interface {
 	SendText(ctx context.Context, chatJID, messageID, text string) error
 	SendMedia(ctx context.Context, chatJID, messageID string, m whatsapp.MediaSend) error
 	SendLocation(ctx context.Context, chatJID, messageID string, l whatsapp.Location) error
+	ProfilePicture(ctx context.Context, jid string, preview bool) ([]byte, error)
 }
 
 // Viewer é quem faz a requisição; toda consulta filtra pela visibilidade dele.
@@ -512,7 +513,7 @@ func displayName(name, phone, waID string) string {
 
 const listQuery = `
 	SELECT c.id, c.status, c.unread_count, c.last_message_at, c.classification, c.snoozed_until,
-	       ct.id, ct.name, ct.phone, ct.wa_id, ct.company, ct.note, ct.kind, ct.avatar_version,
+	       ct.id, ct.name, ct.phone, ct.wa_id, ct.company, ct.note, ct.kind, (CASE WHEN ct.avatar IS NULL THEN 0 ELSE ct.avatar_version END),
 	       u.id, u.name,
 	       s.key, s.name::text,
 	       coalesce((SELECT array_agg(t.name::text ORDER BY t.name) FROM conversation_tags cg

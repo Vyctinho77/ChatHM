@@ -147,8 +147,8 @@ type Provider interface {
 	SendMedia(ctx context.Context, chatJID, messageID string, m MediaSend) error
 	// SendLocation envia uma localização estática.
 	SendLocation(ctx context.Context, chatJID, messageID string, l Location) error
-	// ProfilePicture baixa a miniatura da foto de perfil (nil, nil quando não há foto ou ela é privada).
-	ProfilePicture(ctx context.Context, jid string) ([]byte, error)
+	// ProfilePicture baixa a foto de perfil: miniatura (preview) ou tamanho grande. nil, nil quando não há foto ou ela é privada.
+	ProfilePicture(ctx context.Context, jid string, preview bool) ([]byte, error)
 }
 
 // Factory cria o provedor ligado ao handler de eventos.

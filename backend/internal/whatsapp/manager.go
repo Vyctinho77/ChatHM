@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -63,6 +64,9 @@ type Manager struct {
 	avatarMu         sync.Mutex
 	avatarBusy       map[string]bool
 	avatarSem        chan struct{}
+	sweeping         atomic.Bool
+	stopOnce         sync.Once
+	stopCh           chan struct{} // fechado no Shutdown
 	onHistoryContact func(context.Context, HistoryContact) error
 	p                Provider
 	log              *slog.Logger
@@ -81,7 +85,7 @@ type Manager struct {
 }
 
 func NewManager(db *pgxpool.Pool, pub Publisher, ingest Ingestor, factory Factory, log *slog.Logger) *Manager {
-	m := &Manager{db: db, pub: pub, ingest: ingest, log: log.With("component", "whatsapp"), pairTimeout: 3 * time.Minute}
+	m := &Manager{db: db, pub: pub, ingest: ingest, log: log.With("component", "whatsapp"), pairTimeout: 3 * time.Minute, stopCh: make(chan struct{})}
 	m.p = factory(m)
 	return m
 }
@@ -226,6 +230,7 @@ func (m *Manager) Disconnect(ctx context.Context, actorID, ip string) error {
 
 // Shutdown encerra a conexão sem apagar a sessão (reinício do servidor).
 func (m *Manager) Shutdown() {
+	m.stopOnce.Do(func() { close(m.stopCh) })
 	m.mu.Lock()
 	if m.pairCancel != nil {
 		m.pairCancel()
@@ -249,6 +254,7 @@ func (m *Manager) OnConnected(a Account) {
 	m.mu.Unlock()
 	m.set(Status{State: StateConnected, Phone: a.Phone, DisplayName: a.Name, ConnectedAt: connectedAt}, nil)
 	m.requestInitialHistory(a.DeviceJID)
+	m.startAvatarSweep()
 }
 
 // The server has authenticated us, but whatsmeow is still preparing message
