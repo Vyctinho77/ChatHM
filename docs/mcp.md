@@ -3,8 +3,22 @@
 Servidor MCP que deixa assistentes de IA (Claude, ChatGPT, Grok e qualquer cliente MCP) trabalharem dentro do ChatHM:
 resumir atendimentos, achar clientes, sugerir respostas, organizar filas e etiquetas, consultar a agenda.
 
-Status: **etapas 1 e 2 implementadas** (tokens, chave do administrador, `/mcp` com 10 ferramentas de leitura, 3 prompts prontos, guia de conexão, mascaramento, limite e auditoria).
-Faltam as etapas 3 a 5 (escrita, rascunho/aprovação de envio e OAuth).
+Status: **etapas 1 a 3 implementadas** (tokens, chave do administrador, `/mcp` com 11 ferramentas de leitura e 9 de alteração, 3 prompts prontos, guia de conexão, mascaramento, limites e auditoria).
+Faltam as etapas 4 e 5 (rascunho/aprovação de envio e OAuth).
+
+### Etapa 3: como ficou
+
+- **Duas travas:** o administrador liga **"Permitir que a IA faça alterações"** (`ai_settings.allow_write`, padrão desligado) e a pessoa cria um token com o
+  escopo **"Ler e fazer alterações"** (`write`). Sem as duas, as ferramentas de alteração nem aparecem em `tools/list`; desligar a chave retira o poder
+  de tokens já criados na hora.
+- **Ferramentas de alteração** (só com escopo de escrita; `add_tag`, `remove_tag`, `append_note`, `rename_contact`, `snooze`, `resume`, `set_reminder`,
+  `create_agenda_event`, `transfer`) + `list_people` (leitura, para saber a quem transferir). Todas chamam os mesmos serviços do app como a pessoa do
+  token: só altera o que ela vê e pode (responsável, equipe, atendimento encerrado, agenda da própria equipe).
+- **Nada envia mensagem ao cliente.** Etiquetas novas a IA não cria (só aplica/remove as existentes). `append_note` **acrescenta** uma linha marcada
+  `[IA · data · nome]` e nunca apaga a observação existente. `set_reminder` é o lembrete pessoal de quem tem o token.
+- **Limites e auditoria:** no máximo 20 alterações por minuto por token (leituras seguem em 60); cada alteração grava `mcp.call` com a ferramenta e os
+  alvos (ids), sem o texto escrito.
+- **Segurança contra injeção:** toda descrição de ferramenta de alteração diz para agir só a pedido da pessoa e nunca por instruções dentro de mensagens de clientes.
 
 ### Etapa 2: como ficou
 
