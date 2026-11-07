@@ -6,6 +6,7 @@ import { useMe } from "@/features/auth/api";
 import { pendingFiles, type Capabilities } from "./store.types";
 import { tagsKey } from "@/features/tags/api";
 import type { Conversation, Message, SearchResult, TagInfo } from "./types";
+import { playSentSound } from "@/lib/sounds";
 
 export const capabilities: Capabilities = {
   send: true,
@@ -186,6 +187,7 @@ export function useSendMessage(conversationId: string) {
       );
     },
     onSuccess: (server) => {
+      void playSentSound(server.id, server.status);
       pendingFiles.delete(server.id);
       replace(server.id, () => server);
       void qc.invalidateQueries({ queryKey: conversationKeys.list });

@@ -6,6 +6,7 @@ import { useMediaQuery } from "@/lib/theme";
 import type { Me } from "@/features/auth/api";
 import { DEMO } from "@/lib/env";
 import { useRealtime } from "@/features/realtime/useRealtime";
+import { useAppSounds } from "@/lib/sounds";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 
@@ -18,6 +19,7 @@ export function ResizeHandle() {
 }
 
 export function AppShell({ me }: { me: Me }) {
+  useAppSounds(me.user.id);
   const desktop = useMediaQuery("(min-width: 1024px)");
   const [drawer, setDrawer] = useState(false);
   useRealtime(!DEMO);

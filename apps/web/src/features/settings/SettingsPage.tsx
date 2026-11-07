@@ -7,6 +7,7 @@ import { DEMO } from "@/lib/env";
 import { regenerateRecoveryCodes, useMe } from "@/features/auth/api";
 import { ThemeSwitcher } from "@/features/shell/ThemeSwitcher";
 import { HandoverCard } from "./HandoverCard";
+import { SoundSettings } from "./SoundSettings";
 
 function Card({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
   return (
@@ -64,8 +65,8 @@ export function SettingsPage() {
 
         {me.user.role === "admin" && <HandoverCard />}
 
-        <Card title="Notificações" description="Alertas de novas mensagens no navegador.">
-          <p className="text-sm text-muted">Em breve.</p>
+        <Card title="Sons e notificações" description="Efeitos de mensagem e avisos sonoros.">
+          <SoundSettings />
         </Card>
 
         <Card title="Sobre o app">

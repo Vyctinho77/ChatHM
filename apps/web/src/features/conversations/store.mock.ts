@@ -6,6 +6,7 @@ import { buildMock } from "./mock";
 import type { Capabilities } from "./store.types";
 import type { Conversation, Message, SearchResult } from "./types";
 import { fold, matches } from "@/lib/search";
+import { playSentSound } from "@/lib/sounds";
 
 export const capabilities: Capabilities = { send: true, tags: true, close: true, media: true };
 
@@ -221,6 +222,7 @@ export function useSendMessage(conversationId: string) {
       );
     },
     onSuccess: (msg) => {
+      void playSentSound(msg.id, "sent");
       const sent = { ...msg, status: "sent" } as Message;
       if (db) db.messages[conversationId] = [...(db.messages[conversationId] ?? []), sent];
       qc.setQueryData<Message[]>(keys.messages(conversationId), (old = []) =>

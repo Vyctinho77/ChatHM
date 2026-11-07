@@ -6,6 +6,7 @@ import type { Conversation, Message } from "@/features/conversations/types";
 import { connectionKey, type Connection, type HistoryProgress } from "@/features/whatsapp/api";
 import { reminderKey } from "@/features/conversations/reminders";
 import { applyTyping, clearTyping, type TypingUpdate } from "@/features/conversations/typing";
+import { playIncomingSound } from "@/lib/sounds";
 
 type ServerEvent =
   | { type: "conversation.updated"; data: Conversation }
@@ -54,6 +55,7 @@ export function applyRealtimeEvent(qc: QueryClient, ev: ServerEvent | HistoryEve
     case "message.created":
     case "message.updated": {
       const m = ev.data;
+      if (ev.type === "message.created") void playIncomingSound(m);
       // O id da mensagem enviada é do cliente: se já existe (bolha otimista), atualiza em vez de duplicar.
       qc.setQueryData<Message[]>(conversationKeys.messages(m.conversationId), (old) => {
         if (!old) return old;
