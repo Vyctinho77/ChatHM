@@ -69,6 +69,8 @@ npm run dev
 ```
 
 A API fica em http://localhost:8080 e o frontend em http://localhost:5173.
+O frontend aguarda a API e o banco ficarem prontos antes de iniciar, evitando
+erros de proxy durante a compilação inicial do Go.
 O comando usa **`.env.development.local`**, criado a partir de
 `.env.development.example`, com uma chave de criptografia própria. Ele não carrega
 o `.env` de produção e recusa bancos remotos ou bancos sem o sufixo `_dev`/`_test`.

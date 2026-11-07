@@ -9,7 +9,7 @@
     "dev": "node scripts/dev.mjs",
     "db:up": "node scripts/dev-db.mjs start",
     "db:down": "node scripts/dev-db.mjs stop",
-    "test:dev": "node --test scripts/dev-config.test.mjs",
+    "test:dev": "node --test scripts/dev-config.test.mjs scripts/dev-ready.test.mjs",
     "dev:web": "node --import ./scripts/dev-env.mjs ./apps/web/node_modules/vite/bin/vite.js apps/web",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
