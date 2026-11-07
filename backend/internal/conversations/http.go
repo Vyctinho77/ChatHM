@@ -33,6 +33,7 @@ func viewer(r *http.Request) Viewer {
 func (h *Handler) Routes(r chi.Router) {
 	r.Get("/contacts", h.contacts)
 	r.Get("/search", h.search)
+	r.Get("/map-tiles/{z}/{x}/{y}", h.mapTile)
 	r.Get("/contacts/{id}/avatar", h.avatar)
 	r.Post("/contacts/{id}/conversation", h.openForContact)
 	r.Post("/conversations/open", h.openByPhone)

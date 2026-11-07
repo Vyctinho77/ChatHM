@@ -165,7 +165,7 @@ const ZOOM = 16;
 const MAP_W = 288;
 const MAP_H = 144;
 
-/** Mapinha como no WhatsApp: usa a miniatura enviada pelo celular; senão monta os blocos do OpenStreetMap. */
+/** Mapinha como no WhatsApp: usa a miniatura enviada pelo celular; senão monta os blocos do OpenStreetMap (via servidor). */
 function LocationMap({ lat, lng, thumb }: { lat: number; lng: number; thumb?: string }) {
   const [failed, setFailed] = useState(false);
   const n = 2 ** ZOOM;
@@ -186,11 +186,10 @@ function LocationMap({ lat, lng, thumb }: { lat: number; lng: number; thumb?: st
           [-1, 0, 1].map((dx) => (
             <img
               key={`${dx},${dy}`}
-              src={`https://tile.openstreetmap.org/${ZOOM}/${tx + dx}/${ty + dy}.png`}
+              src={`/api/v1/map-tiles/${ZOOM}/${tx + dx}/${ty + dy}`}
               alt=""
               draggable={false}
               loading="lazy"
-              referrerPolicy="no-referrer"
               onError={() => setFailed(true)}
               className="absolute max-w-none select-none dark:[filter:invert(1)_hue-rotate(180deg)_brightness(.85)_contrast(.9)]"
               style={{ width: TILE, height: TILE, left: left + dx * TILE, top: top + dy * TILE }}
