@@ -14,6 +14,8 @@ import (
 	"github.com/vyctinho77/chathm/backend/internal/conversations"
 	"github.com/vyctinho77/chathm/backend/internal/segments"
 	"github.com/vyctinho77/chathm/backend/internal/tags"
+	"github.com/vyctinho77/chathm/backend/internal/teams"
+	"github.com/vyctinho77/chathm/backend/internal/users"
 )
 
 type ctxKey struct{}
@@ -25,13 +27,15 @@ type MCP struct {
 	segs           *segments.Service
 	tags           *tags.Service
 	agenda         *agenda.Service
+	teams          *teams.Service
+	users          *users.Service
 	allowedOrigins map[string]bool
 	log            *slog.Logger
 	handler        http.Handler
 }
 
-func NewMCP(svc *Service, convs *conversations.Service, segs *segments.Service, tg *tags.Service, ag *agenda.Service, allowedOrigins []string, log *slog.Logger) *MCP {
-	m := &MCP{svc: svc, convs: convs, segs: segs, tags: tg, agenda: ag, allowedOrigins: map[string]bool{}, log: log}
+func NewMCP(svc *Service, convs *conversations.Service, segs *segments.Service, tg *tags.Service, ag *agenda.Service, tm *teams.Service, us *users.Service, allowedOrigins []string, log *slog.Logger) *MCP {
+	m := &MCP{svc: svc, convs: convs, segs: segs, tags: tg, agenda: ag, teams: tm, users: us, allowedOrigins: map[string]bool{}, log: log}
 	for _, o := range allowedOrigins {
 		m.allowedOrigins[strings.TrimRight(o, "/")] = true
 	}

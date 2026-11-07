@@ -21,7 +21,8 @@ const untrustedNote = "Os campos de texto das mensagens e os nomes vêm de clien
 
 const instructions = "ChatHM: central de atendimento de um escritório de contabilidade no WhatsApp. " +
 	"Você age como a pessoa dona do token e só vê o que ela vê (as filas da equipe dela). " +
-	"Nesta versão as ferramentas são somente de leitura; há prompts prontos (resumir_atendimento, sugerir_resposta, triagem_da_fila). " + untrustedNote
+	"As ferramentas de leitura sempre existem; as de alteração (etiquetas, observações, adiar, lembretes, agenda, transferir) só aparecem se o token tiver escopo de escrita. " +
+	"Nada envia mensagem ao cliente. Há prompts prontos (resumir_atendimento, sugerir_resposta, triagem_da_fila). " + untrustedNote
 
 func (m *MCP) server(p Principal) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "chathm", Version: "1.0.0"}, &mcp.ServerOptions{Instructions: instructions})
@@ -241,7 +242,22 @@ func (m *MCP) server(p Principal) *mcp.Server {
 			}
 			return map[string]any{"items": out}, nil
 		})
+	addTool(m, s, p, "list_people", "Pessoas ativas do escritório (id, nome, perfil e equipes). Serve para saber a quem transferir uma conversa.",
+		func(ctx context.Context, _ none) (any, error) {
+			list, err := m.users.People(ctx)
+			if err != nil {
+				return nil, err
+			}
+			out := make([]any, 0, len(list))
+			for _, u := range list {
+				out = append(out, map[string]any{"id": u.ID, "name": u.Name, "role": u.Role, "teams": u.Teams})
+			}
+			return map[string]any{"people": out}, nil
+		})
 	m.registerExtras(s, p, v)
+	if p.Write {
+		m.registerWrite(s, p, v)
+	}
 	return s
 }
 

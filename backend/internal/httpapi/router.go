@@ -91,7 +91,7 @@ func NewRouter(d Deps) http.Handler {
 		aiSvc = aiaccess.NewService(d.DB)
 	}
 	aiH := aiaccess.NewHandler(aiSvc)
-	mcpH := aiaccess.NewMCP(aiSvc, d.Conversations, d.Segments, d.Tags, agendaSvc, d.Config.AllowedOrigins, d.Logger)
+	mcpH := aiaccess.NewMCP(aiSvc, d.Conversations, d.Segments, d.Tags, agendaSvc, d.Teams, d.Users, d.Config.AllowedOrigins, d.Logger)
 
 	// O WebSocket revalida a sessão periodicamente (logout/desativação encerram a conexão).
 	validateWS := func(ctx context.Context, r *http.Request) bool {

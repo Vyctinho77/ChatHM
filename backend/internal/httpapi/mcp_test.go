@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 // mcpCall envia uma requisição JSON-RPC ao /mcp com o token (vazio = sem cabeçalho).
@@ -306,7 +307,7 @@ func TestAIAccessWithRealMCPClient(t *testing.T) {
 	defer session.Close()
 
 	tools, err := session.ListTools(ctx, nil)
-	if err != nil || len(tools.Tools) != 10 {
+	if err != nil || len(tools.Tools) != 11 {
 		t.Fatalf("ferramentas: %v %v", err, tools)
 	}
 	for _, tl := range tools.Tools {
@@ -421,3 +422,196 @@ func TestAIAccessPromptsAndQueueOverview(t *testing.T) {
 		t.Fatalf("auditoria de prompts = %d", n)
 	}
 }
+
+func (w *world) mkWriteToken(c *client, name string) string {
+	w.e.t.Helper()
+	r := c.do("POST", "/api/v1/ai/tokens", map[string]any{"name": name, "scopes": []string{"read", "write"}})
+	expect(w.e.t, r, 201)
+	return r.body["token"].(string)
+}
+
+func toolNames(w *world, tok string) map[string]bool {
+	w.e.t.Helper()
+	_, out := w.mcpCall(tok, "tools/list", nil)
+	names := map[string]bool{}
+	for _, x := range out["result"].(map[string]any)["tools"].([]any) {
+		names[x.(map[string]any)["name"].(string)] = true
+	}
+	return names
+}
+
+func TestAIAccessWriteScopeAndTools(t *testing.T) {
+	w := setupWorld(t)
+	expect(t, w.admin.do("PUT", "/api/v1/ai/settings", map[string]any{"enabled": true, "maskDocuments": true, "allowWrite": false}), 200)
+
+	// Sem a liberação do administrador, nenhum token de escrita nasce.
+	expect(t, w.ana.do("POST", "/api/v1/ai/tokens", map[string]any{"name": "x", "scopes": []string{"read", "write"}}), 422)
+	expect(t, w.ana.do("POST", "/api/v1/ai/tokens", map[string]any{"name": "x", "scopes": []string{"admin"}}), 422)
+	expect(t, w.admin.do("PUT", "/api/v1/ai/settings", map[string]any{"enabled": true, "maskDocuments": true, "allowWrite": true}), 200)
+
+	readTok := w.mkToken(w.ana, "leitura")
+	anaTok := w.mkWriteToken(w.ana, "escrita")
+	biaTok := w.mkWriteToken(w.bia, "bia escrita")
+	writeTools := []string{"add_tag", "remove_tag", "append_note", "rename_contact", "snooze", "resume", "set_reminder", "create_agenda_event", "transfer"}
+	ro, rw := toolNames(w, readTok), toolNames(w, anaTok)
+	for _, n := range writeTools {
+		if ro[n] || !rw[n] {
+			t.Fatalf("ferramenta %s: leitura=%v escrita=%v", n, ro[n], rw[n])
+		}
+	}
+	if !ro["list_people"] || len(ro) != 11 {
+		t.Fatalf("token de leitura deveria ter 11 ferramentas: %d", len(ro))
+	}
+	// Token de leitura chamando uma ferramenta de escrita: não existe.
+	_, out := w.mcpCall(readTok, "tools/call", map[string]any{"name": "add_tag", "arguments": map[string]any{"conversation_id": "x", "tag": "y"}})
+	if out["error"] == nil {
+		t.Fatalf("token só de leitura não pode alterar: %v", out)
+	}
+
+	// Conversa da ana (assumida ao responder) + etiqueta criada pelo administrador.
+	w.receive("Cliente Escrita", "Preciso do DAS")
+	cid := mustConv(t, w.ana, "Cliente Escrita")["id"].(string)
+	expect(t, w.send(w.ana, cid, "Já verifico."), 201)
+	_ = w.admin.do("POST", "/api/v1/tags", map[string]any{"name": "urgente"}) // já existe nas etiquetas padrão
+
+	// Etiqueta: aplica e remove; etiqueta inexistente é recusada (a IA não cria etiquetas).
+	if _, isErr := w.tool(anaTok, "add_tag", map[string]any{"conversation_id": cid, "tag": "URGENTE"}); isErr {
+		t.Fatal("add_tag falhou")
+	}
+	hasTag := func() bool {
+		for _, x := range mustConv(t, w.ana, "Cliente Escrita")["tags"].([]any) {
+			if strings.EqualFold(x.(string), "urgente") {
+				return true
+			}
+		}
+		return false
+	}
+	if !hasTag() {
+		t.Fatal("etiqueta não apareceu no app")
+	}
+	if _, isErr := w.tool(anaTok, "add_tag", map[string]any{"conversation_id": cid, "tag": "inventada"}); !isErr {
+		t.Fatal("etiqueta inexistente deveria falhar")
+	}
+	if _, isErr := w.tool(anaTok, "remove_tag", map[string]any{"conversation_id": cid, "tag": "urgente"}); isErr || hasTag() {
+		t.Fatal("remove_tag não removeu")
+	}
+
+	// Observação: acrescenta com a marca da IA, sem apagar o que existia.
+	contactID := mustConv(t, w.ana, "Cliente Escrita")["contact"].(map[string]any)["id"].(string)
+	expect(t, w.ana.do("PATCH", "/api/v1/contacts/"+contactID, map[string]any{"note": "Prefere contato pela manhã."}), 204)
+	if _, isErr := w.tool(anaTok, "append_note", map[string]any{"conversation_id": cid, "text": "Pediu o DAS de outubro."}); isErr {
+		t.Fatal("append_note falhou")
+	}
+	note := mustConv(t, w.ana, "Cliente Escrita")["contact"].(map[string]any)["note"].(string)
+	if !strings.HasPrefix(note, "Prefere contato pela manhã.\n[IA · ") || !strings.HasSuffix(note, "Pediu o DAS de outubro.") {
+		t.Fatalf("observação = %q", note)
+	}
+	if _, isErr := w.tool(anaTok, "append_note", map[string]any{"conversation_id": cid, "text": "  "}); !isErr {
+		t.Fatal("texto vazio deveria falhar")
+	}
+
+	// Renomear contato.
+	if _, isErr := w.tool(anaTok, "rename_contact", map[string]any{"contact_id": contactID, "name": "Padaria Sol Ltda"}); isErr || conv(t, w.ana, "Padaria Sol Ltda") == nil {
+		t.Fatal("rename_contact não renomeou")
+	}
+
+	// Adiar e retomar.
+	until := time.Now().Add(2 * time.Hour).Format(time.RFC3339)
+	if _, isErr := w.tool(anaTok, "snooze", map[string]any{"conversation_id": cid, "until": until}); isErr {
+		t.Fatal("snooze falhou")
+	}
+	if mustConv(t, w.ana, "Padaria Sol Ltda")["snoozedUntil"] == nil {
+		t.Fatal("conversa não ficou adiada")
+	}
+	if _, isErr := w.tool(anaTok, "snooze", map[string]any{"conversation_id": cid, "until": "amanhã"}); !isErr {
+		t.Fatal("data inválida deveria falhar")
+	}
+	if _, isErr := w.tool(anaTok, "resume", map[string]any{"conversation_id": cid}); isErr || mustConv(t, w.ana, "Padaria Sol Ltda")["snoozedUntil"] != nil {
+		t.Fatal("resume não retomou")
+	}
+
+	// Lembrete pessoal e agenda.
+	if _, isErr := w.tool(anaTok, "set_reminder", map[string]any{"conversation_id": cid, "text": "Ligar amanhã"}); isErr {
+		t.Fatal("set_reminder falhou")
+	}
+	r := w.ana.do("GET", "/api/v1/conversation-reminders", nil)
+	expect(t, r, 200)
+	if !strings.Contains(string(mustJSON(r.body)), "Ligar amanhã") {
+		t.Fatalf("lembrete não apareceu: %v", r.body)
+	}
+	day := time.Now().AddDate(0, 0, 3).Format("2006-01-02")
+	out, isErr := w.tool(anaTok, "create_agenda_event", map[string]any{"kind": "deadline", "title": "Entregar DAS", "date": day, "team": "Folha", "conversation_id": cid})
+	if isErr || out["id"] == nil {
+		t.Fatalf("create_agenda_event: %v", out)
+	}
+	ag, _ := w.tool(anaTok, "list_agenda", map[string]any{"from": day, "to": day})
+	if len(ag["items"].([]any)) != 1 {
+		t.Fatalf("agenda = %v", ag)
+	}
+	if _, isErr := w.tool(anaTok, "create_agenda_event", map[string]any{"kind": "deadline", "title": "x", "date": day, "team": "Equipe Fantasma"}); !isErr {
+		t.Fatal("equipe inexistente deveria falhar")
+	}
+
+	// Transferir para a Bia.
+	people, _ := w.tool(anaTok, "list_people", map[string]any{})
+	var biaID string
+	for _, pp := range people["people"].([]any) {
+		if pp.(map[string]any)["name"] == "bia" {
+			biaID = pp.(map[string]any)["id"].(string)
+		}
+	}
+	if biaID == "" {
+		t.Fatalf("bia não está em list_people: %v", people)
+	}
+	if o, isErr := w.tool(anaTok, "transfer", map[string]any{"conversation_id": cid, "person_id": biaID}); isErr || o["assignee"] != "bia" {
+		t.Fatalf("transfer: %v", o)
+	}
+
+	// Depois de transferida, a Ana não é mais responsável: a IA dela não pode transferir de volta nem adiar... e a IA da Bia
+	// (outra equipe, mas agora responsável) enxerga e altera; mas não consegue mexer numa conversa que não é dela.
+	if _, isErr := w.tool(biaTok, "add_tag", map[string]any{"conversation_id": cid, "tag": "urgente"}); isErr {
+		t.Fatal("a Bia agora é responsável e deveria conseguir etiquetar")
+	}
+	w.receive("Outro Cliente Folha", "Quero a folha de pagamento")
+	other := mustConv(t, w.ana, "Outro Cliente Folha")["id"].(string)
+	if _, isErr := w.tool(biaTok, "add_tag", map[string]any{"conversation_id": other, "tag": "urgente"}); !isErr {
+		t.Fatal("a Bia não enxerga a fila Folha: não pode alterar")
+	}
+
+	// Auditoria: alvos registrados, nunca o texto.
+	var n int
+	var leaked bool
+	_ = w.e.pool.QueryRow(t.Context(), `SELECT count(*), bool_or(metadata::text ILIKE '%DAS de outubro%' OR metadata::text ILIKE '%Ligar amanhã%')
+		FROM audit_logs WHERE action = 'mcp.call' AND metadata->>'tool' IN ('append_note','set_reminder','add_tag','transfer')`).Scan(&n, &leaked)
+	if n < 5 || leaked {
+		t.Fatalf("auditoria de escrita: %d, vazou=%v", n, leaked)
+	}
+}
+
+func TestAIAccessWriteRateLimitAndSwitchOff(t *testing.T) {
+	w := setupWorld(t)
+	expect(t, w.admin.do("PUT", "/api/v1/ai/settings", map[string]any{"enabled": true, "maskDocuments": true, "allowWrite": true}), 200)
+	tok := w.mkWriteToken(w.ana, "ana")
+	w.receive("Cliente Limite", "oi")
+	cid := mustConv(t, w.ana, "Cliente Limite")["id"].(string)
+	expect(t, w.send(w.ana, cid, "olá"), 201)
+	_ = w.admin.do("POST", "/api/v1/tags", map[string]any{"name": "t1"})
+
+	limited := false
+	for i := 0; i < 25 && !limited; i++ {
+		if _, isErr := w.tool(tok, "add_tag", map[string]any{"conversation_id": cid, "tag": "t1"}); isErr && i >= 19 {
+			limited = true
+		}
+	}
+	if !limited {
+		t.Fatal("alterações deveriam ser limitadas a 20 por minuto")
+	}
+	// O administrador retira a permissão: as ferramentas de escrita somem na hora, mesmo com o token antigo.
+	w.e.svcs.AI.SetRateLimit(1000)
+	expect(t, w.admin.do("PUT", "/api/v1/ai/settings", map[string]any{"enabled": true, "maskDocuments": true, "allowWrite": false}), 200)
+	if toolNames(w, tok)["add_tag"] {
+		t.Fatal("com allowWrite desligado o token antigo não pode mais alterar")
+	}
+}
+
+func mustJSON(v any) []byte { b, _ := json.Marshal(v); return b }

@@ -25,6 +25,7 @@ import (
 const (
 	tokenPrefix      = "chm_"
 	ScopeRead        = "read"
+	ScopeWrite       = "write"
 	maxTokensPerUser = 10
 	defaultTTLDays   = 90
 	maxTTLDays       = 365
@@ -42,6 +43,8 @@ type Settings struct {
 	Enabled       bool `json:"enabled"`
 	MaskDocuments bool `json:"maskDocuments"`
 	MaskPhones    bool `json:"maskPhones"`
+	// AllowWrite libera tokens com escopo de escrita (etiquetar, anotar, adiar, agenda, transferir...).
+	AllowWrite bool `json:"allowWrite"`
 }
 
 // Token é um token pessoal (nunca inclui o segredo).
@@ -67,6 +70,8 @@ type Principal struct {
 	TokenID string
 	Prefix  string
 	Scopes  []string
+	// Write: o token tem escopo de escrita E o administrador liberou alterações.
+	Write bool
 }
 
 type Service struct {
@@ -90,8 +95,8 @@ func NewService(db *pgxpool.Pool) *Service {
 
 func (s *Service) Settings(ctx context.Context) (Settings, error) {
 	var st Settings
-	err := s.db.QueryRow(ctx, `SELECT enabled, mask_documents, mask_phones FROM ai_settings WHERE id`).
-		Scan(&st.Enabled, &st.MaskDocuments, &st.MaskPhones)
+	err := s.db.QueryRow(ctx, `SELECT enabled, mask_documents, mask_phones, allow_write FROM ai_settings WHERE id`).
+		Scan(&st.Enabled, &st.MaskDocuments, &st.MaskPhones, &st.AllowWrite)
 	return st, err
 }
 
@@ -99,11 +104,11 @@ func (s *Service) Settings(ctx context.Context) (Settings, error) {
 func (s *Service) SetSettings(ctx context.Context, actorID, ip string, in Settings) (Settings, error) {
 	err := database.InTx(ctx, s.db, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `UPDATE ai_settings SET enabled = $1, mask_documents = $2, mask_phones = $3,
-			updated_at = now(), updated_by = $4 WHERE id`, in.Enabled, in.MaskDocuments, in.MaskPhones, actorID); err != nil {
+			allow_write = $5, updated_at = now(), updated_by = $4 WHERE id`, in.Enabled, in.MaskDocuments, in.MaskPhones, actorID, in.AllowWrite); err != nil {
 			return err
 		}
 		return audit.Record(ctx, tx, audit.Entry{ActorID: actorID, Action: "ai.settings.update", TargetType: "ai_settings", IP: ip,
-			Metadata: map[string]any{"enabled": in.Enabled, "maskDocuments": in.MaskDocuments, "maskPhones": in.MaskPhones}})
+			Metadata: map[string]any{"enabled": in.Enabled, "maskDocuments": in.MaskDocuments, "maskPhones": in.MaskPhones, "allowWrite": in.AllowWrite}})
 	})
 	if err != nil {
 		return Settings{}, err
@@ -119,7 +124,7 @@ func hashToken(raw string) []byte {
 }
 
 // Create cria um token pessoal. O segredo é devolvido só aqui.
-func (s *Service) Create(ctx context.Context, userID, ip, name string, ttlDays int) (string, Token, error) {
+func (s *Service) Create(ctx context.Context, userID, ip, name string, ttlDays int, scopes []string) (string, Token, error) {
 	name = strings.TrimSpace(name)
 	if name == "" || utf8.RuneCountInString(name) > 80 {
 		return "", Token{}, httpx.FieldErrors{"name": "Dê um nome de até 80 caracteres (ex.: Claude no meu notebook)."}
@@ -130,10 +135,25 @@ func (s *Service) Create(ctx context.Context, userID, ip, name string, ttlDays i
 	if ttlDays > maxTTLDays {
 		return "", Token{}, httpx.FieldErrors{"expiresInDays": "A validade máxima é de 365 dias."}
 	}
-	if st, err := s.Settings(ctx); err != nil {
+	granted := []string{ScopeRead}
+	for _, sc := range scopes {
+		switch sc {
+		case ScopeRead:
+		case ScopeWrite:
+			granted = append(granted, ScopeWrite)
+		default:
+			return "", Token{}, httpx.FieldErrors{"scopes": "Escopo inválido."}
+		}
+	}
+	st, err := s.Settings(ctx)
+	if err != nil {
 		return "", Token{}, err
-	} else if !st.Enabled {
+	}
+	if !st.Enabled {
 		return "", Token{}, ErrDisabled
+	}
+	if len(granted) > 1 && !st.AllowWrite {
+		return "", Token{}, httpx.FieldErrors{"scopes": "O administrador ainda não liberou alterações pela IA (Configurações → Integrações)."}
 	}
 	var active int
 	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM api_tokens WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()`, userID).Scan(&active); err != nil {
@@ -150,15 +170,15 @@ func (s *Service) Create(ctx context.Context, userID, ip, name string, ttlDays i
 	prefix := raw[:len(tokenPrefix)+6]
 	exp := time.Now().Add(time.Duration(ttlDays) * 24 * time.Hour)
 	var t Token
-	err := database.InTx(ctx, s.db, func(tx pgx.Tx) error {
+	err = database.InTx(ctx, s.db, func(tx pgx.Tx) error {
 		if err := tx.QueryRow(ctx, `
-			INSERT INTO api_tokens (user_id, name, prefix, token_hash, expires_at) VALUES ($1, $2, $3, $4, $5)
+			INSERT INTO api_tokens (user_id, name, prefix, token_hash, expires_at, scopes) VALUES ($1, $2, $3, $4, $5, $6)
 			RETURNING id::text, name, prefix, scopes, expires_at, created_at`,
-			userID, name, prefix, hashToken(raw), exp).Scan(&t.ID, &t.Name, &t.Prefix, &t.Scopes, &t.ExpiresAt, &t.CreatedAt); err != nil {
+			userID, name, prefix, hashToken(raw), exp, granted).Scan(&t.ID, &t.Name, &t.Prefix, &t.Scopes, &t.ExpiresAt, &t.CreatedAt); err != nil {
 			return err
 		}
 		return audit.Record(ctx, tx, audit.Entry{ActorID: userID, Action: "ai.token.create", TargetType: "api_token", TargetID: t.ID, IP: ip,
-			Metadata: map[string]any{"prefix": prefix, "expiresInDays": ttlDays}})
+			Metadata: map[string]any{"prefix": prefix, "expiresInDays": ttlDays, "scopes": granted}})
 	})
 	if err != nil {
 		return "", Token{}, err
@@ -236,10 +256,17 @@ func (s *Service) Authenticate(ctx context.Context, raw string) (Principal, erro
 	if subtle.ConstantTimeCompare(hash, hashToken(raw)) != 1 {
 		return Principal{}, ErrBadToken
 	}
-	if st, err := s.Settings(ctx); err != nil {
+	st, err := s.Settings(ctx)
+	if err != nil {
 		return Principal{}, err
-	} else if !st.Enabled {
+	}
+	if !st.Enabled {
 		return Principal{}, ErrDisabled
+	}
+	for _, sc := range p.Scopes {
+		if sc == ScopeWrite && st.AllowWrite {
+			p.Write = true
+		}
 	}
 	if last == nil || time.Since(*last) > time.Minute {
 		_, _ = s.db.Exec(ctx, `UPDATE api_tokens SET last_used_at = now() WHERE id = $1`, p.TokenID)
@@ -255,13 +282,24 @@ func (s *Service) SetRateLimit(n int) {
 }
 
 // Allow aplica o limite de chamadas por token (janela de 1 minuto).
-func (s *Service) Allow(tokenID string) bool {
+func (s *Service) Allow(tokenID string) bool { return s.allow(tokenID, s.rateLimit()) }
+
+// AllowWriteCall limita as alterações por token (20 por minuto, bem abaixo das leituras).
+func (s *Service) AllowWriteCall(tokenID string) bool { return s.allow("w:"+tokenID, 20) }
+
+func (s *Service) rateLimit() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.limit
+}
+
+func (s *Service) allow(key string, limit int) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now()
-	b := s.buckets[tokenID]
+	b := s.buckets[key]
 	if b == nil || now.Sub(b.windowStart) >= time.Minute {
-		s.buckets[tokenID] = &bucket{windowStart: now, count: 1}
+		s.buckets[key] = &bucket{windowStart: now, count: 1}
 		if len(s.buckets) > 5000 { // não crescer sem limite
 			for k, v := range s.buckets {
 				if now.Sub(v.windowStart) >= time.Minute {
@@ -272,7 +310,7 @@ func (s *Service) Allow(tokenID string) bool {
 		return true
 	}
 	b.count++
-	return b.count <= s.limit
+	return b.count <= limit
 }
 
 // Record grava uma chamada de ferramenta na auditoria (sem conteúdo de mensagens).

@@ -74,14 +74,15 @@ func (h *Handler) listTokens(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Name          string `json:"name"`
-		ExpiresInDays int    `json:"expiresInDays"`
+		Name          string   `json:"name"`
+		ExpiresInDays int      `json:"expiresInDays"`
+		Scopes        []string `json:"scopes"`
 	}
 	if !httpx.Decode(w, r, &in) {
 		return
 	}
 	sess := auth.MustFromContext(r.Context())
-	raw, t, err := h.svc.Create(r.Context(), sess.UserID, clientIP(r), in.Name, in.ExpiresInDays)
+	raw, t, err := h.svc.Create(r.Context(), sess.UserID, clientIP(r), in.Name, in.ExpiresInDays, in.Scopes)
 	if err != nil {
 		h.fail(w, r, err)
 		return
