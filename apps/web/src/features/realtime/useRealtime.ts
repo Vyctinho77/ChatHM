@@ -15,7 +15,7 @@ type ServerEvent =
   | { type: "whatsapp.status"; data: Omit<Connection, "qr" | "simulator"> }
   | { type: "whatsapp.qr"; data: Connection["qr"] };
 // History import progresses independently from the live connection.
-type HistoryEvent = { type: "whatsapp.sync"; data: HistoryProgress };
+type HistoryEvent = { type: "whatsapp.sync"; data: HistoryProgress } | { type: "contact.avatar"; data: { contactId: string } };
 
 const sortByLast = (a: Conversation, b: Conversation) =>
   (b.lastMessage?.sentAt ?? "").localeCompare(a.lastMessage?.sentAt ?? "");
@@ -62,6 +62,11 @@ export function applyRealtimeEvent(qc: QueryClient, ev: ServerEvent | HistoryEve
       break;
     case "whatsapp.qr":
       qc.setQueryData<Connection>(connectionKey, (old) => (old && old.state === "pending_qr" && !old.pairingComplete ? { ...old, qr: ev.data } : old));
+      break;
+    case "contact.avatar":
+      // Nova foto de perfil: recarrega listas que mostram avatares.
+      void qc.invalidateQueries({ queryKey: ["contacts"] });
+      void qc.invalidateQueries({ queryKey: conversationKeys.list });
       break;
     case "whatsapp.sync":
       qc.setQueryData<Connection>(connectionKey, (old) => old ? { ...old, sync: ev.data } : old);

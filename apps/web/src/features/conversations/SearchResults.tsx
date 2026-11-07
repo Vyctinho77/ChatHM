@@ -1,4 +1,5 @@
-import { MessageSquarePlus, UserRound } from "lucide-react";
+import { MessageSquarePlus } from "lucide-react";
+import { Avatar } from "@/components/Avatar";
 import { Highlight } from "@/components/Highlight";
 import { Spinner } from "@/components/ui";
 import { formatListTime } from "@/lib/format";
@@ -34,9 +35,7 @@ export function SearchResults({
                   onClick={() => onOpenContact(c)}
                   className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-hover"
                 >
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-hover text-muted">
-                    <UserRound className="size-4" />
-                  </span>
+                  <Avatar name={c.name} src={c.avatarUrl} group={c.kind === "group"} size="list" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13.5px] font-medium">
                       <Highlight text={c.name} term={term} />

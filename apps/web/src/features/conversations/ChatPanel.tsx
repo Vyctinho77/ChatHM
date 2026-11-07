@@ -210,7 +210,7 @@ export function ChatPanel({
           aria-label="Ver dados do contato"
           className="flex min-w-0 items-center gap-2.5 rounded-lg py-1 pl-1 pr-2.5 text-left hover:bg-hover"
         >
-          <Avatar name={c.contact.name} src={c.contact.avatarUrl} />
+          <Avatar name={c.contact.name} src={c.contact.avatarUrl} group={c.contact.kind === "group"} />
           <span className="min-w-0">
             <span className="flex min-w-0 items-center gap-2">
               <span className="truncate text-[13.5px] font-semibold">{c.contact.name}</span>
@@ -382,7 +382,7 @@ export function ChatPanel({
             const prev = shown[i - 1];
             const newDay = !prev || !sameDay(prev.sentAt, m.sentAt);
             const newAttendance = !!prev && prev.conversationId !== m.conversationId;
-            const showAuthor = m.direction === "out" && (!prev || newDay || prev.direction !== "out" || prev.authorName !== m.authorName);
+            const showAuthor = (m.direction === "out" || !!m.group) && (!prev || newDay || prev.direction !== m.direction || prev.authorName !== m.authorName);
             return (
               <Fragment key={m.id}>
                 {newDay && (

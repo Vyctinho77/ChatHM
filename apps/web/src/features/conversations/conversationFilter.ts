@@ -1,6 +1,6 @@
 import type { Conversation } from "./types";
 
-export type ConversationFilter = "mine" | "general" | "all" | "snoozed";
+export type ConversationFilter = "mine" | "general" | "groups" | "all" | "snoozed";
 
 export function filterConversations(conversations: Conversation[], filter: ConversationFilter, myId: string, segment: string | null) {
   return conversations.filter((c) => {
@@ -9,6 +9,7 @@ export function filterConversations(conversations: Conversation[], filter: Conve
     if (filter === "snoozed" ? !c.snoozedUntil : !!c.snoozedUntil) return false;
     if (filter === "mine" && c.assignee?.id !== myId) return false;
     if (filter === "general" && c.segment !== "geral") return false;
+    if (filter === "groups" && c.contact.kind !== "group") return false;
     return !segment || c.segment === segment;
   }).sort((a, b) => filter === "snoozed" ? Date.parse(a.snoozedUntil!) - Date.parse(b.snoozedUntil!) : 0);
 }

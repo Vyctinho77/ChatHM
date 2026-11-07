@@ -208,6 +208,9 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 	if payload == nil {
 		payload = map[string]any{}
 	}
+	if m.IsGroup {
+		payload["group"] = true // mensagens de grupo mostram o autor
+	}
 
 	var convID, msgID string
 	var before userSet
@@ -224,12 +227,14 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 
 		var contactID string
 		if err := tx.QueryRow(ctx, `
-			INSERT INTO contacts (wa_id, phone, name) VALUES ($1, $2, $3)
+			INSERT INTO contacts (wa_id, phone, name, kind) VALUES ($1, $2, $3, $4)
 			ON CONFLICT (wa_id) DO UPDATE SET
 			    phone = CASE WHEN contacts.phone = '' THEN EXCLUDED.phone ELSE contacts.phone END,
-			    name  = CASE WHEN contacts.name = '' THEN EXCLUDED.name ELSE contacts.name END
+			    -- o assunto do grupo acompanha renomeações; nomes de pessoas só são preenchidos se vazios
+			    name  = CASE WHEN contacts.name = '' OR (EXCLUDED.kind = 'group' AND EXCLUDED.name <> '')
+			                 THEN EXCLUDED.name ELSE contacts.name END
 			RETURNING id`,
-			m.ContactWAID, m.ContactPhone, strings.TrimSpace(m.PushName)).Scan(&contactID); err != nil {
+			m.ContactWAID, m.ContactPhone, contactName(m), contactKind(m)).Scan(&contactID); err != nil {
 			return err
 		}
 
@@ -371,6 +376,24 @@ func senderLabel(m whatsapp.InboundMessage) string {
 	if m.FromMe {
 		return ""
 	}
+	if m.IsGroup {
+		return strings.TrimSpace(m.SenderName)
+	}
+	return strings.TrimSpace(m.PushName)
+}
+
+func contactKind(m whatsapp.InboundMessage) string {
+	if m.IsGroup {
+		return "group"
+	}
+	return "person"
+}
+
+// contactName: o assunto para grupos, o nome de perfil para pessoas.
+func contactName(m whatsapp.InboundMessage) string {
+	if m.IsGroup {
+		return strings.TrimSpace(m.GroupName)
+	}
 	return strings.TrimSpace(m.PushName)
 }
 
@@ -383,6 +406,22 @@ type Contact struct {
 	Phone   string `json:"phone"`
 	Company string `json:"company,omitempty"`
 	Note    string `json:"note"`
+	// Kind: "person" ou "group". Avatar: URL da foto de perfil (vazio = iniciais).
+	Kind   string `json:"kind"`
+	Avatar string `json:"avatarUrl,omitempty"`
+}
+
+// finish preenche os campos derivados da linha de contacts.
+func (c *Contact) finish(name, phone, waID, kind string, avatarVersion int64) {
+	c.Kind = kind
+	c.Name = displayName(name, phone, waID)
+	if kind == "group" && name == "" {
+		c.Name = "Grupo"
+	}
+	c.Phone = FormatPhone(phone)
+	if avatarVersion > 0 {
+		c.Avatar = fmt.Sprintf("/api/v1/contacts/%s/avatar?v=%d", c.ID, avatarVersion)
+	}
 }
 
 type Ref struct {
@@ -443,7 +482,7 @@ func (r msgRow) message() Message {
 	if r.attachmentID != nil {
 		m["url"] = "/api/v1/attachments/" + *r.attachmentID
 	}
-	if r.dir == "out" && r.sender != "" {
+	if r.sender != "" && (r.dir == "out" || m["group"] == true) {
 		m["authorName"] = r.sender
 	}
 	switch r.kind {
@@ -469,7 +508,7 @@ func displayName(name, phone, waID string) string {
 
 const listQuery = `
 	SELECT c.id, c.status, c.unread_count, c.last_message_at, c.classification, c.snoozed_until,
-	       ct.id, ct.name, ct.phone, ct.wa_id, ct.company, ct.note,
+	       ct.id, ct.name, ct.phone, ct.wa_id, ct.company, ct.note, ct.kind, ct.avatar_version,
 	       u.id, u.name,
 	       s.key, s.name::text,
 	       coalesce((SELECT array_agg(t.name::text ORDER BY t.name) FROM conversation_tags cg
@@ -488,6 +527,8 @@ func scanConversation(row pgx.Row) (Conversation, error) {
 	var (
 		c                 Conversation
 		name, phone, waID string
+		kind              string
+		avatarVer         int64
 		uID, uName        *string
 		segKey, segName   *string
 		lm                struct {
@@ -498,14 +539,13 @@ func scanConversation(row pgx.Row) (Conversation, error) {
 		}
 	)
 	err := row.Scan(&c.ID, &c.Status, &c.UnreadCount, &c.UpdatedAt, &c.Classification, &c.SnoozedUntil,
-		&c.Contact.ID, &name, &phone, &waID, &c.Contact.Company, &c.Contact.Note,
+		&c.Contact.ID, &name, &phone, &waID, &c.Contact.Company, &c.Contact.Note, &kind, &avatarVer,
 		&uID, &uName, &segKey, &segName, &c.Tags,
 		&lm.id, &lm.convID, &lm.dir, &lm.kind, &lm.body, &lm.payload, &lm.status, &lm.sentAt, &lm.sender, &lm.deliveredAt, &lm.readAt)
 	if err != nil {
 		return c, err
 	}
-	c.Contact.Name = displayName(name, phone, waID)
-	c.Contact.Phone = FormatPhone(phone)
+	c.Contact.finish(name, phone, waID, kind, avatarVer)
 	if c.Contact.Phone == "" {
 		c.Contact.Phone = waID
 	}

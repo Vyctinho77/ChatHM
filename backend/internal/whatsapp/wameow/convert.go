@@ -16,10 +16,10 @@ import (
 func convertMessage(ctx context.Context, cli *whatsmeow.Client, e *events.Message) (whatsapp.InboundMessage, bool) {
 	info := e.Info
 	chat := info.Chat
-	if info.IsGroup || chat.Server == types.GroupServer || chat.Server == types.BroadcastServer ||
-		chat.Server == types.NewsletterServer || e.IsEdit {
+	if chat.Server == types.BroadcastServer || chat.Server == types.NewsletterServer || e.IsEdit {
 		return whatsapp.InboundMessage{}, false
 	}
+	group := info.IsGroup || chat.Server == types.GroupServer
 
 	out := whatsapp.InboundMessage{
 		ExternalID: string(info.ID),
@@ -28,13 +28,22 @@ func convertMessage(ctx context.Context, cli *whatsmeow.Client, e *events.Messag
 		Timestamp:  info.Timestamp,
 		Payload:    map[string]any{},
 	}
-	if !info.IsFromMe {
+	if group {
+		out.IsGroup = true
+		out.ContactWAID = chat.ToNonAD().String()
+		if !info.IsFromMe {
+			out.SenderName = info.PushName
+			if out.SenderName == "" && info.Sender.Server == types.DefaultUserServer {
+				out.SenderName = "+" + info.Sender.User
+			}
+		}
+	} else if !info.IsFromMe {
 		out.PushName = info.PushName
 	}
 
 	// Contato: preferir o número de telefone; conversas novas podem vir por LID.
 	pn := chat.ToNonAD()
-	if pn.Server == types.HiddenUserServer {
+	if !group && pn.Server == types.HiddenUserServer {
 		alt := info.SenderAlt
 		if info.IsFromMe {
 			alt = info.RecipientAlt
@@ -47,7 +56,9 @@ func convertMessage(ctx context.Context, cli *whatsmeow.Client, e *events.Messag
 			}
 		}
 	}
-	if pn.Server == types.DefaultUserServer {
+	if group {
+		// já definido acima
+	} else if pn.Server == types.DefaultUserServer {
 		out.ContactWAID = pn.User
 		out.ContactPhone = "+" + pn.User
 	} else {

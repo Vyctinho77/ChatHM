@@ -49,7 +49,7 @@ conversas e mensagens são atualizadas.
 O histórico não incrementa não lidas, não classifica filas com base em textos
 antigos e usa os mesmos identificadores para evitar duplicação. Arquivos antigos
 de mídia não são baixados em massa; seus metadados e legendas são preservados.
-Grupos, status e canais continuam fora do escopo.
+Status e canais continuam fora do escopo.
 
 A quantidade de histórico depende do que o WhatsApp disponibiliza ao dispositivo
 vinculado. Lotes recebidos antes desta implementação não são recuperados apenas
@@ -107,7 +107,7 @@ Os testes em `wameow/store_test.go` verificam que nenhum segredo aparece em clar
 - **Um número por instalação** (MVP de um escritório).
 - **Mídias**: áudio, imagem e documento chegam com metadados (tamanho, duração, nome do arquivo); o **download do
   arquivo** e a reprodução chegam na Fase 4 (armazenamento S3 privado).
-- **Ignorados nesta fase**: grupos, status, canais, reações, edições e mensagens apagadas, histórico antigo
+- **Ignorados nesta fase**: status, canais, reações, edições e mensagens apagadas, histórico antigo
   sincronizado ao parear (só mensagens novas entram), vídeos/figurinhas/contatos/enquetes (exibidos como
   "não suportado").
 - **Envio**: texto (Fase 3). O ID da mensagem é gerado antes do envio e reaproveitado em tentativas, então o
@@ -135,3 +135,14 @@ tela Conexão WhatsApp.
   Para preservar 100% (ex.: scans) use **Documento**.
 - **Limitações**: vídeo, figurinhas, contatos e localização em tempo real aparecem como "não exibido"; o adaptador S3 e o envio/recebimento de
   mídia por um celular real ainda não foram validados em campo.
+
+## Grupos e fotos de perfil
+
+- **Grupos** entram como contatos do tipo `group` (`contacts.kind`): `wa_id` é o JID do grupo (`...@g.us`) e `name`
+  é o assunto (acompanha renomeações). Cada grupo tem uma única conversa; as respostas vão para o grupo e cada
+  mensagem recebida guarda quem escreveu (`authorName`). Na interface há o filtro **Grupos** na lista de conversas
+  e a aba **Grupos** em Clientes. Recibos de leitura de grupos são ignorados.
+- **Fotos de perfil** (pessoas e grupos): a miniatura é baixada do WhatsApp em segundo plano quando chega
+  mensagem (no máximo 2 consultas simultâneas; recheca em 7 dias com foto, 1 dia sem foto), guardada em
+  `contacts.avatar` e servida por `GET /contacts/{id}/avatar` (exige sessão). O campo `avatarUrl` do contato
+  traz a URL com `?v=` para o cache do navegador. Sem foto (ou privada), a interface mostra as iniciais (ou o ícone de grupo).

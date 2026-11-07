@@ -31,7 +31,8 @@ type Base = {
   status?: DeliveryStatus; // apenas mensagens enviadas
   deliveredAt?: string; // recibo de entrega (mensagens enviadas)
   readAt?: string; // recibo de leitura (mensagens enviadas)
-  authorName?: string; // atendente que enviou
+  authorName?: string; // atendente que enviou (ou, em grupos, quem escreveu)
+  group?: boolean; // mensagem de grupo: mostra o autor também nas recebidas
   historical?: boolean;
   /** Mídia recebida sem arquivo: o download falhou ou foi bloqueado pela verificação de segurança. */
   mediaState?: "failed" | "blocked";
@@ -54,6 +55,8 @@ export type Contact = {
   phone: string;
   company?: string;
   avatarUrl?: string;
+  /** "group" = grupo do WhatsApp (o nome é o assunto). */
+  kind?: "person" | "group";
   note: string;
 };
 

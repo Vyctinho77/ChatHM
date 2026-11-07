@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { Phone, Search, UserRound } from "lucide-react";
+import { Phone, Search } from "lucide-react";
+import { Avatar } from "@/components/Avatar";
 import { Highlight } from "@/components/Highlight";
 import { Alert, Modal } from "@/components/ui";
 import { errorMessage, fieldErrors } from "@/lib/api";
@@ -87,9 +88,7 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
                 onClick={() => go(() => (c.conversationId ? Promise.resolve({ id: c.conversationId }) : opener.openContact(c.id)))}
                 className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-hover disabled:opacity-60"
               >
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-hover text-muted">
-                  <UserRound className="size-4" />
-                </span>
+                <Avatar name={c.name} src={c.avatarUrl} group={c.kind === "group"} size="list" />
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium">
                     <Highlight text={c.name} term={q} />

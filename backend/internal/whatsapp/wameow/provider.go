@@ -54,6 +54,7 @@ type Provider struct {
 	historyClient   *whatsmeow.Client
 	historyProgress whatsapp.HistoryProgress
 	contactsSyncing bool
+	groupNames      map[types.JID]groupNameEntry
 }
 
 func (p *Provider) HasSession(ctx context.Context) (bool, error) {
@@ -293,6 +294,11 @@ func (p *Provider) handle(cli *whatsmeow.Client) func(any) {
 			p.h.OnDisconnected("Conexão perdida; tentando reconectar.", false)
 		case *events.Message:
 			if m, ok := convertMessage(context.Background(), cli, e); ok {
+				if m.IsGroup {
+					if gj, err := types.ParseJID(m.ChatJID); err == nil {
+						m.GroupName = p.groupName(cli, gj)
+					}
+				}
 				p.h.OnMessage(m)
 			}
 		case *events.HistorySync:

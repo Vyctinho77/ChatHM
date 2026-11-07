@@ -33,6 +33,7 @@ func viewer(r *http.Request) Viewer {
 func (h *Handler) Routes(r chi.Router) {
 	r.Get("/contacts", h.contacts)
 	r.Get("/search", h.search)
+	r.Get("/contacts/{id}/avatar", h.avatar)
 	r.Post("/contacts/{id}/conversation", h.openForContact)
 	r.Post("/conversations/open", h.openByPhone)
 	r.Get("/conversations", h.list)
@@ -424,4 +425,25 @@ func writeOpenError(w http.ResponseWriter, r *http.Request, err error) {
 		return
 	}
 	writeError(w, r, err)
+}
+
+// avatar entrega a foto de perfil (JPEG) de um contato ou grupo. Exige sessão; o navegador pode
+// guardar por um dia porque a URL muda (?v=) quando a foto muda.
+func (h *Handler) avatar(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if !httpx.ValidUUID(id) {
+		http.NotFound(w, r)
+		return
+	}
+	var b []byte
+	if err := h.svc.db.QueryRow(r.Context(), `SELECT avatar FROM contacts WHERE id = $1`, id).Scan(&b); err != nil || len(b) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	hd := w.Header()
+	hd.Set("Content-Type", "image/jpeg")
+	hd.Set("X-Content-Type-Options", "nosniff")
+	hd.Set("Cache-Control", "private, max-age=86400")
+	hd.Set("Content-Security-Policy", "sandbox; default-src 'none'")
+	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(b))
 }

@@ -36,7 +36,7 @@ func historyContact(jid types.JID, name string) (whatsapp.HistoryContact, bool) 
 // preserving IDs for deduplication and sorting each chunk chronologically.
 func historyMessages(cli *whatsmeow.Client, conv *waHistorySync.Conversation, names map[string]string) []whatsapp.InboundMessage {
 	chat, err := types.ParseJID(conv.GetID())
-	if err != nil || (chat.Server != types.DefaultUserServer && chat.Server != types.HiddenUserServer) {
+	if err != nil || (chat.Server != types.DefaultUserServer && chat.Server != types.HiddenUserServer && chat.Server != types.GroupServer) {
 		return nil
 	}
 	name := conv.GetDisplayName()
@@ -67,7 +67,9 @@ func historyMessages(cli *whatsmeow.Client, conv *waHistorySync.Conversation, na
 		msg.Historical = true
 		msg.Payload["historical"] = true
 		msg.Download = nil // Historical media may have expired; import metadata only.
-		if msg.PushName == "" {
+		if msg.IsGroup {
+			msg.GroupName = name
+		} else if msg.PushName == "" {
 			msg.PushName = name
 		}
 		result = append(result, msg)

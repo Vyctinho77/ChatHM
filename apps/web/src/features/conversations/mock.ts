@@ -59,6 +59,19 @@ export function buildMock(myId: string, myName: string) {
       messages: [{ direction: "in", sentAt: at(0, 9, 0), kind: "audio", durationSec: 12, waveform: wave(5) }],
     },
     {
+      id: "cg1",
+      contact: { id: "pg1", name: "Condomínio Bella Vista", phone: "", kind: "group", note: "" },
+      segment: "geral",
+      status: "new",
+      unreadCount: 2,
+      tags: [],
+      messages: [
+        { direction: "in", sentAt: at(0, 8, 41), kind: "text", text: "Bom dia! Alguém consegue a certidão negativa do condomínio?", authorName: "Marta Lima", group: true },
+        { direction: "in", sentAt: at(0, 8, 43), kind: "text", text: "Eu envio ainda hoje", authorName: "João Ribeiro", group: true },
+        { direction: "in", sentAt: at(0, 8, 44), kind: "text", text: "Obrigada!", authorName: "Marta Lima", group: true },
+      ],
+    },
+    {
       id: "c3",
       contact: { id: "p3", name: "Drogaria Bom Preço", phone: "+55 48 99102-7788", company: "Drogaria Bom Preço LTDA", note: "" },
       segment: "folha",

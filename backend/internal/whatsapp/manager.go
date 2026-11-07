@@ -59,6 +59,9 @@ type Manager struct {
 	pub              Publisher
 	ingest           Ingestor
 	onRcpt           ReceiptHandler
+	avatarMu         sync.Mutex
+	avatarBusy       map[string]bool
+	avatarSem        chan struct{}
 	onHistoryContact func(context.Context, HistoryContact) error
 	p                Provider
 	log              *slog.Logger
@@ -306,7 +309,9 @@ func (m *Manager) OnMessage(msg InboundMessage) {
 	if _, err := m.ingest(ctx, msg); err != nil {
 		// Sem conteúdo da mensagem no log.
 		m.log.Error("gravando mensagem recebida", "external_id", msg.ExternalID, "kind", msg.Kind, "err", err)
+		return
 	}
+	go m.refreshAvatar(msg.ContactWAID, msg.ChatJID)
 }
 
 // --- interno ---------------------------------------------------------------

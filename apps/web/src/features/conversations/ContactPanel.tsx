@@ -28,7 +28,7 @@ export function ContactPanel({ conversation: c, onClose }: { conversation: Conve
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col items-center gap-2 border-b border-line px-6 py-6 text-center">
-          <Avatar name={c.contact.name} src={c.contact.avatarUrl} size="lg" />
+          <Avatar name={c.contact.name} src={c.contact.avatarUrl} group={c.contact.kind === "group"} size="lg" />
           <p className="mt-1.5 text-[15px] font-semibold">{c.contact.name}</p>
           <p className="text-[12.5px] text-muted">{c.contact.phone}</p>
         </div>

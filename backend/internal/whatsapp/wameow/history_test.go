@@ -37,8 +37,10 @@ func TestHistoryMessagesKeepIdentityAndChronology(t *testing.T) {
 		t.Fatal("history must not auto-download media")
 	}
 	conv.ID = proto.String("123@g.us")
-	if len(historyMessages(cli, conv, nil)) != 0 {
-		t.Fatal("unsupported group history imported")
+	for _, m := range historyMessages(cli, conv, nil) {
+		if !m.IsGroup || m.GroupName != "Cliente" || m.ContactWAID != "123@g.us" {
+			t.Fatalf("grupo no histórico: %+v", m)
+		}
 	}
 }
 

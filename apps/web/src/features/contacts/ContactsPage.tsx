@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { MessageSquarePlus, MessageSquareText, Search, UserRound } from "lucide-react";
+import { MessageSquarePlus, MessageSquareText, Search } from "lucide-react";
+import { Avatar } from "@/components/Avatar";
+import { cn } from "@/lib/cn";
 import { Highlight } from "@/components/Highlight";
 import { Page, PageHeader } from "@/components/list";
 import { Alert, Button } from "@/components/ui";
@@ -12,6 +14,7 @@ import { useContacts } from "./api";
 
 export function ContactsPage() {
   const [search, setSearch] = useState("");
+  const [tab, setTab] = useState<"person" | "group">("person");
   const [busy, setBusy] = useState<string | null>(null);
   const [failure, setFailure] = useState("");
   const navigate = useNavigate();
@@ -19,7 +22,9 @@ export function ContactsPage() {
   const { contacts, isPending, error } = useContacts();
   const term = search.trim();
   // Sem acento/maiúscula; com 3+ dígitos casa também pedaços do telefone.
-  const visible = contacts.filter((c) => matches(`${c.name} ${c.phone} ${c.company ?? ""}`, term));
+  const inTab = contacts.filter((c) => (c.kind === "group" ? "group" : "person") === tab);
+  const groupCount = contacts.filter((c) => c.kind === "group").length;
+  const visible = inTab.filter((c) => matches(`${c.name} ${c.phone} ${c.company ?? ""}`, term));
 
   async function start(contactId: string) {
     setBusy(contactId);
@@ -41,7 +46,7 @@ export function ContactsPage() {
         actions={
           <div className="flex min-w-0 items-center gap-3">
             <span className="sr-only whitespace-nowrap text-xs text-muted sm:not-sr-only" aria-live="polite">
-              {term ? `${visible.length} de ${contacts.length}` : contacts.length} contatos
+              {term ? `${visible.length} de ${inTab.length}` : inTab.length} {tab === "group" ? "grupos" : "contatos"}
             </span>
           <label className="flex h-9 w-[min(52vw,24rem)] items-center gap-2 rounded-lg border border-line bg-elevated px-3 text-[13px] focus-within:border-accent sm:w-80 lg:w-96">
             <Search className="size-4 shrink-0 text-muted" aria-hidden="true" />
@@ -57,6 +62,20 @@ export function ContactsPage() {
         }
       />
       <div className="mx-auto max-w-4xl px-4 py-5 sm:px-6">
+        <div role="tablist" aria-label="Tipo de contato" className="mb-3 flex gap-1 text-[13px]">
+          {([["person", "Pessoas"], ["group", `Grupos${groupCount ? ` (${groupCount})` : ""}`]] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={tab === key}
+              onClick={() => setTab(key)}
+              className={cn("rounded-lg px-3 py-1.5 transition-colors", tab === key ? "bg-selected font-semibold text-brand-ink" : "text-muted hover:bg-hover hover:text-fg")}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         {failure && (
           <div className="mb-3">
             <Alert>{failure}</Alert>
@@ -66,21 +85,19 @@ export function ContactsPage() {
         {error && <Alert>{errorMessage(error)}</Alert>}
         {!isPending && !error && visible.length === 0 && (
           <p className="py-12 text-center text-sm text-muted">
-            {search ? "Nenhum contato encontrado." : "Os contatos do WhatsApp aparecerão aqui após a sincronização."}
+            {search ? "Nenhum contato encontrado." : tab === "group" ? "Os grupos aparecem aqui quando alguém escreve neles." : "Os contatos do WhatsApp aparecerão aqui após a sincronização."}
           </p>
         )}
         <ul className="divide-y divide-line">
           {visible.map((c) => (
             <li key={c.id} className="flex items-center gap-3 py-3">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-hover text-muted">
-                <UserRound className="size-5" />
-              </span>
+              <Avatar name={c.name} src={c.avatarUrl} group={c.kind === "group"} />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">
                   <Highlight text={c.name} term={term} />
                 </p>
                 <p className="mt-0.5 truncate text-xs text-muted">
-                  <Highlight text={[c.phone, c.company].filter(Boolean).join(" · ") || "Telefone não informado"} term={term} />
+                  <Highlight text={[c.phone, c.company].filter(Boolean).join(" · ") || (c.kind === "group" ? "Grupo do WhatsApp" : "Telefone não informado")} term={term} />
                 </p>
               </div>
               {c.conversationId ? (

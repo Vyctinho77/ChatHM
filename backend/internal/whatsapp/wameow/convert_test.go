@@ -89,11 +89,6 @@ func TestConvertMessage(t *testing.T) {
 	// Ignorados: grupo, status, reação e edição.
 	group := types.NewJID("120363", types.GroupServer)
 	ignored := []*events.Message{
-		func() *events.Message {
-			e := msgEvent(group, &waE2E.Message{Conversation: proto.String("x")})
-			e.Info.IsGroup = true
-			return e
-		}(),
 		msgEvent(types.StatusBroadcastJID, &waE2E.Message{Conversation: proto.String("x")}),
 		msgEvent(pn, &waE2E.Message{ReactionMessage: &waE2E.ReactionMessage{Text: proto.String("👍")}}),
 		func() *events.Message {
@@ -101,6 +96,13 @@ func TestConvertMessage(t *testing.T) {
 			e.IsEdit = true
 			return e
 		}(),
+	}
+	// Grupos agora são importados: o contato é o JID do grupo e o autor vai em SenderName.
+	ge := msgEvent(group, &waE2E.Message{Conversation: proto.String("oi grupo")})
+	ge.Info.IsGroup = true
+	ge.Info.PushName = "Marta"
+	if g, ok := convertMessage(ctx, nil, ge); !ok || !g.IsGroup || g.ContactWAID != group.String() || g.SenderName != "Marta" || g.PushName != "" || g.ChatJID != group.String() {
+		t.Fatalf("grupo = %+v ok=%v", g, ok)
 	}
 	for i, e := range ignored {
 		if _, ok := convertMessage(ctx, nil, e); ok {

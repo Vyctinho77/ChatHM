@@ -48,12 +48,16 @@ type InboundMessage struct {
 	ContactWAID  string // identificador estável do contato (número ou LID)
 	ContactPhone string // E.164 quando conhecido
 	PushName     string
-	FromMe       bool // enviada pelo celular do escritório
-	Historical   bool // importada do histórico; não incrementa não lidas
-	Timestamp    time.Time
-	Kind         Kind
-	Body         string         // texto ou legenda
-	Payload      map[string]any // metadados (mídia, localização); nunca o binário
+	// Grupos: ContactWAID/ChatJID são o JID do grupo; SenderName é quem escreveu.
+	IsGroup    bool
+	GroupName  string
+	SenderName string
+	FromMe     bool // enviada pelo celular do escritório
+	Historical bool // importada do histórico; não incrementa não lidas
+	Timestamp  time.Time
+	Kind       Kind
+	Body       string         // texto ou legenda
+	Payload    map[string]any // metadados (mídia, localização); nunca o binário
 	// Download baixa o arquivo da mídia (nil quando a mensagem não tem arquivo).
 	Download func(ctx context.Context) ([]byte, error) `json:"-"`
 }
@@ -134,6 +138,8 @@ type Provider interface {
 	SendMedia(ctx context.Context, chatJID, messageID string, m MediaSend) error
 	// SendLocation envia uma localização estática.
 	SendLocation(ctx context.Context, chatJID, messageID string, l Location) error
+	// ProfilePicture baixa a miniatura da foto de perfil (nil, nil quando não há foto ou ela é privada).
+	ProfilePicture(ctx context.Context, jid string) ([]byte, error)
 }
 
 // Factory cria o provedor ligado ao handler de eventos.

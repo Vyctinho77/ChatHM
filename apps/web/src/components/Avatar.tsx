@@ -1,3 +1,4 @@
+import { Users } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { initials } from "@/lib/format";
 
@@ -24,11 +25,14 @@ const sizes = {
 export function Avatar({
   name,
   src,
+  group,
   size = "md",
   className,
 }: {
   name: string;
   src?: string;
+  /** Grupo do WhatsApp: sem foto, mostra o ícone de grupo em vez das iniciais. */
+  group?: boolean;
   size?: keyof typeof sizes;
   className?: string;
 }) {
@@ -42,7 +46,7 @@ export function Avatar({
       )}
       aria-hidden
     >
-      {src ? <img src={src} alt="" className="size-full object-cover" /> : initials(name)}
+      {src ? <img src={src} alt="" className="size-full object-cover" /> : group ? <Users className="size-[52%]" /> : initials(name)}
     </span>
   );
 }

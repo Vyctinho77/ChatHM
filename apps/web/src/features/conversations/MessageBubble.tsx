@@ -53,7 +53,7 @@ function ImageBody({
   onOpen?: (id: string) => void;
   term?: string;
 }) {
-  const author = m.direction === "out" && showAuthor && m.authorName ? m.authorName : "";
+  const author = (m.direction === "out" || m.group) && showAuthor && m.authorName ? m.authorName : "";
   const hasText = !!m.caption || !!author;
   return (
     <div className="w-72 max-w-full">
@@ -264,8 +264,8 @@ export function MessageBubble({
           m.status === "failed" && "ring-1 ring-danger",
         )}
       >
-        {m.kind !== "image" && out && showAuthor && m.authorName && (
-          <p className="text-[12.5px] font-semibold">{m.authorName}:</p>
+        {m.kind !== "image" && (out || m.group) && showAuthor && m.authorName && (
+          <p className="text-[12.5px] font-semibold">{m.authorName}{out ? ":" : ""}</p>
         )}
 
         {m.kind === "text" && (

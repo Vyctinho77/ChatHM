@@ -210,3 +210,6 @@ var SimulateFailure = errors.New("falha simulada no envio")
 func (p *Provider) Receipt(status whatsapp.ReceiptStatus, ids ...string) {
 	p.h.OnReceipt(whatsapp.Receipt{MessageIDs: ids, Status: status, Timestamp: time.Now()})
 }
+
+// ProfilePicture: o provedor simulado não tem fotos.
+func (p *Provider) ProfilePicture(context.Context, string) ([]byte, error) { return nil, nil }

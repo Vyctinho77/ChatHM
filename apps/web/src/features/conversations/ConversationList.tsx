@@ -32,7 +32,7 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
   // O filtro de fila fica na URL (?fila=folha): a tela Filas / Segmentos abre a lista já filtrada.
   const [params, setParams] = useSearchParams();
   const requestedFilter = params.get("vista");
-  const filter: Filter = requestedFilter === "mine" || requestedFilter === "general" || requestedFilter === "snoozed" ? requestedFilter : "all";
+  const filter: Filter = requestedFilter === "mine" || requestedFilter === "general" || requestedFilter === "groups" || requestedFilter === "snoozed" ? requestedFilter : "all";
   const reminders = useReminders(filter === "mine");
   const [editingReminder, setEditingReminder] = useState<Conversation | null>(null);
   const setFilter = (nextFilter: Filter) => setParams((p) => {
@@ -108,6 +108,7 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
   const chips: { key: Filter; label: string }[] = [
     { key: "mine", label: "Minhas" },
     { key: "general", label: "Não atribuídos" },
+    { key: "groups", label: "Grupos" },
     { key: "all", label: "Todas" },
     { key: "snoozed", label: "Adiadas" },
   ];
@@ -176,7 +177,7 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
         </label>
       </div>
 
-      <div role="tablist" aria-label="Filtros" className="flex flex-wrap gap-1 px-3 py-2.5">
+      <div role="tablist" aria-label="Filtros" className="flex gap-0.5 overflow-x-auto px-2 py-2.5 [scrollbar-width:none]">
         {chips.map((c) => (
           <button
             key={c.key}
@@ -184,7 +185,7 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
             aria-selected={filter === c.key}
             onClick={() => setFilter(c.key)}
             className={cn(
-              "inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2.5 text-xs transition-colors",
+              "inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2 text-xs transition-colors",
               filter === c.key ? "font-semibold text-brand-ink" : "text-muted hover:bg-hover hover:text-fg",
             )}
           >
@@ -309,7 +310,7 @@ function ConversationRow({
           />
         )}
         <span className="relative">
-        <Avatar name={c.contact.name} src={c.contact.avatarUrl} size="list" />
+        <Avatar name={c.contact.name} src={c.contact.avatarUrl} group={c.contact.kind === "group"} size="list" />
         </span>
         <div className="relative min-w-0 flex-1">
           <div className="flex items-baseline gap-2">

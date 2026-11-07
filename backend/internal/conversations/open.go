@@ -227,7 +227,7 @@ func (s *Service) Search(ctx context.Context, v Viewer, q string) (SearchResult,
 	}
 	res := SearchResult{Contacts: []ContactRecord{}, Messages: []MessageHit{}}
 
-	crows, err := s.db.Query(ctx, `SELECT ct.id, ct.name, ct.phone, ct.wa_id, ct.company, ct.note, lc.id::text
+	crows, err := s.db.Query(ctx, `SELECT ct.id, ct.name, ct.phone, ct.wa_id, ct.company, ct.note, ct.kind, ct.avatar_version, lc.id::text
 		FROM contacts ct LEFT JOIN LATERAL (
 		  SELECT c.id FROM conversations c LEFT JOIN segments s ON s.id = c.segment_id
 		   WHERE c.contact_id = ct.id AND c.status <> 'closed' AND `+forViewer+`
@@ -246,11 +246,12 @@ func (s *Service) Search(ctx context.Context, v Viewer, q string) (SearchResult,
 	defer crows.Close()
 	for crows.Next() {
 		var c ContactRecord
-		var name, phone, waID string
-		if err := crows.Scan(&c.ID, &name, &phone, &waID, &c.Company, &c.Note, &c.ConversationID); err != nil {
+		var name, phone, waID, kind string
+		var ver int64
+		if err := crows.Scan(&c.ID, &name, &phone, &waID, &c.Company, &c.Note, &kind, &ver, &c.ConversationID); err != nil {
 			return res, err
 		}
-		c.Name, c.Phone = displayName(name, phone, waID), FormatPhone(phone)
+		c.finish(name, phone, waID, kind, ver)
 		res.Contacts = append(res.Contacts, c)
 	}
 	if err := crows.Err(); err != nil {
