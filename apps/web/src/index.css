@@ -6,17 +6,17 @@
 
 /* Tokens semânticos: os componentes usam bg-panel, text-muted etc. e o tema troca os valores. */
 :root {
-  --c-app: #ffffff;
-  --c-panel: #ffffff;
-  --c-chat: #f4f4f4;
-  --c-elevated: #fafafa;
-  --c-hover: #f0f0f0;
-  --c-border: #dedede;
-  --c-text: #111111;
-  --c-muted: #646464;
+  --c-app: #eceeee;
+  --c-panel: #f1f3f3;
+  --c-chat: #e8eaea;
+  --c-elevated: #e5e8e8;
+  --c-hover: #e3e7e7;
+  --c-border: #d2d7d7;
+  --c-text: #242828;
+  --c-muted: #596161;
   --c-accent: #8b9d40;
   --c-accent-fg: #111111;
-  --c-selected: #e8e8e8;
+  --c-selected: #dce1e1;
   --c-brand: #8b9d40;
   --c-brand-ink: #53611f;
   --c-out: #5f6e24;
@@ -25,11 +25,12 @@
   --c-in-text: #ffffff;
   --c-unread: #8b9d40;
   --c-read: #006fc9;
-  --c-auth-bg: #f4f4f4;
-  --c-input: #f2f2f2;
+  --c-auth-bg: #eceeee;
+  --c-input: #e7ebeb;
   --c-danger: #dc2626;
   --c-warning: #b7791f;
-  --chat-dot: rgb(0 0 0 / 0.035);
+  --chat-wallpaper: url("./assets/wallpapers/chat-light.png");
+  --chat-wallpaper-overlay: rgb(216 220 220 / 0.6);
 }
 
 .dark {
@@ -56,7 +57,8 @@
   --c-input: #242424;
   --c-danger: #f87171;
   --c-warning: #f5c542;
-  --chat-dot: rgb(255 255 255 / 0.025);
+  --chat-wallpaper: url("./assets/wallpapers/chat-dark.png");
+  --chat-wallpaper-overlay: transparent;
 }
 
 @theme inline {
@@ -120,11 +122,14 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Fundo discreto da área de chat (pontilhado leve, como papel de parede). */
+/* O fundo fica no painel externo; só a lista de mensagens rola sobre ele.
+   A camada neutra suaviza o fundo claro e mantém os traços em 40% da intensidade original. */
 .chat-wallpaper {
   background-color: var(--c-chat);
-  background-image: radial-gradient(var(--chat-dot) 1px, transparent 1px);
-  background-size: 18px 18px;
+  background-image: linear-gradient(var(--chat-wallpaper-overlay), var(--chat-wallpaper-overlay)), var(--chat-wallpaper);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 
 /* Indicador de digitação: brilho neutro e pontos em sequência. */
