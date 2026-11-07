@@ -11,7 +11,7 @@ var (
 	reCPFFmt   = regexp.MustCompile(`\b\d{3}\.\d{3}\.\d{3}-\d{2}\b`)
 	reDigits11 = regexp.MustCompile(`\b\d{11}\b`)
 	reMobile   = regexp.MustCompile(`^[1-9][1-9]9\d{8}$`)
-	rePhone    = regexp.MustCompile(`(\+?\d[\d\s()-]{7,}\d)`)
+	rePhone    = regexp.MustCompile(`(\+?\(?\d[\d\s()-]{7,}\d)`)
 )
 
 // Masker oculta dados pessoais nas respostas conforme a configuração do escritório.
