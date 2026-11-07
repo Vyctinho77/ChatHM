@@ -155,7 +155,7 @@ Apagar o nome volta a seguir o WhatsApp. Quem vê a conversa pode renomear; o ad
 
 ## Menu da mensagem (botão direito)
 
-Botão direito numa mensagem (ou o botão ▾ que aparece ao passar o mouse): **Dados da mensagem**, **Responder**, **Copiar**,
+Botão direito numa mensagem: **Dados da mensagem**, **Responder**, **Copiar**,
 **Encaminhar**, **Baixar** (mídia), **Editar** e **Apagar**.
 
 - **Responder:** a resposta cita a mensagem (`replyTo` no envio; a prévia fica em `payload.quoted`) e o WhatsApp mostra a citação.
