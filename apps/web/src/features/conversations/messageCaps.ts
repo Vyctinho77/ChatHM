@@ -13,7 +13,7 @@ export function messageCapabilities(m: Message, now = Date.now()) {
     reply: live && m.status !== "pending" && m.status !== "failed",
     copy: live && copyText(m) !== "",
     forward: live && m.status !== "pending" && m.status !== "failed" && (m.kind !== "unsupported"),
-    download: live && "url" in m && !!m.url && (m.kind === "image" || m.kind === "document" || m.kind === "audio"),
+    download: live && "url" in m && !!m.url && (m.kind === "image" || m.kind === "document" || m.kind === "audio" || m.kind === "sticker"),
     edit: live && out && m.kind === "text" && delivered && age <= EDIT_WINDOW_MS,
     deleteEveryone: live && out && delivered && age <= REVOKE_WINDOW_MS,
     info: live,

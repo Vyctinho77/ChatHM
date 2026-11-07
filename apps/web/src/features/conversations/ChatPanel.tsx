@@ -210,7 +210,7 @@ export function ChatPanel({
 
   /** Prévia usada para citar a mensagem numa resposta. */
   function quotedOf(m: Message): Quoted {
-    const text = m.kind === "text" ? m.text : m.kind === "document" ? (m.caption || m.fileName) : m.kind === "image" ? (m.caption ?? "") : "";
+    const text = m.kind === "text" ? m.text : m.kind === "document" ? (m.caption || m.fileName) : m.kind === "image" ? (m.caption ?? "") : m.kind === "sticker" ? "Figurinha" : "";
     const out = m.direction === "out";
     return { id: m.id, author: out ? (m.authorName ?? actions.me.name) : (m.authorName ?? c.contact.name), fromMe: out, kind: m.kind, text: text.slice(0, 160) };
   }
@@ -437,7 +437,7 @@ export function ChatPanel({
             const newDay = !prev || !sameDay(prev.sentAt, m.sentAt);
             const newAttendance = !!prev && prev.conversationId !== m.conversationId;
             const afterPause = !!prev && Date.parse(m.sentAt) - Date.parse(prev.sentAt) >= MESSAGE_PAUSE_MS;
-            const startsGroup = !prev || newDay || newAttendance || afterPause || prev.direction !== m.direction || prev.authorName !== m.authorName;
+            const startsGroup = !prev || newDay || newAttendance || afterPause || prev.direction !== m.direction || prev.authorName !== m.authorName || prev.kind === "sticker" || m.kind === "sticker";
             const showAuthor = (m.direction === "out" || !!m.group) && startsGroup;
             return (
               <Fragment key={m.id}>

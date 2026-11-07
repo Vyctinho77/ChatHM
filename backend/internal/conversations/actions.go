@@ -333,7 +333,7 @@ func (s *Service) ForwardMessage(ctx context.Context, v Viewer, msgID string, ta
 		case "text":
 		case "location":
 			in.Lat, in.Lng, in.Name, in.Address, in.Text = num("lat"), num("lng"), str("name"), str("address"), ""
-		case "image", "audio", "document":
+		case "image", "audio", "document", "sticker":
 			if attKey == nil || s.store == nil {
 				out = append(out, ForwardResult{ConversationID: t, Error: "O arquivo desta mensagem não está disponível."})
 				continue

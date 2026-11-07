@@ -1,14 +1,43 @@
 package media
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"testing"
 )
+
+func TestStickerPreservesTransparentAndAnimatedWebP(t *testing.T) {
+	for _, name := range []string{"sticker.webp", "sticker-animated.webp"} {
+		t.Run(name, func(t *testing.T) {
+			data, err := os.ReadFile("testdata/" + name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := NewService(1<<20, NewScanner(fakeClamd(t, "stream: OK")))
+			p, err := s.ProcessInbound(context.Background(), Sticker, data, "untrusted.txt", "text/plain")
+			if err != nil || p.MimeType != "image/webp" || p.Width != 128 || p.Height != 128 || p.ScanStatus != "clean" || !bytes.Equal(p.Data, data) {
+				t.Fatalf("sticker changed or rejected: %v %+v", err, p)
+			}
+			if _, err := NewService(int64(len(data)-1), nil).ProcessInbound(context.Background(), Sticker, data, "sticker.webp", ""); err == nil {
+				t.Fatal("oversized sticker accepted")
+			}
+			if _, err := NewService(1<<20, NewScanner(fakeClamd(t, "stream: Eicar-Test-Signature FOUND"))).ProcessInbound(context.Background(), Sticker, data, "sticker.webp", ""); err == nil {
+				t.Fatal("scanner bypassed")
+			}
+		})
+	}
+	for _, data := range [][]byte{[]byte("<svg onload='alert(1)'/>"), []byte("RIFF0000WEBPVP8X")} {
+		if _, err := NewService(1<<20, nil).ProcessInbound(context.Background(), Sticker, data, "sticker.webp", "image/webp"); err == nil {
+			t.Fatal("invalid sticker accepted")
+		}
+	}
+}
 
 func TestCleanFileName(t *testing.T) {
 	for in, want := range map[string]string{

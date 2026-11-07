@@ -31,6 +31,7 @@ type Kind string
 
 const (
 	Image    Kind = "image"
+	Sticker  Kind = "sticker"
 	Audio    Kind = "audio"
 	Document Kind = "document"
 )
@@ -119,6 +120,10 @@ func (s *Service) Process(ctx context.Context, kind Kind, data []byte, fileName 
 	sniffed := http.DetectContentType(data)
 
 	switch kind {
+	case Sticker:
+		if err := stickerConfig(&p); err != nil {
+			return Processed{}, err
+		}
 	case Image:
 		switch {
 		case strings.HasPrefix(sniffed, "image/jpeg"), strings.HasPrefix(sniffed, "image/png"), isWebP(data):
@@ -184,6 +189,10 @@ func (s *Service) ProcessInbound(ctx context.Context, kind Kind, data []byte, fi
 	name := CleanFileName(fileName)
 	p := Processed{Kind: kind, Data: data, FileName: name, MimeType: strings.SplitN(http.DetectContentType(data), ";", 2)[0]}
 	switch kind {
+	case Sticker:
+		if err := stickerConfig(&p); err != nil {
+			return Processed{}, err
+		}
 	case Image:
 		if !(strings.HasPrefix(p.MimeType, "image/jpeg") || strings.HasPrefix(p.MimeType, "image/png") || isWebP(data) || strings.HasPrefix(p.MimeType, "image/gif")) {
 			return Processed{}, reject("Imagem recebida em formato desconhecido.")
@@ -227,6 +236,20 @@ var extMime = map[string]string{
 
 func isWebP(b []byte) bool {
 	return len(b) > 12 && string(b[0:4]) == "RIFF" && string(b[8:12]) == "WEBP"
+}
+
+// Preserve o WebP original: recodificar apagaria animação e transparência.
+func stickerConfig(p *Processed) error {
+	if !isWebP(p.Data) {
+		return reject("A figurinha precisa estar no formato WebP.")
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(p.Data))
+	if err != nil || cfg.Width < 1 || cfg.Height < 1 || cfg.Width > 512 || cfg.Height > 512 {
+		return reject("Figurinha inválida ou maior que 512 × 512 pixels.")
+	}
+	p.MimeType, p.FileName = "image/webp", "figurinha.webp"
+	p.Width, p.Height = cfg.Width, cfg.Height
+	return nil
 }
 
 // toOpus converte qualquer áudio que o ffmpeg decodifique em Ogg/Opus mono e mede a duração.

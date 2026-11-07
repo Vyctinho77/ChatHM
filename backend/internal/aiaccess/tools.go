@@ -356,7 +356,7 @@ func msgView(m conversations.Message) any {
 		v["replyTo"] = map[string]any{"author": str(q["author"]), "text": str(q["text"]), "kind": str(q["kind"])}
 	}
 	switch str(m["kind"]) {
-	case "image", "audio", "document":
+	case "image", "audio", "document", "sticker":
 		media := map[string]any{}
 		for _, k := range []string{"fileName", "mimeType", "sizeBytes", "durationSec"} {
 			if x, ok := m[k]; ok {

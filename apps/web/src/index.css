@@ -191,6 +191,37 @@ body {
   }
 }
 
+/* Uma única superfície desenha o corpo e a cauda, sem peças sobrepostas. */
+.bubble-with-tail {
+  isolation: isolate;
+}
+
+.bubble-with-tail::before {
+  content: "";
+  position: absolute;
+  inset: 0 -8px;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--c-in);
+  clip-path: polygon(
+    1px 0, calc(100% - 16px) 0,
+    calc(100% - 12px) 1px, calc(100% - 9px) 4px,
+    calc(100% - 8px) 8px,
+    calc(100% - 8px) calc(100% - 8px),
+    calc(100% - 9px) calc(100% - 4px),
+    calc(100% - 12px) calc(100% - 1px),
+    calc(100% - 16px) 100%, 16px 100%,
+    12px calc(100% - 1px), 9px calc(100% - 4px),
+    8px calc(100% - 8px), 8px 13px,
+    7.5px 10px, 6px 8px, 3px 5px, 0 1px
+  );
+}
+
+.bubble-with-tail-out::before {
+  background: var(--c-out);
+  transform: scaleX(-1);
+}
+
 /* Celular/tablet: segurar a mensagem abre o menu; sem seleção de texto nem o balão nativo do iOS/Android
    (o texto continua copiável pelo "Copiar" do menu). */
 @media (pointer: coarse) {

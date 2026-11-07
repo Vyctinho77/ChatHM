@@ -819,17 +819,20 @@ func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInpu
 		if text == "" || utf8.RuneCountInString(text) > maxTextRunes {
 			return nil, false, httpx.FieldErrors{"text": fmt.Sprintf("Digite uma mensagem de até %d caracteres.", maxTextRunes)}
 		}
-	case "image", "audio", "document":
+	case "image", "audio", "document", "sticker":
 		if in.Att == nil || s.store == nil {
 			return nil, false, ErrUnavailable
 		}
-		if utf8.RuneCountInString(text) > maxCaptionRunes || (kind == "audio" && text != "") {
+		if utf8.RuneCountInString(text) > maxCaptionRunes || ((kind == "audio" || kind == "sticker") && text != "") {
 			return nil, false, httpx.FieldErrors{"text": fmt.Sprintf("A legenda pode ter até %d caracteres.", maxCaptionRunes)}
 		}
 		payload["mimeType"], payload["sizeBytes"] = in.Att.MimeType, len(in.Att.Data)
 		switch kind {
-		case "image":
+		case "image", "sticker":
 			payload["width"], payload["height"], payload["hd"] = in.Att.Width, in.Att.Height, in.HD
+			if kind == "sticker" {
+				payload["animated"] = len(in.Att.Data) > 20 && string(in.Att.Data[12:16]) == "VP8X" && in.Att.Data[20]&2 != 0
+			}
 		case "audio":
 			payload["durationSec"], payload["voiceNote"] = in.Att.DurationSec, true
 			if len(in.Waveform) > 0 {
@@ -1144,6 +1147,7 @@ func (s *Service) dispatch(ctx context.Context, kind, chatJID, externalID, text 
 		Kind: whatsapp.Kind(kind), Data: data, MimeType: str("mimeType"), FileName: str("fileName"), Caption: text,
 		DurationSec: num("durationSec"), Width: num("width"), Height: num("height"), Quote: quoteFromPayload(payload),
 	}
+	md.Animated, _ = payload["animated"].(bool)
 	if wf, ok := payload["waveform"].([]any); ok {
 		for _, v := range wf {
 			f, _ := v.(float64)

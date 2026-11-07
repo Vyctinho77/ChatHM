@@ -149,7 +149,14 @@ func convertMessage(ctx context.Context, cli *whatsmeow.Client, e *events.Messag
 		out.Kind, out.Body = whatsapp.KindUnsupported, m.GetVideoMessage().GetCaption()
 		out.Payload["label"] = "Vídeo"
 	case m.GetStickerMessage() != nil:
-		out.Kind, out.Payload["label"] = whatsapp.KindUnsupported, "Figurinha"
+		st := m.GetStickerMessage()
+		out.Kind = whatsapp.KindSticker
+		out.Payload["mimeType"] = "image/webp"
+		out.Payload["fileName"] = "figurinha.webp"
+		out.Payload["sizeBytes"] = st.GetFileLength()
+		out.Payload["width"], out.Payload["height"] = st.GetWidth(), st.GetHeight()
+		out.Payload["animated"] = st.GetIsAnimated()
+		out.Download = func(ctx context.Context) ([]byte, error) { return cli.Download(ctx, st) }
 	case m.GetContactMessage() != nil || m.GetContactsArrayMessage() != nil:
 		out.Kind, out.Payload["label"] = whatsapp.KindUnsupported, "Contato"
 	case m.GetLiveLocationMessage() != nil:
@@ -171,6 +178,8 @@ func contextOf(m *waE2E.Message) *waE2E.ContextInfo {
 		return m.GetExtendedTextMessage().GetContextInfo()
 	case m.GetImageMessage() != nil:
 		return m.GetImageMessage().GetContextInfo()
+	case m.GetStickerMessage() != nil:
+		return m.GetStickerMessage().GetContextInfo()
 	case m.GetAudioMessage() != nil:
 		return m.GetAudioMessage().GetContextInfo()
 	case m.GetDocumentMessage() != nil:
@@ -203,6 +212,8 @@ func quoteOf(cli *whatsmeow.Client, m *waE2E.Message) *whatsapp.InboundQuote {
 		q.Text = qm.GetExtendedTextMessage().GetText()
 	case qm.GetImageMessage() != nil:
 		q.Text = qm.GetImageMessage().GetCaption()
+	case qm.GetStickerMessage() != nil:
+		q.Text = "Figurinha"
 	case qm.GetDocumentMessage() != nil:
 		q.Text = qm.GetDocumentMessage().GetFileName()
 	}

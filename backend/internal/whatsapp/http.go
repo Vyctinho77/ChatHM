@@ -147,8 +147,8 @@ func (h *HTTPHandler) simulate(w http.ResponseWriter, r *http.Request) {
 	}, in.Phone)
 	if in.Kind != "" && in.Kind != "text" {
 		data, err := base64.StdEncoding.DecodeString(in.File)
-		if err != nil || len(digits) < 10 || (in.Kind != "image" && in.Kind != "audio" && in.Kind != "document") {
-			httpx.Validation(w, httpx.FieldErrors{"kind": "Informe kind (image|audio|document), telefone e fileBase64."})
+		if err != nil || len(digits) < 10 || (in.Kind != "image" && in.Kind != "audio" && in.Kind != "document" && in.Kind != "sticker") {
+			httpx.Validation(w, httpx.FieldErrors{"kind": "Informe kind (image|audio|document|sticker), telefone e fileBase64."})
 			return
 		}
 		h.sim(InboundMessage{

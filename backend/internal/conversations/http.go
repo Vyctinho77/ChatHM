@@ -212,7 +212,7 @@ func (h *Handler) readUpload(w http.ResponseWriter, r *http.Request) (SendInput,
 		}
 	}
 	kind := media.Kind(in.Kind)
-	if !hasFile || (kind != media.Image && kind != media.Audio && kind != media.Document) {
+	if !hasFile || (kind != media.Image && kind != media.Audio && kind != media.Document && kind != media.Sticker) {
 		httpx.Validation(w, httpx.FieldErrors{"file": "Escolha um arquivo e o tipo de anexo."})
 		return SendInput{}, false
 	}

@@ -1,4 +1,4 @@
-import { Ban, FileText, Image, MapPin, Mic } from "lucide-react";
+import { Ban, FileText, Image, MapPin, Mic, Sticker } from "lucide-react";
 import { formatDuration } from "@/lib/format";
 import type { Message } from "./types";
 
@@ -6,6 +6,8 @@ import type { Message } from "./types";
 export function MessagePreview({ m }: { m: Message }) {
   const icon = "size-3.5 shrink-0";
   switch (m.kind) {
+    case "sticker":
+      return <><Sticker className={icon} /> <span className="truncate">Figurinha</span></>;
     case "text":
       return <span className="truncate">{m.text}</span>;
     case "audio":

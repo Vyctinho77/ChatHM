@@ -112,6 +112,22 @@ func TestConvertMessage(t *testing.T) {
 	}
 }
 
+func TestConvertSticker(t *testing.T) {
+	pn := types.NewJID("5592998112040", types.DefaultUserServer)
+	for _, animated := range []bool{false, true} {
+		got, ok := convertMessage(context.Background(), nil, msgEvent(pn, &waE2E.Message{
+			StickerMessage: &waE2E.StickerMessage{
+				Width: proto.Uint32(512), Height: proto.Uint32(512), FileLength: proto.Uint64(1234),
+				IsAnimated: proto.Bool(animated), ContextInfo: &waE2E.ContextInfo{StanzaID: proto.String("quoted-id")},
+			},
+		}))
+		if !ok || got.Kind != whatsapp.KindSticker || got.Download == nil || got.Payload["mimeType"] != "image/webp" ||
+			got.Payload["animated"] != animated || got.Payload["width"] != uint32(512) || got.Quote == nil || got.Quote.ExternalID != "quoted-id" {
+			t.Fatalf("sticker animated=%v: %+v", animated, got)
+		}
+	}
+}
+
 func TestConvertEditRevokeAndQuote(t *testing.T) {
 	ctx := context.Background()
 	pn := types.NewJID("5592998112040", types.DefaultUserServer)

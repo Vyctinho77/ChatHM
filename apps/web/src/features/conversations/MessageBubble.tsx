@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { motion } from "motion/react";
-import { Ban, Download, FileText, Image as ImageIcon, MapPin, Mic } from "lucide-react";
+import { Ban, Download, FileText, Image as ImageIcon, LoaderCircle, MapPin, Mic, Sticker } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { formatBytes, formatTime } from "@/lib/format";
 import { AudioPlayer } from "./AudioPlayer";
@@ -24,6 +24,7 @@ function Meta({ m }: { m: Message }) {
 }
 
 const quotedKind: Record<string, { label: string; icon: React.ReactNode }> = {
+  sticker: { label: "Figurinha", icon: <Sticker className="size-3.5" /> },
   image: { label: "Foto", icon: <ImageIcon className="size-3.5" /> },
   audio: { label: "Mensagem de voz", icon: <Mic className="size-3.5" /> },
   document: { label: "Documento", icon: <FileText className="size-3.5" /> },
@@ -71,6 +72,28 @@ function mediaStateLabel(m: Message, what: string) {
   if (m.mediaState === "blocked") return `${what} bloqueada por segurança`;
   if (m.mediaState === "failed") return `Não foi possível baixar ${what.toLowerCase() === "imagem" ? "a imagem" : "o arquivo"}`;
   return `${what} recebida · baixando…`;
+}
+
+function StickerBody({ m }: { m: Extract<Message, { kind: "sticker" }> }) {
+  const [failedUrl, setFailedUrl] = useState<string>();
+  const unavailable = !m.url || failedUrl === m.url;
+  return (
+    <div className="flex w-56 max-w-full flex-col gap-1">
+      {unavailable ? (
+        <div role="status" className="flex aspect-square flex-col items-center justify-center gap-2 rounded-xl bg-panel/80 px-4 text-center text-xs text-muted">
+          {!m.url && !m.historical && !m.mediaState ? <LoaderCircle className="size-5 animate-spin motion-reduce:animate-none" /> : <Sticker className="size-8" />}
+          <span>{failedUrl === m.url && m.url ? "Não foi possível exibir a figurinha" : mediaStateLabel(m, "Figurinha")}</span>
+        </div>
+      ) : (
+        <img src={m.url} alt="Figurinha" draggable={false} onError={() => setFailedUrl(m.url)} className="aspect-square w-full object-contain" />
+      )}
+      <div className="flex justify-end">
+        <span className={cn("flex rounded-full px-2 py-1 shadow-sm", m.direction === "out" ? "bg-out text-out-fg" : "bg-panel text-fg")}>
+          <Meta m={m} />
+        </span>
+      </div>
+    </div>
+  );
 }
 
 function ImageBody({
@@ -285,6 +308,7 @@ export function MessageBubble({
   emphasis?: boolean;
 }) {
   const out = m.direction === "out";
+  const sticker = m.kind === "sticker" && !m.deleted;
   // Toque (celular/tablet): clicar e segurar abre o mesmo menu do botão direito.
   const press = useRef<{ timer: number; x: number; y: number } | null>(null);
   const longPressed = useRef(false);
@@ -338,24 +362,21 @@ export function MessageBubble({
         transition={{ type: "spring", stiffness: 480, damping: 32, mass: 0.8 }}
         style={{ transformOrigin: out ? "100% 100%" : "0% 100%" }}
         // A cauda fica dentro dos limites da camada animada, evitando recorte ao escalar.
-        className="relative -mx-2 max-w-[min(29rem,calc(75%+1rem))] px-2"
+        className={cn("relative -mx-2 max-w-[min(29rem,calc(75%+1rem))] px-2", !sticker && "drop-shadow-sm")}
       >
       <div
         className={cn(
-          "group/msg relative rounded-lg text-[13.5px] leading-[1.4] shadow-sm transition-shadow duration-300",
-          m.kind === "image" ? "p-[3px]" : "px-2.5 py-[5px]",
-          out ? "bg-out" : "bg-in",
+          "group/msg relative rounded-lg text-[13.5px] leading-[1.4] transition-shadow duration-300",
+          sticker ? "p-0" : m.kind === "image" ? "p-[3px]" : "px-2.5 py-[5px]",
+          !sticker && (startsGroup ? "bubble-with-tail" : out ? "bg-out" : "bg-in"),
+          !sticker && startsGroup && (out ? "bubble-with-tail-out" : "bubble-with-tail-in"),
           startsGroup && (out ? "rounded-tr-none" : "rounded-tl-none"),
           // A busca destaca o balão sem alterar o contraste do texto.
-          out ? "text-out-fg" : "text-in-fg",
+          sticker ? "text-fg" : out ? "text-out-fg" : "text-in-fg",
           emphasis && "ring-2 ring-brand-ink ring-offset-2 ring-offset-chat",
           m.status === "failed" && "ring-1 ring-danger",
         )}
       >
-        {startsGroup && <span aria-hidden="true" className={cn(
-          "pointer-events-none absolute top-0 h-2.5 w-2",
-          out ? "-right-2 bg-out [clip-path:polygon(0_0,100%_0,0_100%)]" : "-left-2 bg-in [clip-path:polygon(0_0,100%_0,100%_100%)]",
-        )} />}
         {m.deleted ? (
           <div className="flex flex-wrap items-end">
             <p className="flex items-center gap-1.5 italic opacity-80">
@@ -395,6 +416,7 @@ export function MessageBubble({
         )}
 
         {m.kind === "image" && <ImageBody m={m} showAuthor={showAuthor} onOpen={onOpenImage} term={term} />}
+        {m.kind === "sticker" && <StickerBody m={m} />}
 
         {m.kind === "unsupported" && (
           <div className="flex flex-wrap items-end">

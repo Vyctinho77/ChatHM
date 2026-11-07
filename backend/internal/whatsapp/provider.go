@@ -35,6 +35,7 @@ const (
 	KindText        Kind = "text"
 	KindAudio       Kind = "audio"
 	KindImage       Kind = "image"
+	KindSticker     Kind = "sticker"
 	KindDocument    Kind = "document"
 	KindLocation    Kind = "location"
 	KindUnsupported Kind = "unsupported"
@@ -87,6 +88,7 @@ type Quote struct {
 
 // MediaSend é um anexo a enviar (já validado e normalizado).
 type MediaSend struct {
+	Animated    bool
 	Kind        Kind // image | audio | document
 	Data        []byte
 	MimeType    string

@@ -269,6 +269,18 @@ func (p *Provider) SendMedia(ctx context.Context, chatJID, messageID string, m w
 	}
 	var msg *waE2E.Message
 	switch m.Kind {
+	case whatsapp.KindSticker:
+		up, err := cli.Upload(ctx, m.Data, whatsmeow.MediaImage)
+		if err != nil {
+			return err
+		}
+		msg = &waE2E.Message{StickerMessage: &waE2E.StickerMessage{
+			ContextInfo: contextInfo(cli, to, m.Quote),
+			URL:         &up.URL, DirectPath: &up.DirectPath, MediaKey: up.MediaKey,
+			FileEncSHA256: up.FileEncSHA256, FileSHA256: up.FileSHA256, FileLength: &up.FileLength,
+			Mimetype: proto.String("image/webp"), IsAnimated: proto.Bool(m.Animated),
+			Width: proto.Uint32(uint32(m.Width)), Height: proto.Uint32(uint32(m.Height)),
+		}}
 	case whatsapp.KindImage:
 		up, err := cli.Upload(ctx, m.Data, whatsmeow.MediaImage)
 		if err != nil {
