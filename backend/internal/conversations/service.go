@@ -30,6 +30,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/vyctinho77/chathm/backend/internal/audit"
@@ -964,9 +965,15 @@ func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInpu
 		}
 		return nil
 	})
-	if database.IsCode(err, database.UniqueViolation) {
-		// Corrida na atribuição: o índice único barrou a segunda pessoa.
-		return nil, false, &TakenError{Assignee: s.currentAssignee(ctx, convID)}
+	var constraintErr *pgconn.PgError
+	if errors.As(err, &constraintErr) && constraintErr.Code == database.UniqueViolation {
+		switch constraintErr.ConstraintName {
+		case "conversation_assignments_one_active":
+			// Only the assignment index indicates a race for the conversation.
+			return nil, false, &TakenError{Assignee: s.currentAssignee(ctx, convID)}
+		case "messages_pkey":
+			return nil, false, ErrIDConflict
+		}
 	}
 	if err != nil {
 		return nil, false, err

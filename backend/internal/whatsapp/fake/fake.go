@@ -5,9 +5,10 @@ package fake
 import (
 	"context"
 	"errors"
-	"strconv"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/vyctinho77/chathm/backend/internal/whatsapp"
 )
@@ -22,7 +23,6 @@ type Provider struct {
 	mu      sync.Mutex
 	session bool
 	events  chan whatsapp.PairEvent
-	counter int
 	sent    []Sent
 	sendErr error
 	// connected espelha o estado do "celular": só envia depois de conectado.
@@ -152,10 +152,8 @@ func (p *Provider) Logout(context.Context) error {
 func (p *Provider) Close() {}
 
 func (p *Provider) NewMessageID() string {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.counter++
-	return "FAKE" + strconv.Itoa(p.counter)
+	// Development messages survive process restarts in PostgreSQL.
+	return "FAKE-" + uuid.NewString()
 }
 
 func (p *Provider) SendText(_ context.Context, chatJID, messageID, text string) error {
