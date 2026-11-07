@@ -392,7 +392,7 @@ func TestAIAccessPromptsAndQueueOverview(t *testing.T) {
 		t.Fatalf("resumir: %v %q", err, text)
 	}
 	text, err = get("sugerir_resposta", map[string]string{"conversation_id": cid, "tom": "formal"})
-	if err != nil || !strings.Contains(text, "formal e respeitoso") || !strings.Contains(text, "nada é enviado") {
+	if err != nil || !strings.Contains(text, "formal e respeitoso") || !strings.Contains(text, "nunca envia nada ao cliente") {
 		t.Fatalf("sugerir: %v %q", err, text)
 	}
 	if text, err = get("triagem_da_fila", map[string]string{"queue": "folha"}); err != nil || !strings.Contains(text, `queue "folha"`) {
