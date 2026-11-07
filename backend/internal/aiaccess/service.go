@@ -49,6 +49,9 @@ type Settings struct {
 	AllowWrite bool `json:"allowWrite"`
 	// AllowSend libera tokens que PEDEM envios: a IA nunca envia; uma pessoa aprova cada mensagem na conversa.
 	AllowSend bool `json:"allowSend"`
+	// MaskEmails oculta e-mails (padrão ligado). StrictPrivacy reduz nomes a "Nome S." e remove observações internas.
+	MaskEmails    bool `json:"maskEmails"`
+	StrictPrivacy bool `json:"strictPrivacy"`
 }
 
 // Token é um token pessoal (nunca inclui o segredo).
@@ -78,6 +81,9 @@ type Principal struct {
 	Write bool
 	// Send: o token tem escopo "send" E o administrador liberou pedidos de envio (continuam dependendo de aprovação humana).
 	Send bool
+	// OAuth: token emitido a um aplicativo de IA hospedado por terceiros (ChatGPT, claude.ai): privacidade máxima, sem opção.
+	OAuth      bool
+	ClientName string
 }
 
 type Service struct {
@@ -103,8 +109,8 @@ func NewService(db *pgxpool.Pool) *Service {
 
 func (s *Service) Settings(ctx context.Context) (Settings, error) {
 	var st Settings
-	err := s.db.QueryRow(ctx, `SELECT enabled, mask_documents, mask_phones, allow_write, allow_send FROM ai_settings WHERE id`).
-		Scan(&st.Enabled, &st.MaskDocuments, &st.MaskPhones, &st.AllowWrite, &st.AllowSend)
+	err := s.db.QueryRow(ctx, `SELECT enabled, mask_documents, mask_phones, allow_write, allow_send, mask_emails, strict_privacy FROM ai_settings WHERE id`).
+		Scan(&st.Enabled, &st.MaskDocuments, &st.MaskPhones, &st.AllowWrite, &st.AllowSend, &st.MaskEmails, &st.StrictPrivacy)
 	return st, err
 }
 
@@ -112,11 +118,12 @@ func (s *Service) Settings(ctx context.Context) (Settings, error) {
 func (s *Service) SetSettings(ctx context.Context, actorID, ip string, in Settings) (Settings, error) {
 	err := database.InTx(ctx, s.db, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `UPDATE ai_settings SET enabled = $1, mask_documents = $2, mask_phones = $3,
-			allow_write = $5, allow_send = $6, updated_at = now(), updated_by = $4 WHERE id`, in.Enabled, in.MaskDocuments, in.MaskPhones, actorID, in.AllowWrite, in.AllowSend); err != nil {
+			allow_write = $5, allow_send = $6, mask_emails = $7, strict_privacy = $8,
+			updated_at = now(), updated_by = $4 WHERE id`, in.Enabled, in.MaskDocuments, in.MaskPhones, actorID, in.AllowWrite, in.AllowSend, in.MaskEmails, in.StrictPrivacy); err != nil {
 			return err
 		}
 		return audit.Record(ctx, tx, audit.Entry{ActorID: actorID, Action: "ai.settings.update", TargetType: "ai_settings", IP: ip,
-			Metadata: map[string]any{"enabled": in.Enabled, "maskDocuments": in.MaskDocuments, "maskPhones": in.MaskPhones, "allowWrite": in.AllowWrite, "allowSend": in.AllowSend}})
+			Metadata: map[string]any{"enabled": in.Enabled, "maskDocuments": in.MaskDocuments, "maskPhones": in.MaskPhones, "allowWrite": in.AllowWrite, "allowSend": in.AllowSend, "maskEmails": in.MaskEmails, "strictPrivacy": in.StrictPrivacy}})
 	})
 	if err != nil {
 		return Settings{}, err
@@ -352,4 +359,12 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// MaskerFor monta o filtro de privacidade de uma chamada. Clientes OAuth recebem tudo ocultado, sempre.
+func MaskerFor(st Settings, p Principal) Masker {
+	if p.OAuth {
+		return Masker{Documents: true, Phones: true, Emails: true, Addresses: true, Strict: st.StrictPrivacy}
+	}
+	return Masker{Documents: st.MaskDocuments, Phones: st.MaskPhones, Emails: st.MaskEmails, Addresses: st.MaskDocuments, Strict: st.StrictPrivacy}
 }

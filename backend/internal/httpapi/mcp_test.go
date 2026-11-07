@@ -766,3 +766,48 @@ func mustUserID(t *testing.T, w *world, name string) string {
 	}
 	return id
 }
+
+func TestAIAccessPrivacyAlwaysOnAndStrict(t *testing.T) {
+	w := setupWorld(t)
+	// Todos os filtros opcionais desligados: credenciais e financeiro continuam ocultos.
+	expect(t, w.admin.do("PUT", "/api/v1/ai/settings", map[string]any{"enabled": true, "maskDocuments": false, "maskPhones": false, "maskEmails": false}), 200)
+	tok := w.mkToken(w.ana, "ana")
+	w.receive("Marlon Contador Silva", "minha senha do gov.br: Abc12345! cartão 4111 1111 1111 1111 pix: 123e4567-e89b-12d3-a456-426614174000 e-mail marlon@empresa.com")
+	cid := mustConv(t, w.ana, "Marlon Contador Silva")["id"].(string)
+
+	check := func(label string, out map[string]any) string {
+		b := string(mustJSON(out))
+		for _, secret := range []string{"Abc12345!", "4111 1111 1111 1111", "123e4567-e89b-12d3-a456-426614174000"} {
+			if strings.Contains(b, secret) {
+				t.Fatalf("%s vazou %q: %s", label, secret, b)
+			}
+		}
+		return b
+	}
+	msgs, _ := w.tool(tok, "read_messages", map[string]any{"conversation_id": cid})
+	b := check("read_messages", msgs)
+	if !strings.Contains(b, "marlon@empresa.com") {
+		t.Fatal("com maskEmails desligado o e-mail aparece (opção do administrador para tokens pessoais)")
+	}
+	list, _ := w.tool(tok, "list_conversations", map[string]any{})
+	check("list_conversations (última mensagem)", list)
+	srch, _ := w.tool(tok, "search", map[string]any{"q": "gov.br"})
+	check("search", srch)
+
+	// Ligar e-mail e modo estrito: e-mail oculto, nome reduzido, observação interna removida.
+	contactID := mustConv(t, w.ana, "Marlon Contador Silva")["contact"].(map[string]any)["id"].(string)
+	expect(t, w.ana.do("PATCH", "/api/v1/contacts/"+contactID, map[string]any{"note": "cliente antigo"}), 204)
+	expect(t, w.admin.do("PUT", "/api/v1/ai/settings", map[string]any{"enabled": true, "maskDocuments": true, "maskPhones": true, "maskEmails": true, "strictPrivacy": true}), 200)
+	conv, _ := w.tool(tok, "get_conversation", map[string]any{"id": cid})
+	b = string(mustJSON(conv))
+	if strings.Contains(b, "marlon@empresa.com") || strings.Contains(b, "cliente antigo") || strings.Contains(b, "Contador Silva") || !strings.Contains(b, "Marlon S.") {
+		t.Fatalf("modo estrito: %s", b)
+	}
+	if strings.Contains(string(mustJSON(conv["contact"])), "+55") {
+		t.Fatalf("telefone deveria estar mascarado: %v", conv["contact"])
+	}
+	// Ids e horários continuam utilizáveis.
+	if conv["id"] != cid || conv["updatedAt"] == nil {
+		t.Fatalf("estrutura alterada: %v", conv)
+	}
+}

@@ -6,7 +6,7 @@ import { api, del, errorMessage, fieldErrors, get, post } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { useMe } from "@/features/auth/api";
 
-type AiSettings = { enabled: boolean; maskDocuments: boolean; maskPhones: boolean; allowWrite: boolean; allowSend: boolean };
+type AiSettings = { enabled: boolean; maskDocuments: boolean; maskPhones: boolean; allowWrite: boolean; allowSend: boolean; maskEmails: boolean; strictPrivacy: boolean };
 type AiToken = {
   id: string;
   name: string;
@@ -282,6 +282,12 @@ export function AiAccessCard() {
               <div className="ml-7 border-l border-line pl-3">
                 <Toggle checked={s.maskDocuments} disabled={save.isPending} onChange={(v) => change({ maskDocuments: v })} label="Ocultar CPF e CNPJ" hint="Recomendado. A IA vê “[CPF oculto]” no lugar." />
                 <Toggle checked={s.maskPhones} disabled={save.isPending} onChange={(v) => change({ maskPhones: v })} label="Ocultar telefones" hint="Mostra só os 4 últimos dígitos." />
+                <Toggle checked={s.maskEmails} disabled={save.isPending} onChange={(v) => change({ maskEmails: v })} label="Ocultar e-mails" hint="Recomendado. Aparece “[e-mail oculto]”." />
+                <Toggle checked={s.strictPrivacy} disabled={save.isPending} onChange={(v) => change({ strictPrivacy: v })} label="Modo estrito" hint="Nomes de pessoas viram “Nome S.” e as observações internas dos contatos não saem." />
+                <p className="mt-1 rounded-lg bg-elevated p-2.5 text-xs text-muted">
+                  Sempre ocultos, para qualquer assistente e sem opção de desligar: senhas, códigos e chaves de acesso, cartões, agência/conta, chave PIX e boletos.
+                  Aplicativos conectados por login (ChatGPT, claude.ai) recebem tudo oculto, inclusive telefone e observações internas.
+                </p>
                 <Toggle checked={s.allowWrite} disabled={save.isPending} onChange={(v) => change({ allowWrite: v })} label="Permitir que a IA faça alterações" hint="Etiquetar, acrescentar observações, renomear contatos, adiar, lembretes, agenda, transferir e deixar rascunhos, sempre como a pessoa do token. Desligado, tokens de escrita deixam de alterar na hora." />
                 <Toggle checked={s.allowSend} disabled={save.isPending || !s.allowWrite} onChange={(v) => change({ allowSend: v })} label="Permitir que a IA peça envios (com aprovação)" hint="A IA pode pedir o envio de uma mensagem a um cliente; quem tem o token aprova cada uma na conversa. Nada sai sozinho. Exige as alterações liberadas." />
               </div>

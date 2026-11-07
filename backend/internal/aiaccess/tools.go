@@ -291,7 +291,7 @@ func addTool[In any](m *MCP, s *mcp.Server, p Principal, name, desc string, h fu
 				return nil, nil, err
 			}
 			g["aviso"] = untrustedNote
-			masked := Masker{Documents: st.MaskDocuments, Phones: st.MaskPhones}.Walk(g)
+			masked := MaskerFor(st, p).Walk(g, p.OAuth)
 			return nil, masked, nil
 		})
 }
