@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "motion/react";
-import { Ban, Download, FileText, Image as ImageIcon, MapPin } from "lucide-react";
+import { Ban, ChevronDown, Download, FileText, Image as ImageIcon, MapPin, Mic } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { formatBytes, formatTime } from "@/lib/format";
 import { AudioPlayer } from "./AudioPlayer";
@@ -8,7 +8,7 @@ import { receiptDetails } from "./receipts";
 import { Highlight } from "@/components/Highlight";
 import { RichText } from "@/components/RichText";
 import { Ticks } from "./Ticks";
-import type { Message } from "./types";
+import type { Message, Quoted } from "./types";
 
 function Meta({ m }: { m: Message }) {
   return (
@@ -16,9 +16,39 @@ function Meta({ m }: { m: Message }) {
       className="ml-auto flex shrink-0 items-center gap-1 self-end pl-2.5 text-[10.5px] tabular-nums opacity-70"
       title={m.direction === "out" ? receiptDetails(m) : undefined}
     >
+      {m.editedAt && <span className="italic">editada</span>}
       {formatTime(m.sentAt)}
       {m.direction === "out" && <Ticks status={m.status} />}
     </span>
+  );
+}
+
+const quotedKind: Record<string, { label: string; icon: React.ReactNode }> = {
+  image: { label: "Foto", icon: <ImageIcon className="size-3.5" /> },
+  audio: { label: "Mensagem de voz", icon: <Mic className="size-3.5" /> },
+  document: { label: "Documento", icon: <FileText className="size-3.5" /> },
+  location: { label: "Localização", icon: <MapPin className="size-3.5" /> },
+};
+
+/** Prévia da mensagem respondida; clique leva até a original (quando ela está na conversa). */
+function QuotedBlock({ q, onJump }: { q: Quoted; onJump?: (id: string) => void }) {
+  const kind = quotedKind[q.kind];
+  const body = (
+    <>
+      <span className="block truncate text-[12px] font-semibold text-brand-ink [.bg-out_&]:text-white">{q.fromMe ? q.author || "Você" : q.author || "Cliente"}</span>
+      <span className="flex items-center gap-1 text-[12.5px] opacity-80">
+        {kind && q.kind !== "text" && <span className="shrink-0">{kind.icon}</span>}
+        <span className="line-clamp-2 break-words">{q.text || kind?.label || "Mensagem"}</span>
+      </span>
+    </>
+  );
+  const cls = "mb-1 block w-full min-w-0 rounded-md border-l-4 border-brand bg-black/15 px-2 py-1 text-left";
+  return q.id && onJump ? (
+    <button type="button" aria-label="Ir para a mensagem respondida" onClick={() => onJump(q.id!)} className={cn(cls, "cursor-pointer hover:bg-black/25")}>
+      {body}
+    </button>
+  ) : (
+    <div className={cls}>{body}</div>
   );
 }
 
@@ -234,9 +264,15 @@ export function MessageBubble({
   onOpenPdf,
   term,
   emphasis,
+  onMenu,
+  onJump,
 }: {
   m: Message;
   showAuthor: boolean;
+  /** Abre o menu de ações (botão direito ou o botão que aparece ao passar o mouse). */
+  onMenu?: (m: Message, x: number, y: number) => void;
+  /** Vai até a mensagem original de uma resposta. */
+  onJump?: (id: string) => void;
   animateIn?: boolean;
   onOpenImage?: (id: string) => void;
   onOpenPdf?: (id: string) => void;
@@ -247,7 +283,12 @@ export function MessageBubble({
 }) {
   const out = m.direction === "out";
   return (
-    <div className={cn("flex", out ? "justify-end" : "justify-start")}>
+    <div className={cn("flex", out ? "justify-end" : "justify-start")} onContextMenu={onMenu ? (e) => {
+      // Links, textos selecionados e imagens mantêm o menu do navegador.
+      if ((e.target as HTMLElement).closest("a, button, input, textarea") || window.getSelection()?.toString()) return;
+      e.preventDefault();
+      onMenu(m, e.clientX, e.clientY);
+    } : undefined}>
       <motion.div
         // Mensagens novas "brotam" do lado de quem enviou; o histórico aparece sem animação individual.
         initial={animateIn ? { opacity: 0, y: 14, scale: 0.94 } : false}
@@ -255,7 +296,7 @@ export function MessageBubble({
         transition={{ type: "spring", stiffness: 480, damping: 32, mass: 0.8 }}
         style={{ transformOrigin: out ? "100% 100%" : "0% 100%" }}
         className={cn(
-          "relative max-w-[min(28rem,75%)] rounded-lg text-[13.5px] leading-[1.4] shadow-sm transition-shadow duration-300",
+          "group/msg relative max-w-[min(28rem,75%)] rounded-lg text-[13.5px] leading-[1.4] shadow-sm transition-shadow duration-300",
           m.kind === "image" ? "p-[3px]" : "px-2.5 py-[5px]",
           out ? "rounded-tr-sm bg-out" : "rounded-tl-sm bg-in",
           // A busca destaca o balão sem alterar o contraste do texto.
@@ -264,9 +305,32 @@ export function MessageBubble({
           m.status === "failed" && "ring-1 ring-danger",
         )}
       >
+        {onMenu && (
+          <button
+            type="button"
+            aria-label="Ações da mensagem"
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              onMenu(m, r.left, r.bottom + 4);
+            }}
+            className="absolute right-1 top-1 z-10 hidden size-6 items-center justify-center rounded-full bg-black/35 text-white opacity-0 backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover/msg:opacity-100 sm:inline-flex"
+          >
+            <ChevronDown className="size-4" />
+          </button>
+        )}
+        {m.deleted ? (
+          <div className="flex flex-wrap items-end">
+            <p className="flex items-center gap-1.5 italic opacity-80">
+              <Ban className="size-3.5" /> {out ? "Você apagou esta mensagem" : "Esta mensagem foi apagada"}
+            </p>
+            <Meta m={m} />
+          </div>
+        ) : (
+          <>
         {m.kind !== "image" && (out || m.group) && showAuthor && m.authorName && (
           <p className="text-[12.5px] font-semibold">{m.authorName}{out ? ":" : ""}</p>
         )}
+        {m.quoted && <div className={m.kind === "image" ? "px-1.5 pt-1.5" : ""}><QuotedBlock q={m.quoted} onJump={onJump} /></div>}
 
         {m.kind === "text" && (
           <div className="flex flex-wrap items-end">
@@ -311,6 +375,8 @@ export function MessageBubble({
             <LocationCard m={m} />
             <Meta m={m} />
           </div>
+        )}
+          </>
         )}
       </motion.div>
     </div>

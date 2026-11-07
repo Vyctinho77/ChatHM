@@ -1,4 +1,4 @@
-import type { Message } from "./types";
+import type { Message, Quoted } from "./types";
 
 /** O que a implementação atual permite fazer pela interface. */
 export type Capabilities = {
@@ -23,7 +23,7 @@ export type OutgoingDraft =
 /** Arquivos de mensagens ainda não confirmadas (para "tentar de novo" sem pedir o arquivo outra vez). */
 export const pendingFiles = new Map<string, Blob>();
 
-export function buildOutgoing(conversationId: string, authorName: string, d: OutgoingDraft): Message {
+export function buildOutgoing(conversationId: string, authorName: string, d: OutgoingDraft, quoted?: Quoted): Message {
   const id = crypto.randomUUID();
   const rest = { ...d } as OutgoingDraft & { file?: Blob };
   if (rest.kind !== "text" && rest.kind !== "location" && rest.file) pendingFiles.set(id, rest.file);
@@ -36,5 +36,6 @@ export function buildOutgoing(conversationId: string, authorName: string, d: Out
     sentAt: new Date().toISOString(),
     status: "pending",
     authorName,
+    ...(quoted ? { quoted } : {}),
   } as Message;
 }

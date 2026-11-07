@@ -152,3 +152,21 @@ tela Conexão WhatsApp.
 O lápis ao lado do nome (painel **Dados do contato** e lista **Clientes**) troca o nome exibido (`PATCH /contacts/{id}`, até 120 caracteres).
 O nome definido pela equipe não é sobrescrito pelo nome do WhatsApp nem pelo assunto do grupo (`contacts.name_edited`).
 Apagar o nome volta a seguir o WhatsApp. Quem vê a conversa pode renomear; o administrador também renomeia contatos importados sem conversa.
+
+## Menu da mensagem (botão direito)
+
+Botão direito numa mensagem (ou o botão ▾ que aparece ao passar o mouse): **Dados da mensagem**, **Responder**, **Copiar**,
+**Encaminhar**, **Baixar** (mídia), **Editar** e **Apagar**.
+
+- **Responder:** a resposta cita a mensagem (`replyTo` no envio; a prévia fica em `payload.quoted`) e o WhatsApp mostra a citação.
+  Citações recebidas do cliente aparecem do mesmo jeito; clicar na citação leva até a mensagem original.
+- **Editar:** só texto enviado pelo escritório, até **20 minutos** depois do envio (`PATCH /messages/{id}`). Edições feitas no celular
+  também chegam e a mensagem fica marcada como "editada".
+- **Apagar para todos:** só mensagens enviadas pelo escritório, até **2 dias** (`DELETE /messages/{id}?scope=everyone`). O conteúdo e o
+  anexo são removidos do ChatHM e a bolha vira "Você apagou esta mensagem". "Apagar para todos" feito no WhatsApp também chega.
+- **Apagar para mim:** esconde a mensagem só para quem apagou (`scope=me`, tabela `message_hidden`); o restante da equipe continua vendo.
+- **Encaminhar:** reenvia texto, imagem, documento, áudio ou localização para até 5 conversas (`POST /messages/{id}/forward`), cada uma
+  seguindo as regras normais de envio (assume o atendimento, bloqueia se outra pessoa atende etc.). O resultado vem por conversa.
+- Quem pode editar/apagar para todos: quem enviou a mensagem, o administrador ou, para mensagens enviadas pelo celular, o responsável.
+
+Telefones, e-mails e sites no texto viram links azuis (telefone abre a conversa com aquele número). A foto de perfil abre em tela cheia ao clicar.

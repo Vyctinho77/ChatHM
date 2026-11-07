@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { FileText, Image, MapPin, Mic, Paperclip, SendHorizontal, Smile, Sparkles, Square, Trash2 } from "lucide-react";
+import { Check, FileText, Image, MapPin, Mic, Paperclip, Pencil, Reply, SendHorizontal, Smile, Sparkles, Square, Trash2, X } from "lucide-react";
 import { Menu, MenuItem } from "@/components/Menu";
 import { IconButton } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -84,7 +84,19 @@ export function Composer({
   disabledReason,
   mediaDisabledReason,
   onSend,
+  reply,
+  onCancelReply,
+  edit,
+  onCancelEdit,
+  onSaveEdit,
 }: {
+  /** Mensagem sendo respondida: aparece como citação acima do campo e vai junto no envio. */
+  reply?: { author: string; text: string } | null;
+  onCancelReply?: () => void;
+  /** Edição de uma mensagem enviada: o campo começa com o texto atual; Enter salva, Esc cancela. */
+  edit?: { id: string; text: string } | null;
+  onCancelEdit?: () => void;
+  onSaveEdit?: (text: string) => Promise<void>;
   conversationId: string;
   disabled?: boolean;
   disabledReason?: string;
@@ -92,7 +104,8 @@ export function Composer({
   mediaDisabledReason?: string;
   onSend: (d: OutgoingDraft) => void;
 }) {
-  const [text, setText] = useState(() => getDraft(conversationId));
+  const [text, setText] = useState(() => (edit ? edit.text : getDraft(conversationId)));
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const ta = useRef<HTMLTextAreaElement>(null);
   const docInput = useRef<HTMLInputElement>(null);
@@ -115,10 +128,32 @@ export function Composer({
 
   function update(v: string) {
     setText(v);
-    setDraft(conversationId, v);
+    if (!edit) setDraft(conversationId, v); // editar não mexe no rascunho da conversa
+  }
+
+  // Ao responder ou editar, o cursor já fica no campo.
+  const focusKey = edit?.id ?? (reply ? "reply" : "");
+  useEffect(() => {
+    if (focusKey) ta.current?.focus();
+  }, [focusKey]);
+
+  async function saveEdit() {
+    const t = text.trim();
+    if (!edit || !t || saving) return;
+    if (t === edit.text.trim()) return onCancelEdit?.();
+    setSaving(true);
+    setError("");
+    try {
+      await onSaveEdit?.(t);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível editar.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   function sendText() {
+    if (edit) return void saveEdit();
     const t = text.trim();
     if (!t || disabled) return;
     onSend({ kind: "text", text: t });
@@ -129,6 +164,10 @@ export function Composer({
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       sendText();
+    }
+    if (e.key === "Escape") {
+      if (edit) onCancelEdit?.();
+      else if (reply) onCancelReply?.();
     }
   }
 
@@ -172,6 +211,18 @@ export function Composer({
   return (
     <div className="shrink-0 px-3 pb-3 pt-2 sm:px-4">
       {error && <p className="px-2 pb-1 text-xs text-danger">{error}</p>}
+      {(reply || edit) && !recorder.recording && (
+        <div className="mb-1 flex items-start gap-2 rounded-2xl bg-panel px-3 py-2 shadow-sm">
+          <span className="mt-0.5 text-brand-ink [&>svg]:size-4">{edit ? <Pencil /> : <Reply />}</span>
+          <div className="min-w-0 flex-1 border-l-4 border-brand pl-2.5">
+            <p className="truncate text-[12px] font-semibold text-brand-ink">{edit ? "Editando mensagem" : `Respondendo a ${reply?.author}`}</p>
+            <p className="line-clamp-2 break-words text-[12.5px] text-muted">{edit ? edit.text : reply?.text}</p>
+          </div>
+          <IconButton label={edit ? "Cancelar edição" : "Cancelar resposta"} onClick={edit ? onCancelEdit : onCancelReply} className="size-7 shrink-0">
+            <X className="size-4" />
+          </IconButton>
+        </div>
+      )}
       {recorder.recording ? (
         <div className="flex min-h-14 items-center gap-3 rounded-2xl bg-panel px-3 py-2 shadow-lg shadow-black/5">
           <IconButton label="Descartar gravação" onClick={() => recorder.stop(true)}>
@@ -225,7 +276,7 @@ export function Composer({
             trigger={({ toggle }) => (
               <IconButton
                 label={mediaDisabledReason ?? "Anexar"}
-                disabled={!!mediaDisabledReason}
+                disabled={!!mediaDisabledReason || !!edit}
                 onClick={toggle}
               >
                 <Paperclip className="size-5" />
@@ -266,16 +317,16 @@ export function Composer({
 
           <AnimatePresence mode="popLayout" initial={false}>
             <motion.span
-              key={text.trim() ? "send" : "mic"}
+              key={text.trim() || edit ? "send" : "mic"}
               initial={{ scale: 0.4, opacity: 0, rotate: -30 }}
               animate={{ scale: 1, opacity: 1, rotate: 0 }}
               exit={{ scale: 0.4, opacity: 0, rotate: 30 }}
               transition={{ type: "spring", stiffness: 600, damping: 30 }}
               className="inline-flex"
             >
-              {text.trim() ? (
-                <IconButton label="Enviar" onClick={sendText} className="text-brand-ink hover:text-brand-ink">
-                  <SendHorizontal className="size-5" />
+              {text.trim() || edit ? (
+                <IconButton label={edit ? "Salvar edição" : "Enviar"} onClick={sendText} disabled={saving || (!!edit && !text.trim())} className="text-brand-ink hover:text-brand-ink">
+                  {edit ? <Check className="size-5" /> : <SendHorizontal className="size-5" />}
                 </IconButton>
               ) : (
                 <IconButton

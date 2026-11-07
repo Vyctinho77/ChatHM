@@ -20,9 +20,10 @@ import type { ViewablePdf } from "./PdfViewer";
 // pdf.js é pesado: só é baixado quando alguém abre um PDF.
 const PdfViewer = lazy(() => import("./PdfViewer").then((mod) => ({ default: mod.PdfViewer })));
 import { TransferMenu } from "./TransferMenu";
+import { DeleteDialog, ForwardDialog, MessageInfoDialog, MessageMenu } from "./MessageActions";
 import { buildOutgoing, capabilities, useConversationActions, useMessages, useSendMessage, type OutgoingDraft } from "./store";
 import { statusLabel } from "./receipts";
-import { segmentClass, segmentLabel, type Conversation, type Message } from "./types";
+import { segmentClass, segmentLabel, type Conversation, type Message, type Quoted } from "./types";
 import { SnoozeDialog, SnoozeNotice } from "./SnoozeDialog";
 import { useTyping } from "./typing";
 import { TypingIndicator } from "./TypingIndicator";
@@ -133,6 +134,17 @@ export function ChatPanel({
   const matchIdx = matchIds.length ? (nav.term === term && nav.idx >= 0 ? Math.min(nav.idx, matchIds.length - 1) : matchIds.length - 1) : 0;
   const currentMatch = matchIds.length ? matchIds[matchIdx] : undefined;
 
+  // Menu de botão direito e ações das mensagens.
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [reply, setReply] = useState<Message | null>(null);
+  const [editing, setEditing] = useState<Message | null>(null);
+  const [deleting, setDeleting] = useState<Message | null>(null);
+  const [forwarding, setForwarding] = useState<Message | null>(null);
+  const [infoFor, setInfoFor] = useState<Message | null>(null);
+  const menuMsg = menu ? messages?.find((m) => m.id === menu.id) : undefined;
+  const openMenu = useCallback((m: Message, x: number, y: number) => setMenu({ id: m.id, x, y }), []);
+  const closeMenu = useCallback(() => setMenu(null), []);
+
   const scrollToMessage = useCallback((id: string) => {
     requestAnimationFrame(() => document.getElementById(`msg-${id}`)?.scrollIntoView({ block: "center", behavior: "smooth" }));
   }, []);
@@ -192,8 +204,22 @@ export function ChatPanel({
     banner = <>Em atendimento por {c.assignee.name}</>;
   }
 
+  /** Prévia usada para citar a mensagem numa resposta. */
+  function quotedOf(m: Message): Quoted {
+    const text = m.kind === "text" ? m.text : m.kind === "document" ? (m.caption || m.fileName) : m.kind === "image" ? (m.caption ?? "") : "";
+    const out = m.direction === "out";
+    return { id: m.id, author: out ? (m.authorName ?? actions.me.name) : (m.authorName ?? c.contact.name), fromMe: out, kind: m.kind, text: text.slice(0, 160) };
+  }
+
+  /** Vai até a mensagem original de uma resposta (carrega o histórico se ela estiver além das mais recentes). */
+  async function jumpTo(id: string) {
+    if (!document.getElementById(`msg-${id}`)) await actions.loadAllMessages(c.id);
+    scrollToMessage(id);
+  }
+
   function submit(d: OutgoingDraft) {
-    const msg = buildOutgoing(c.id, actions.me.name, d);
+    const msg = buildOutgoing(c.id, actions.me.name, d, reply ? quotedOf(reply) : undefined);
+    setReply(null);
     send.mutate(
       { msg },
       {
@@ -423,6 +449,8 @@ export function ChatPanel({
                     emphasis={m.id === flashId || m.id === currentMatch}
                     onOpenImage={setViewerId}
                     onOpenPdf={setPdfId}
+                    onMenu={openMenu}
+                    onJump={(id) => void jumpTo(id)}
                   />
                 </div>
                 {m.id === lastOutId && !search && (
@@ -481,8 +509,17 @@ export function ChatPanel({
         </div>
       )}
       <Composer
-        key={`${c.id}:${composerKey}`}
+        key={`${c.id}:${composerKey}:${editing?.id ?? ""}`}
         conversationId={c.id}
+        reply={reply ? { author: quotedOf(reply).author, text: quotedOf(reply).text || reply.kind } : null}
+        onCancelReply={() => setReply(null)}
+        edit={editing && editing.kind === "text" ? { id: editing.id, text: editing.text } : null}
+        onCancelEdit={() => setEditing(null)}
+        onSaveEdit={async (t) => {
+          if (!editing) return;
+          await actions.editMessage(c.id, editing.id, t);
+          setEditing(null);
+        }}
         disabled={lockedByOther || closed || !!c.snoozedUntil || !capabilities.send}
         disabledReason={
           !capabilities.send
@@ -496,6 +533,22 @@ export function ChatPanel({
         mediaDisabledReason={capabilities.media ? undefined : capabilities.mediaUnavailableReason}
         onSend={submit}
       />
+      {menu && menuMsg && (
+        <MessageMenu
+          message={menuMsg}
+          x={menu.x}
+          y={menu.y}
+          onReply={() => (setEditing(null), setReply(menuMsg))}
+          onForward={() => setForwarding(menuMsg)}
+          onEdit={() => (setReply(null), setEditing(menuMsg))}
+          onDelete={() => setDeleting(menuMsg)}
+          onInfo={() => setInfoFor(menuMsg)}
+          onClose={closeMenu}
+        />
+      )}
+      {deleting && <DeleteDialog message={deleting} conversationId={c.id} onClose={() => setDeleting(null)} />}
+      {forwarding && <ForwardDialog message={forwarding} conversationId={c.id} onClose={() => setForwarding(null)} />}
+      {infoFor && <MessageInfoDialog message={infoFor} onClose={() => setInfoFor(null)} />}
       {viewerId && (
         <ImageViewer images={viewable} startId={viewerId} contactName={c.contact.name} onClose={closeViewer} />
       )}

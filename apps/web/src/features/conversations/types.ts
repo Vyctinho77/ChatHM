@@ -23,6 +23,9 @@ export type ConversationStatus = "new" | "in_progress" | "closed";
 
 export type DeliveryStatus = "pending" | "sent" | "delivered" | "read" | "failed";
 
+/** Prévia da mensagem respondida. `id` ausente = a original não está guardada no ChatHM. */
+export type Quoted = { id?: string; author: string; fromMe: boolean; kind: string; text: string };
+
 type Base = {
   id: string;
   conversationId: string;
@@ -33,6 +36,9 @@ type Base = {
   readAt?: string; // recibo de leitura (mensagens enviadas)
   authorName?: string; // atendente que enviou (ou, em grupos, quem escreveu)
   group?: boolean; // mensagem de grupo: mostra o autor também nas recebidas
+  quoted?: Quoted; // esta mensagem responde a outra
+  editedAt?: string; // texto editado depois de enviado
+  deleted?: boolean; // apagada para todos: o conteúdo some, a marca fica
   historical?: boolean;
   /** Mídia recebida sem arquivo: o download falhou ou foi bloqueado pela verificação de segurança. */
   mediaState?: "failed" | "blocked";

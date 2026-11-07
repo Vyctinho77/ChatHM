@@ -125,6 +125,29 @@ export function useConversationActions() {
         await patch(`/contacts/${c.contact.id}`, { name });
         await Promise.all([qc.invalidateQueries({ queryKey: conversationKeys.list }), qc.invalidateQueries({ queryKey: ["contacts"] })]);
       },
+      /** Edita o texto de uma mensagem enviada (até 20 min depois do envio). */
+      async editMessage(conversationId: string, messageId: string, text: string) {
+        const updated = await patch<Message>(`/messages/${messageId}`, { text });
+        qc.setQueryData<Message[]>(conversationKeys.messages(conversationId), (old) => old?.map((m) => (m.id === messageId ? updated : m)));
+        void qc.invalidateQueries({ queryKey: conversationKeys.list });
+      },
+      /** "me" esconde só para você; "everyone" apaga no WhatsApp (mensagens do escritório, até 2 dias). */
+      async deleteMessage(conversationId: string, messageId: string, scope: "me" | "everyone") {
+        await del<void>(`/messages/${messageId}?scope=${scope}`);
+        qc.setQueryData<Message[]>(conversationKeys.messages(conversationId), (old) =>
+          scope === "me"
+            ? old?.filter((m) => m.id !== messageId)
+            : old?.map((m) => (m.id === messageId ? ({ id: m.id, conversationId: m.conversationId, direction: m.direction, sentAt: m.sentAt, status: m.status, authorName: m.authorName, kind: "text", text: "", deleted: true } as Message) : m)),
+        );
+        void qc.invalidateQueries({ queryKey: conversationKeys.list });
+      },
+      /** Reenvia a mensagem para outras conversas; devolve o resultado de cada uma. */
+      async forwardMessage(messageId: string, conversationIds: string[]) {
+        const res = await post<{ results: { conversationId: string; ok: boolean; error?: string }[] }>(`/messages/${messageId}/forward`, { conversationIds });
+        void qc.invalidateQueries({ queryKey: conversationKeys.list });
+        for (const id of conversationIds) void qc.invalidateQueries({ queryKey: conversationKeys.messages(id) });
+        return res.results;
+      },
       setNote(id: string, note: string) {
         const c = list().find((x) => x.id === id);
         if (!c) return;
@@ -164,7 +187,7 @@ export function useSendMessage(conversationId: string) {
       const path = `/conversations/${conversationId}/messages`;
       switch (msg.kind) {
         case "text":
-          return post<Message>(path, { id: msg.id, text: msg.text });
+          return post<Message>(path, { id: msg.id, text: msg.text, replyTo: msg.quoted?.id });
         case "location":
           return post<Message>(path, { id: msg.id, kind: "location", lat: msg.lat, lng: msg.lng, name: msg.name ?? "", address: msg.address ?? "" });
         case "image":
@@ -176,6 +199,7 @@ export function useSendMessage(conversationId: string) {
           const fd = new FormData();
           fd.set("id", msg.id);
           fd.set("kind", msg.kind);
+          if (msg.quoted?.id) fd.set("replyTo", msg.quoted.id);
           if (msg.kind !== "audio" && msg.caption) fd.set("text", msg.caption);
           if (msg.kind === "image" && msg.hd) fd.set("hd", "true");
           if (msg.kind === "audio" && msg.waveform) fd.set("waveform", JSON.stringify(msg.waveform));

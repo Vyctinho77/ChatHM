@@ -170,6 +170,28 @@ export function useConversationActions() {
       patchConversation(id, (x) => ({ ...x, contact: { ...x.contact, name: name || x.contact.name } }));
       refresh();
     },
+    async editMessage(conversationId: string, messageId: string, text: string) {
+      patchMessage(qc, conversationId, messageId, { text, editedAt: new Date().toISOString() } as Partial<Message>);
+    },
+    async deleteMessage(conversationId: string, messageId: string, scope: "me" | "everyone") {
+      if (scope === "everyone") {
+        patchMessage(qc, conversationId, messageId, { deleted: true, text: "" } as Partial<Message>);
+        return;
+      }
+      if (db) db.messages[conversationId] = (db.messages[conversationId] ?? []).filter((m) => m.id !== messageId);
+      qc.setQueryData<Message[]>(keys.messages(conversationId), (old = []) => old.filter((m) => m.id !== messageId));
+    },
+    async forwardMessage(messageId: string, conversationIds: string[]) {
+      const src = Object.values(db?.messages ?? {}).flat().find((m) => m.id === messageId);
+      return conversationIds.map((conversationId) => {
+        if (src && src.kind === "text" && db) {
+          const copy = { ...src, id: crypto.randomUUID(), conversationId, direction: "out", status: "sent", sentAt: new Date().toISOString(), authorName: who.name, quoted: undefined } as Message;
+          db.messages[conversationId] = [...(db.messages[conversationId] ?? []), copy];
+          patchConversation(conversationId, (c) => ({ ...c, lastMessage: copy }));
+        }
+        return { conversationId, ok: true as const };
+      });
+    },
     setNote(id: string, note: string) {
       patchConversation(id, (x) => ({ ...x, contact: { ...x.contact, note } }));
       refresh();
