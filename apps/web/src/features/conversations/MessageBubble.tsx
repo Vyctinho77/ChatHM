@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "motion/react";
-import { Ban, ChevronDown, Download, FileText, Image as ImageIcon, MapPin, Mic } from "lucide-react";
+import { Ban, Download, FileText, Image as ImageIcon, MapPin, Mic } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { formatBytes, formatTime } from "@/lib/format";
 import { AudioPlayer } from "./AudioPlayer";
@@ -84,7 +84,7 @@ function ImageBody({
   onOpen?: (id: string) => void;
   term?: string;
 }) {
-  const author = (m.direction === "out" || m.group) && showAuthor && m.authorName ? m.authorName : "";
+  const author = m.direction === "in" && m.group && showAuthor && m.authorName ? m.authorName : "";
   const hasText = !!m.caption || !!author;
   return (
     <div className="w-72 max-w-full">
@@ -259,6 +259,7 @@ function LocationCard({ m }: { m: Extract<Message, { kind: "location" }> }) {
 export function MessageBubble({
   m,
   showAuthor,
+  startsGroup = false,
   animateIn,
   onOpenImage,
   onOpenPdf,
@@ -269,7 +270,9 @@ export function MessageBubble({
 }: {
   m: Message;
   showAuthor: boolean;
-  /** Abre o menu de ações (botão direito ou o botão que aparece ao passar o mouse). */
+  /** A primeira mensagem de cada sequência ganha uma cauda no lado do remetente. */
+  startsGroup?: boolean;
+  /** Abre o menu de ações com o botão direito. */
   onMenu?: (m: Message, x: number, y: number) => void;
   /** Vai até a mensagem original de uma resposta. */
   onJump?: (id: string) => void;
@@ -295,29 +298,25 @@ export function MessageBubble({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ type: "spring", stiffness: 480, damping: 32, mass: 0.8 }}
         style={{ transformOrigin: out ? "100% 100%" : "0% 100%" }}
+        // A cauda fica dentro dos limites da camada animada, evitando recorte ao escalar.
+        className="relative -mx-2 max-w-[min(29rem,calc(75%+1rem))] px-2"
+      >
+      <div
         className={cn(
-          "group/msg relative max-w-[min(28rem,75%)] rounded-lg text-[13.5px] leading-[1.4] shadow-sm transition-shadow duration-300",
+          "group/msg relative rounded-lg text-[13.5px] leading-[1.4] shadow-sm transition-shadow duration-300",
           m.kind === "image" ? "p-[3px]" : "px-2.5 py-[5px]",
-          out ? "rounded-tr-sm bg-out" : "rounded-tl-sm bg-in",
+          out ? "bg-out" : "bg-in",
+          startsGroup && (out ? "rounded-tr-none" : "rounded-tl-none"),
           // A busca destaca o balão sem alterar o contraste do texto.
           out ? "text-out-fg" : "text-in-fg",
           emphasis && "ring-2 ring-brand-ink ring-offset-2 ring-offset-chat",
           m.status === "failed" && "ring-1 ring-danger",
         )}
       >
-        {onMenu && (
-          <button
-            type="button"
-            aria-label="Ações da mensagem"
-            onClick={(e) => {
-              const r = e.currentTarget.getBoundingClientRect();
-              onMenu(m, r.left, r.bottom + 4);
-            }}
-            className="absolute right-1 top-1 z-10 hidden size-6 items-center justify-center rounded-full bg-black/35 text-white opacity-0 backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover/msg:opacity-100 sm:inline-flex"
-          >
-            <ChevronDown className="size-4" />
-          </button>
-        )}
+        {startsGroup && <span aria-hidden="true" className={cn(
+          "pointer-events-none absolute top-0 h-2.5 w-2",
+          out ? "-right-2 bg-out [clip-path:polygon(0_0,100%_0,0_100%)]" : "-left-2 bg-in [clip-path:polygon(0_0,100%_0,100%_100%)]",
+        )} />}
         {m.deleted ? (
           <div className="flex flex-wrap items-end">
             <p className="flex items-center gap-1.5 italic opacity-80">
@@ -327,8 +326,8 @@ export function MessageBubble({
           </div>
         ) : (
           <>
-        {m.kind !== "image" && (out || m.group) && showAuthor && m.authorName && (
-          <p className="text-[12.5px] font-semibold">{m.authorName}{out ? ":" : ""}</p>
+        {m.kind !== "image" && !out && m.group && showAuthor && m.authorName && (
+          <p className="text-[12.5px] font-semibold">{m.authorName}</p>
         )}
         {m.quoted && <div className={m.kind === "image" ? "px-1.5 pt-1.5" : ""}><QuotedBlock q={m.quoted} onJump={onJump} /></div>}
 
@@ -343,10 +342,7 @@ export function MessageBubble({
 
         {m.kind === "audio" && (
           <div className="flex flex-col">
-          <div className="flex items-end">
-            <AudioPlayer durationSec={m.durationSec} waveform={m.waveform} url={m.url} outgoing={out} />
-            <Meta m={m} />
-          </div>
+            <AudioPlayer durationSec={m.durationSec} waveform={m.waveform} url={m.url} outgoing={out} metadata={<Meta m={m} />} />
           {m.historical && !m.url && <p className="mt-1 text-[11px] opacity-70">Áudio do histórico · arquivo não importado</p>}
           </div>
         )}
@@ -354,6 +350,7 @@ export function MessageBubble({
         {m.kind === "document" && (
           <div className="flex flex-col gap-1 pt-1">
             <DocumentCard m={m} onOpen={onOpenPdf} term={term} />
+            {m.caption && <p className="whitespace-pre-wrap break-words pt-1"><RichText text={m.caption} term={term} /></p>}
             <Meta m={m} />
           </div>
         )}
@@ -378,6 +375,7 @@ export function MessageBubble({
         )}
           </>
         )}
+      </div>
       </motion.div>
     </div>
   );

@@ -5,8 +5,10 @@ import { Menu, MenuItem } from "@/components/Menu";
 import { IconButton } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { formatDuration } from "@/lib/format";
+import { playRecordStartSound } from "@/lib/sounds";
 import { getDraft, setDraft } from "./drafts";
 import type { OutgoingDraft } from "./store";
+import { AttachmentPreview, type AttachmentSelection } from "./AttachmentPreview";
 
 const quickEmojis = ["😀", "😉", "🙏", "👍", "👏", "✅", "📄", "📎", "⏰", "💰", "🎉", "❤️"];
 
@@ -107,6 +109,7 @@ export function Composer({
   const [text, setText] = useState(() => (edit ? edit.text : getDraft(conversationId)));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [attachments, setAttachments] = useState<AttachmentSelection | null>(null);
   const ta = useRef<HTMLTextAreaElement>(null);
   const docInput = useRef<HTMLInputElement>(null);
   const imgInput = useRef<HTMLInputElement>(null);
@@ -183,20 +186,13 @@ export function Composer({
 
   function onFile(kind: "document" | "image", hd = false) {
     return (e: ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
+      const files = Array.from(e.target.files ?? []);
       e.target.value = "";
-      if (!file) return;
-      if (file.size > MAX_FILE) return setError("Arquivo acima de 25 MB.");
+      if (!files.length) return;
+      if (files.length > 10) return setError("Selecione até 10 arquivos por envio.");
+      if (files.some(file => file.size > MAX_FILE)) return setError("Cada arquivo pode ter até 25 MB.");
       setError("");
-      const url = URL.createObjectURL(file);
-      if (kind === "image" && file.type.startsWith("image/")) {
-        const img = new window.Image();
-        img.onload = () =>
-          onSend({ kind: "image", url, width: img.naturalWidth, height: img.naturalHeight, hd, file });
-        img.src = url;
-      } else {
-        onSend({ kind: "document", url, fileName: file.name, mimeType: file.type || "application/octet-stream", sizeBytes: file.size, file });
-      }
+      setAttachments({ files, kind, hd });
     };
   }
 
@@ -210,6 +206,7 @@ export function Composer({
 
   return (
     <div className="shrink-0 px-3 pb-3 pt-2 sm:px-4">
+      {attachments && <AttachmentPreview selection={attachments} onClose={() => setAttachments(null)} onSend={onSend} />}
       {error && <p className="px-2 pb-1 text-xs text-danger">{error}</p>}
       {(reply || edit) && !recorder.recording && (
         <div className="mb-1 flex items-start gap-2 rounded-2xl bg-panel px-3 py-2 shadow-sm">
@@ -300,9 +297,9 @@ export function Composer({
               </>
             )}
           </Menu>
-          <input ref={docInput} type="file" hidden onChange={onFile("document")} />
-          <input ref={imgInput} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={onFile("image")} />
-          <input ref={hdInput} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={onFile("image", true)} />
+          <input ref={docInput} type="file" multiple hidden onChange={onFile("document")} />
+          <input ref={imgInput} type="file" multiple accept="image/jpeg,image/png,image/webp" hidden onChange={onFile("image")} />
+          <input ref={hdInput} type="file" multiple accept="image/jpeg,image/png,image/webp" hidden onChange={onFile("image", true)} />
 
           <textarea
             ref={ta}
@@ -335,7 +332,10 @@ export function Composer({
                     (recorder.supported ? "Gravar áudio" : "Gravação de áudio indisponível neste navegador")
                   }
                   disabled={!recorder.supported || !!mediaDisabledReason}
-                  onClick={() => recorder.start().catch(() => setError("Permissão de microfone negada."))}
+                  onClick={() => {
+                    void playRecordStartSound();
+                    void recorder.start().catch(() => setError("Permissão de microfone negada."));
+                  }}
                   className={cn(recorder.recording && "text-danger")}
                 >
                   {recorder.recording ? <Square className="size-5" /> : <Mic className="size-5" />}

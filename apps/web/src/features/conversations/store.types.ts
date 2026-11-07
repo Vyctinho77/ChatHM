@@ -16,7 +16,7 @@ export type Capabilities = {
 export type OutgoingDraft =
   | { kind: "text"; text: string }
   | { kind: "audio"; durationSec: number; waveform: number[]; url: string; file?: Blob }
-  | { kind: "document"; fileName: string; mimeType: string; sizeBytes: number; url: string; file?: Blob }
+  | { kind: "document"; fileName: string; mimeType: string; sizeBytes: number; url: string; caption?: string; file?: Blob }
   | { kind: "image"; url: string; width: number; height: number; caption?: string; hd?: boolean; file?: Blob }
   | { kind: "location"; lat: number; lng: number; name?: string; address?: string };
 

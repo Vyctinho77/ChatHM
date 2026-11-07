@@ -7,6 +7,7 @@ Os arquivos originais estão em `sonoros/`. As cópias usadas no build ficam em
 |---|---|
 | `Enviar mensagem novo.mp3` | Envio confirmado pelo servidor |
 | `receber mensagem novo.mp3` | Nova mensagem na conversa aberta, com a aba em foco |
+| `efeito para botão de audio.mp3` | Clique no botão de gravar áudio (respeita sons da conversa e volume) |
 | `padrão.mp3` | Notificação padrão para mensagens fora da conversa aberta |
 | `águas.mp3` | Tom de notificação Águas |
 | `Noites.mp3` | Tom de notificação Noites |

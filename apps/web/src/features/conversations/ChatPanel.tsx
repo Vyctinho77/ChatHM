@@ -28,6 +28,8 @@ import { SnoozeDialog, SnoozeNotice } from "./SnoozeDialog";
 import { useTyping } from "./typing";
 import { TypingIndicator } from "./TypingIndicator";
 
+const MESSAGE_PAUSE_MS = 30 * 60 * 1000;
+
 export function ChatPanel({
   conversation: c,
   contactOpen,
@@ -235,7 +237,7 @@ export function ChatPanel({
   }
 
   return (
-    <section aria-label={`Conversa com ${c.contact.name}`} className="chat-wallpaper flex h-full min-w-0 flex-col">
+    <section aria-label={`Conversa com ${c.contact.name}`} className="chat-wallpaper relative flex h-full min-w-0 flex-col">
       <header className="relative flex h-14 shrink-0 items-center gap-1.5 border-b border-line bg-panel px-2.5">
         {onBack && (
           <IconButton label="Voltar para a lista" onClick={onBack}>
@@ -423,7 +425,9 @@ export function ChatPanel({
             const prev = shown[i - 1];
             const newDay = !prev || !sameDay(prev.sentAt, m.sentAt);
             const newAttendance = !!prev && prev.conversationId !== m.conversationId;
-            const showAuthor = (m.direction === "out" || !!m.group) && (!prev || newDay || prev.direction !== m.direction || prev.authorName !== m.authorName);
+            const afterPause = !!prev && Date.parse(m.sentAt) - Date.parse(prev.sentAt) >= MESSAGE_PAUSE_MS;
+            const startsGroup = !prev || newDay || newAttendance || afterPause || prev.direction !== m.direction || prev.authorName !== m.authorName;
+            const showAuthor = (m.direction === "out" || !!m.group) && startsGroup;
             return (
               <Fragment key={m.id}>
                 {newDay && (
@@ -440,10 +444,18 @@ export function ChatPanel({
                     </span>
                   </div>
                 )}
-                <div id={`msg-${m.id}`} className={cn(showAuthor || (prev && prev.direction !== m.direction) ? "mt-2" : "")}>
+                {afterPause && !newDay && !newAttendance && (
+                  <div className="my-3 flex justify-center">
+                    <span className="rounded-md bg-elevated px-2.5 py-0.5 text-[11px] tabular-nums text-fg/75 shadow-sm">
+                      {formatTime(m.sentAt)}
+                    </span>
+                  </div>
+                )}
+                <div id={`msg-${m.id}`} className={cn(startsGroup && "mt-2")}>
                   <MessageBubble
                     m={m}
                     showAuthor={showAuthor}
+                    startsGroup={startsGroup}
                     animateIn={new Date(m.sentAt).getTime() > openedAt}
                     term={term}
                     emphasis={m.id === flashId || m.id === currentMatch}

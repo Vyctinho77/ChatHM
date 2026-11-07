@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Pause, Play } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { formatDuration } from "@/lib/format";
@@ -34,11 +34,13 @@ export function AudioPlayer({
   waveform,
   url,
   outgoing,
+  metadata,
 }: {
   durationSec: number;
   waveform?: number[];
   url?: string;
   outgoing?: boolean;
+  metadata?: ReactNode;
 }) {
   const audio = useRef<HTMLAudioElement>(null);
   const bars = waveform?.length ? resample(waveform) : fallbackWave(durationSec || 1);
@@ -89,7 +91,7 @@ export function AudioPlayer({
   const progress = durationSec ? pos / durationSec : 0;
 
   return (
-    <div className="flex w-60 min-w-0 max-w-full items-center gap-2.5 py-0.5">
+    <div className="flex w-56 min-w-0 max-w-full items-start gap-2 py-0.5">
       {url && (
         <audio
           ref={audio}
@@ -123,7 +125,7 @@ export function AudioPlayer({
           aria-valuemin={0}
           aria-valuemax={Math.round(durationSec)}
           aria-valuenow={Math.round(pos)}
-          className="flex h-6 cursor-pointer items-center gap-[2px] overflow-hidden"
+          className="flex h-8 cursor-pointer items-center gap-[2px] overflow-hidden"
           onClick={(e) => {
             const r = e.currentTarget.getBoundingClientRect();
             seek((e.clientX - r.left) / r.width);
@@ -137,18 +139,21 @@ export function AudioPlayer({
             <span
               key={i}
               className={cn(
-                "min-w-0 max-w-[3px] flex-1 rounded-full",
+                "min-w-0 flex-1 rounded-full",
                 i / bars.length < progress
                   ? "bg-read"
                   : outgoing
                     ? "bg-out-fg/45"
-                    : "bg-fg/35",
+                    : "bg-in-fg/35",
               )}
-              style={{ height: `${Math.round(h * 100)}%` }}
+              style={{ height: `${Math.round(h * 75)}%` }}
             />
           ))}
         </div>
-        <span className="text-[11px] tabular-nums opacity-75">{formatDuration(playing || pos ? pos : durationSec)}</span>
+        <div className="mt-0.5 flex items-end justify-between gap-2">
+          <span className="text-[11px] tabular-nums opacity-75">{formatDuration(playing || pos ? pos : durationSec)}</span>
+          {metadata}
+        </div>
       </div>
     </div>
   );

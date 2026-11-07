@@ -3,6 +3,7 @@ import { useLocation } from "react-router";
 import { safeStorage } from "./storage";
 import sendURL from "@/assets/sounds/message-send.mp3";
 import receiveURL from "@/assets/sounds/message-receive.mp3";
+import recordURL from "@/assets/sounds/record-start.mp3";
 import defaultURL from "@/assets/sounds/notification-default.mp3";
 import waterURL from "@/assets/sounds/notification-water.mp3";
 import nightURL from "@/assets/sounds/notification-night.mp3";
@@ -139,6 +140,12 @@ export async function playSentSound(id: string, status?: string) {
   if (!id || !enabled("messages") || !context || context.state !== "running" || !status || status === "pending" || status === "failed") return;
   const session = generation;
   if (await claimEvent(`sent:${id}`)) await playClip(sendURL, "messages", session);
+}
+
+export async function playRecordStartSound() {
+  if (!enabled("messages")) return;
+  const session = generation;
+  if (await unlockAudio()) await playClip(recordURL, "messages", session);
 }
 
 export async function playIncomingSound(message: { id: string; conversationId: string; direction: string; sentAt: string; historical?: boolean }) {

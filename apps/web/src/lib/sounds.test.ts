@@ -47,6 +47,18 @@ beforeEach(async () => {
 afterEach(() => { cleanup?.(); cleanup = undefined; vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("app sound effects", () => {
+  it("plays the microphone click effect and respects message mute and volume", async () => {
+    await sounds.playRecordStartSound();
+    expect(started).toHaveLength(1);
+    expect(started[0]).toContain("record-start");
+    sounds.updateSoundPreferences({ messages: false });
+    await sounds.playRecordStartSound();
+    expect(started).toHaveLength(1);
+    sounds.updateSoundPreferences({ messages: true, volume: 0 });
+    await sounds.playRecordStartSound();
+    expect(started).toHaveLength(1);
+  });
+
   it("waits for interaction and plays only confirmed outgoing messages once", async () => {
     await sounds.playSentSound("before-interaction", "sent");
     expect(contexts).toHaveLength(0);
