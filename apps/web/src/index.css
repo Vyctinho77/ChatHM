@@ -29,7 +29,7 @@
   --c-input: #e7ebeb;
   --c-danger: #dc2626;
   --c-warning: #b7791f;
-  --chat-wallpaper: url("./assets/wallpapers/chat-light.png");
+  --chat-wallpaper: url("./assets/wallpapers/chat-light.webp");
   --chat-wallpaper-overlay: rgb(216 220 220 / 0.6);
 }
 
@@ -57,7 +57,7 @@
   --c-input: #242424;
   --c-danger: #f87171;
   --c-warning: #f5c542;
-  --chat-wallpaper: url("./assets/wallpapers/chat-dark.png");
+  --chat-wallpaper: url("./assets/wallpapers/chat-dark.webp");
   --chat-wallpaper-overlay: transparent;
 }
 
@@ -188,5 +188,15 @@ body {
   input[type="checkbox"],
   input[type="radio"] {
     accent-color: var(--c-accent);
+  }
+}
+
+/* Celular/tablet: segurar a mensagem abre o menu; sem seleção de texto nem o balão nativo do iOS/Android
+   (o texto continua copiável pelo "Copiar" do menu). */
+@media (pointer: coarse) {
+  .msg-row {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
   }
 }

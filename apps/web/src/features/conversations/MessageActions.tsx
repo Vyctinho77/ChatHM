@@ -30,6 +30,7 @@ export function MessageMenu({ message: m, x, y, onReply, onForward, onEdit, onDe
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y });
   const [copied, setCopied] = useState(false);
+  const openedAt = useRef(0);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -42,7 +43,9 @@ export function MessageMenu({ message: m, x, y, onReply, onForward, onEdit, onDe
   }, [x, y]);
 
   useEffect(() => {
-    const down = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && onClose();
+    openedAt.current = performance.now();
+    // Ao soltar o dedo depois do toque longo, o navegador dispara um "clique" sobre a mensagem: não conta como clique fora.
+    const down = (e: MouseEvent) => performance.now() - openedAt.current > 700 && !ref.current?.contains(e.target as Node) && onClose();
     const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("mousedown", down);
     document.addEventListener("keydown", key);

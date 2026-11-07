@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { motion } from "motion/react";
 import { Ban, Download, FileText, Image as ImageIcon, MapPin, Mic } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -285,13 +285,52 @@ export function MessageBubble({
   emphasis?: boolean;
 }) {
   const out = m.direction === "out";
+  // Toque (celular/tablet): clicar e segurar abre o mesmo menu do botão direito.
+  const press = useRef<{ timer: number; x: number; y: number } | null>(null);
+  const longPressed = useRef(false);
+  const cancelPress = () => {
+    if (press.current) window.clearTimeout(press.current.timer);
+    press.current = null;
+  };
   return (
-    <div className={cn("flex", out ? "justify-end" : "justify-start")} onContextMenu={onMenu ? (e) => {
-      // Links, textos selecionados e imagens mantêm o menu do navegador.
-      if ((e.target as HTMLElement).closest("a, button, input, textarea") || window.getSelection()?.toString()) return;
-      e.preventDefault();
-      onMenu(m, e.clientX, e.clientY);
-    } : undefined}>
+    <div
+      className={cn("msg-row flex", out ? "justify-end" : "justify-start")}
+      onPointerDown={onMenu ? (e) => {
+        if (e.pointerType === "mouse" || (e.target as HTMLElement).closest("a, button, input, textarea, audio")) return;
+        cancelPress();
+        longPressed.current = false;
+        const { clientX: x, clientY: y } = e;
+        press.current = {
+          x,
+          y,
+          timer: window.setTimeout(() => {
+            longPressed.current = true;
+            press.current = null;
+            navigator.vibrate?.(12);
+            onMenu(m, x, y);
+          }, 450),
+        };
+      } : undefined}
+      onPointerMove={(e) => {
+        const p = press.current;
+        if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 10) cancelPress(); // virou rolagem
+      }}
+      onPointerUp={cancelPress}
+      onPointerCancel={cancelPress}
+      onPointerLeave={cancelPress}
+      onContextMenu={onMenu ? (e) => {
+        if (longPressed.current) {
+          // O toque longo já abriu o nosso menu: o navegador não mostra o dele.
+          e.preventDefault();
+          longPressed.current = false;
+          return;
+        }
+        // Links, textos selecionados e imagens mantêm o menu do navegador.
+        if ((e.target as HTMLElement).closest("a, button, input, textarea") || window.getSelection()?.toString()) return;
+        e.preventDefault();
+        onMenu(m, e.clientX, e.clientY);
+      } : undefined}
+    >
       <motion.div
         // Mensagens novas "brotam" do lado de quem enviou; o histórico aparece sem animação individual.
         initial={animateIn ? { opacity: 0, y: 14, scale: 0.94 } : false}

@@ -219,8 +219,17 @@ export function ChatPanel({
     scrollToMessage(id);
   }
 
+  // Vários anexos de uma vez: só o primeiro leva a citação.
+  const replyConsumed = useRef<string | null>(null);
+  const chooseReply = (m: Message | null) => {
+    replyConsumed.current = null;
+    setReply(m);
+  };
+
   function submit(d: OutgoingDraft) {
-    const msg = buildOutgoing(c.id, actions.me.name, d, reply ? quotedOf(reply) : undefined);
+    const quote = reply && replyConsumed.current !== reply.id ? quotedOf(reply) : undefined;
+    if (reply) replyConsumed.current = reply.id;
+    const msg = buildOutgoing(c.id, actions.me.name, d, quote);
     setReply(null);
     send.mutate(
       { msg },
@@ -550,7 +559,7 @@ export function ChatPanel({
           message={menuMsg}
           x={menu.x}
           y={menu.y}
-          onReply={() => (setEditing(null), setReply(menuMsg))}
+          onReply={() => (setEditing(null), chooseReply(menuMsg))}
           onForward={() => setForwarding(menuMsg)}
           onEdit={() => (setReply(null), setEditing(menuMsg))}
           onDelete={() => setDeleting(menuMsg)}
