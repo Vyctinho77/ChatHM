@@ -63,6 +63,8 @@ export function ChatPanel({
   const atBottom = useRef(true);
   const scrolledOnce = useRef(false);
   const [showJump, setShowJump] = useState(false);
+  // Última mensagem vista com a rolagem no fim: o que chegou depois, com a pessoa lendo acima, vira o aviso "novas mensagens".
+  const [seenId, setSeenId] = useState<string | null>(null);
   // Imagem aberta no visualizador em tela cheia (navega por todas as imagens da conversa).
   const [viewerId, setViewerId] = useState<string | null>(null);
   const closeViewer = useCallback(() => setViewerId(null), []);
@@ -98,7 +100,15 @@ export function ChatPanel({
     const near = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
     atBottom.current = near;
     setShowJump(!near);
+    if (near) setSeenId(messages?.[messages.length - 1]?.id ?? null);
   }
+
+  const newCount = useMemo(() => {
+    if (!showJump || !seenId || !messages) return 0;
+    const i = messages.findIndex((m) => m.id === seenId);
+    return i < 0 ? 0 : messages.slice(i + 1).filter((m) => m.direction === "in").length;
+  }, [showJump, seenId, messages]);
+  const jumpToLatest = () => scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
 
   const lastOutId = useMemo(() => {
     for (let i = (messages?.length ?? 0) - 1; i >= 0; i--) {
@@ -425,11 +435,26 @@ export function ChatPanel({
         </motion.div>
       </div>
       <AnimatePresence>
-        {showJump && (
+        {showJump && newCount > 0 && (
           <motion.button
+            key="new-messages"
+            type="button"
+            onClick={jumpToLatest}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 12 }}
+            className="absolute bottom-4 left-1/2 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-accent px-3.5 py-1.5 text-[13px] font-semibold text-accent-fg shadow-lg hover:brightness-110"
+          >
+            <ArrowDown className="size-4" aria-hidden="true" />
+            {newCount === 1 ? "1 nova mensagem" : `${newCount} novas mensagens`}
+          </motion.button>
+        )}
+        {showJump && newCount === 0 && (
+          <motion.button
+            key="jump"
             type="button"
             aria-label="Ir para a mensagem mais recente"
-            onClick={() => scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" })}
+            onClick={jumpToLatest}
             initial={{ opacity: 0, scale: 0.8, y: 8 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.8, y: 8 }}
