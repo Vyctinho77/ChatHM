@@ -6,7 +6,8 @@ import { api, del, errorMessage, fieldErrors, get, post } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { useMe } from "@/features/auth/api";
 
-type AiSettings = { enabled: boolean; maskDocuments: boolean; maskPhones: boolean; allowWrite: boolean; allowSend: boolean; maskEmails: boolean; strictPrivacy: boolean };
+type AiSettings = { enabled: boolean; maskDocuments: boolean; maskPhones: boolean; allowWrite: boolean; allowSend: boolean; maskEmails: boolean; strictPrivacy: boolean; allowOauth: boolean; oauthRedirectHosts: string[] };
+type Grant = { id: string; client: string; level: "read" | "write" | "send"; createdAt: string; lastUsedAt?: string; owner?: string };
 type AiToken = {
   id: string;
   name: string;
@@ -63,6 +64,7 @@ const TABS = [
   ["claude-desktop", "Claude Desktop"],
   ["grok", "Grok"],
   ["chatgpt", "ChatGPT"],
+  ["claude-ai", "claude.ai"],
   ["outros", "Outros / teste"],
 ] as const;
 
@@ -124,9 +126,25 @@ function ConnectGuide({ token }: { token?: string }) {
           </>
         )}
         {tab === "chatgpt" && (
-          <p className="rounded-lg bg-elevated p-3 text-xs text-muted">
-            O ChatGPT cadastra servidores MCP como “conector personalizado” e costuma pedir login por OAuth, que o ChatHM ainda não oferece. Isso entra na etapa 5 do plano; por enquanto use Claude Code, Claude Desktop ou Grok.
-          </p>
+          <div className="text-xs text-muted">
+            <p>O ChatGPT conecta por login (OAuth), sem token. Um administrador precisa ligar <strong>“Permitir conectar aplicativos por login”</strong> acima.</p>
+            <ol className="mt-2 list-decimal pl-5">
+              <li>No ChatGPT, abra Configurações → Conectores (modo desenvolvedor) e crie um conector personalizado.</li>
+              <li>Em URL do servidor MCP, use <code>{url}</code> e escolha autenticação <strong>OAuth</strong>.</li>
+              <li>Conecte: o ChatGPT abre o ChatHM, você entra (com o autenticador) e escolhe o que ele pode fazer.</li>
+            </ol>
+            <p className="mt-2">Os nomes e a disponibilidade desses menus variam conforme o plano e o administrador do seu espaço no ChatGPT; confira a ajuda da OpenAI.</p>
+          </div>
+        )}
+        {tab === "claude-ai" && (
+          <div className="text-xs text-muted">
+            <p>O claude.ai também conecta por login (OAuth). Mesmo requisito: o administrador liga a conexão por login acima.</p>
+            <ol className="mt-2 list-decimal pl-5">
+              <li>No claude.ai, abra Configurações → Conectores e adicione um conector personalizado.</li>
+              <li>Use o endereço <code>{url}</code> e conclua o login no ChatHM.</li>
+            </ol>
+            <p className="mt-2">A disponibilidade depende do seu plano; confira a ajuda da Anthropic.</p>
+          </div>
         )}
         {tab === "outros" && (
           <>
@@ -257,6 +275,16 @@ export function AiAccessCard() {
     onSuccess: (s) => qc.setQueryData(settingsKey, s),
     onError: (e) => setError(errorMessage(e)),
   });
+  const grants = useQuery({
+    queryKey: ["ai", "grants", showAll],
+    enabled: enabled && !!settings.data?.allowOauth,
+    queryFn: async () => (await get<{ grants: Grant[] }>(`/ai/grants${showAll ? "?all=1" : ""}`)).grants,
+  });
+  const disconnect = useMutation({
+    mutationFn: (id: string) => del<void>(`/ai/grants/${id}`),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["ai", "grants"] }),
+    onError: (e) => setError(errorMessage(e)),
+  });
   const revoke = useMutation({
     mutationFn: (id: string) => del<void>(`/ai/tokens/${id}`),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["ai", "tokens"] }),
@@ -283,6 +311,23 @@ export function AiAccessCard() {
                 <Toggle checked={s.maskDocuments} disabled={save.isPending} onChange={(v) => change({ maskDocuments: v })} label="Ocultar CPF e CNPJ" hint="Recomendado. A IA vê “[CPF oculto]” no lugar." />
                 <Toggle checked={s.maskPhones} disabled={save.isPending} onChange={(v) => change({ maskPhones: v })} label="Ocultar telefones" hint="Mostra só os 4 últimos dígitos." />
                 <Toggle checked={s.maskEmails} disabled={save.isPending} onChange={(v) => change({ maskEmails: v })} label="Ocultar e-mails" hint="Recomendado. Aparece “[e-mail oculto]”." />
+                <Toggle checked={s.allowOauth} disabled={save.isPending} onChange={(v) => change({ allowOauth: v })} label="Permitir conectar aplicativos por login (ChatGPT, claude.ai)" hint="Liga o login OAuth: o aplicativo pede, você autoriza na tela do ChatHM. Eles sempre recebem os dados com privacidade máxima. Desligado, as conexões feitas deixam de funcionar na hora." />
+                {s.allowOauth && (
+                  <label className="mb-1 ml-7 block text-xs">
+                    <span className="font-medium">Sites autorizados a receber o retorno do login</span>
+                    <input
+                      defaultValue={s.oauthRedirectHosts.join(", ")}
+                      disabled={save.isPending}
+                      onBlur={(e) => {
+                        const hosts = e.target.value.split(/[\s,;]+/).filter(Boolean);
+                        if (hosts.join(",") !== s.oauthRedirectHosts.join(",")) change({ oauthRedirectHosts: hosts });
+                      }}
+                      className="mt-1 h-9 w-full rounded-lg border border-line bg-elevated px-2.5 text-xs outline-none focus:border-accent"
+                      aria-label="Sites autorizados"
+                    />
+                    <span className="mt-0.5 block text-muted">Só estes sites podem registrar um aplicativo. Padrão: chatgpt.com, platform.openai.com, chat.openai.com, claude.ai, claude.com.</span>
+                  </label>
+                )}
                 <Toggle checked={s.strictPrivacy} disabled={save.isPending} onChange={(v) => change({ strictPrivacy: v })} label="Modo estrito" hint="Nomes de pessoas viram “Nome S.” e as observações internas dos contatos não saem." />
                 <p className="mt-1 rounded-lg bg-elevated p-2.5 text-xs text-muted">
                   Sempre ocultos, para qualquer assistente e sem opção de desligar: senhas, códigos e chaves de acesso, cartões, agência/conta, chave PIX e boletos.
@@ -335,6 +380,27 @@ export function AiAccessCard() {
                 </li>
               );
             })}
+          </ul>
+        </div>
+      )}
+      {enabled && s.allowOauth && (
+        <div className="mt-5">
+          <h3 className="text-sm font-medium">Aplicativos conectados por login</h3>
+          <ul className="mt-2 divide-y divide-line">
+            {grants.data?.length === 0 && <li className="py-3 text-sm text-muted">Nenhum aplicativo conectado.</li>}
+            {grants.data?.map((g) => (
+              <li key={g.id} className="flex items-center gap-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{g.client}{g.owner && <span className="font-normal text-muted"> · {g.owner}</span>}</p>
+                  <p className="text-xs text-muted">
+                    {g.level === "send" ? "leitura, escrita e pedidos de envio" : g.level === "write" ? "leitura e escrita" : "só leitura"} · conectado em {date(g.createdAt)} · {g.lastUsedAt ? `usado em ${date(g.lastUsedAt)}` : "nunca usado"}
+                  </p>
+                </div>
+                <Button type="button" variant="ghost" disabled={disconnect.isPending} aria-label={`Desconectar ${g.client}`} onClick={() => disconnect.mutate(g.id)}>
+                  <Trash2 className="size-4" /> Desconectar
+                </Button>
+              </li>
+            ))}
           </ul>
         </div>
       )}

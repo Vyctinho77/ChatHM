@@ -6,6 +6,7 @@ import { AgendaPage } from "@/features/agenda/AgendaPage";
 import { QueuesConfigPage } from "@/features/queues/QueuesConfigPage";
 import { QueuesPage } from "@/features/queues/QueuesPage";
 import { SegmentDetailPage } from "@/features/queues/SegmentDetailPage";
+import { OAuthConsentPage } from "@/features/settings/OAuthConsentPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { TagsPage } from "@/features/tags/TagsPage";
 import { TeamPage } from "@/features/team/TeamPage";
@@ -33,6 +34,7 @@ const routes: RouteObject[] = [
         ],
       },
       { path: "configuracoes", element: <SettingsPage /> },
+      { path: "oauth/consent", element: <OAuthConsentPage /> },
       { path: "*", element: <Navigate to="/conversas" replace /> },
     ],
   },

@@ -12,9 +12,12 @@ import (
 )
 
 // Handler expõe a gestão do acesso por IA (sessão do app): configuração e tokens.
-type Handler struct{ svc *Service }
+type Handler struct {
+	svc  *Service
+	base BaseURLFunc
+}
 
-func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
+func NewHandler(svc *Service, base BaseURLFunc) *Handler { return &Handler{svc: svc, base: base} }
 
 // Routes: usuários autenticados (MFA completo). Só o administrador altera a configuração.
 func (h *Handler) Routes(r chi.Router) {
@@ -23,6 +26,10 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Get("/ai/tokens", h.listTokens)
 	r.Post("/ai/tokens", h.createToken)
 	r.Delete("/ai/tokens/{id}", h.revokeToken)
+	r.Get("/ai/oauth/preview", h.oauthPreview)
+	r.Post("/ai/oauth/authorize", h.oauthAuthorize)
+	r.Get("/ai/grants", h.listGrants)
+	r.Delete("/ai/grants/{id}", h.revokeGrant)
 	r.Get("/ai/suggestions", h.listSuggestions)
 	r.Post("/ai/suggestions/{id}/send", h.sendSuggestion)
 	r.Post("/ai/suggestions/{id}/use", h.useSuggestion)

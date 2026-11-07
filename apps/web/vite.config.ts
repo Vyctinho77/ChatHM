@@ -14,6 +14,13 @@ export default defineConfig({
     proxy: {
       "/api": { target: process.env.VITE_API_PROXY ?? "http://localhost:8080", changeOrigin: true, ws: true },
       "/mcp": { target: process.env.VITE_API_PROXY ?? "http://localhost:8080", changeOrigin: true },
+      // OAuth do MCP: a tela de consentimento (/oauth/consent) é do app React; o resto é da API.
+      "/oauth": {
+        target: process.env.VITE_API_PROXY ?? "http://localhost:8080",
+        changeOrigin: true,
+        bypass: (req) => (req.url?.startsWith("/oauth/consent") ? req.url : undefined),
+      },
+      "/.well-known": { target: process.env.VITE_API_PROXY ?? "http://localhost:8080", changeOrigin: true },
       "/healthz": { target: process.env.VITE_API_PROXY ?? "http://localhost:8080", changeOrigin: true },
     },
   },

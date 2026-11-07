@@ -89,6 +89,9 @@ func (s *Service) Reinvite(ctx context.Context, actorID, ip, id string) (InviteR
 		if _, err := tx.Exec(ctx, `UPDATE api_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, id); err != nil {
 			return err
 		}
+		if _, err := tx.Exec(ctx, `UPDATE oauth_grants SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, id); err != nil {
+			return err
+		}
 		if code, exp, err = auth.IssueInvite(ctx, tx, id, actorID); err != nil {
 			return err
 		}

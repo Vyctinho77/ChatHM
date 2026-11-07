@@ -4,10 +4,14 @@ package httpapi
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -809,5 +813,309 @@ func TestAIAccessPrivacyAlwaysOnAndStrict(t *testing.T) {
 	// Ids e horários continuam utilizáveis.
 	if conv["id"] != cid || conv["updatedAt"] == nil {
 		t.Fatalf("estrutura alterada: %v", conv)
+	}
+}
+
+// --- OAuth 2.1 (ChatGPT, claude.ai) ----------------------------------------------------------------------------------
+
+type oauthT struct {
+	w        *world
+	verifier string
+	cid      string
+	redirect string
+}
+
+func pkce() (verifier, challenge string) {
+	b := make([]byte, 40)
+	_, _ = rand.Read(b)
+	verifier = base64.RawURLEncoding.EncodeToString(b)
+	sum := sha256.Sum256([]byte(verifier))
+	return verifier, base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+func (w *world) formPost(path string, v url.Values) (int, map[string]any) {
+	w.e.t.Helper()
+	res, err := http.PostForm(w.e.srv.URL+path, v)
+	if err != nil {
+		w.e.t.Fatal(err)
+	}
+	defer res.Body.Close()
+	raw, _ := io.ReadAll(res.Body)
+	var out map[string]any
+	_ = json.Unmarshal(raw, &out)
+	return res.StatusCode, out
+}
+
+func (w *world) jsonPost(path string, body any) (int, map[string]any, http.Header) {
+	w.e.t.Helper()
+	b, _ := json.Marshal(body)
+	res, err := http.Post(w.e.srv.URL+path, "application/json", bytes.NewReader(b))
+	if err != nil {
+		w.e.t.Fatal(err)
+	}
+	defer res.Body.Close()
+	raw, _ := io.ReadAll(res.Body)
+	var out map[string]any
+	_ = json.Unmarshal(raw, &out)
+	return res.StatusCode, out, res.Header
+}
+
+func TestOAuthFullFlowWithPKCEAndPrivacy(t *testing.T) {
+	w := setupWorld(t)
+	const redirect = "https://chatgpt.com/connector_platform_oauth_redirect"
+	get := func(path string) (int, map[string]any) {
+		res, err := http.Get(w.e.srv.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		raw, _ := io.ReadAll(res.Body)
+		var out map[string]any
+		_ = json.Unmarshal(raw, &out)
+		return res.StatusCode, out
+	}
+
+	// 1) Desligado: sem metadados e sem registro.
+	expect(t, w.admin.do("PUT", "/api/v1/ai/settings", map[string]any{"enabled": true, "maskDocuments": false, "maskPhones": false, "maskEmails": false, "allowOauth": false}), 200)
+	if st, _ := get("/.well-known/oauth-authorization-server"); st != 404 {
+		t.Fatalf("metadados com OAuth desligado = %d", st)
+	}
+	if st, _, _ := w.jsonPost("/oauth/register", map[string]any{"client_name": "x", "redirect_uris": []string{redirect}}); st != 403 {
+		t.Fatalf("registro com OAuth desligado = %d", st)
+	}
+	// (sem OAuth ligado, o 401 do /mcp não anuncia metadados)
+	// 2) Ligado.
+	expect(t, w.admin.do("PUT", "/api/v1/ai/settings", map[string]any{"enabled": true, "maskDocuments": false, "maskPhones": false, "maskEmails": false, "allowOauth": true,
+		"oauthRedirectHosts": []string{"chatgpt.com", "claude.ai"}}), 200)
+	st, meta := get("/.well-known/oauth-authorization-server")
+	if st != 200 || meta["code_challenge_methods_supported"].([]any)[0] != "S256" || !strings.HasSuffix(meta["token_endpoint"].(string), "/oauth/token") ||
+		meta["token_endpoint_auth_methods_supported"].([]any)[0] != "none" || meta["registration_endpoint"] == nil {
+		t.Fatalf("metadados do servidor de autorização = %d %v", st, meta)
+	}
+	st, prm := get("/.well-known/oauth-protected-resource")
+	if st != 200 || !strings.HasSuffix(prm["resource"].(string), "/mcp") || prm["authorization_servers"].([]any)[0] != meta["issuer"] {
+		t.Fatalf("metadados do recurso = %d %v", st, prm)
+	}
+	// O 401 do /mcp aponta para os metadados (é como o ChatGPT/claude.ai descobrem o login).
+	res, _ := http.Post(w.e.srv.URL+"/mcp", "application/json", strings.NewReader("{}"))
+	if wa := res.Header.Get("WWW-Authenticate"); res.StatusCode != 401 || !strings.Contains(wa, "resource_metadata=") || !strings.Contains(wa, "/.well-known/oauth-protected-resource") {
+		t.Fatalf("WWW-Authenticate = %q", wa)
+	}
+	res.Body.Close()
+
+	// 3) Registro dinâmico: só endereços de retorno permitidos e cliente público.
+	for name, body := range map[string]map[string]any{
+		"host fora da lista":    {"client_name": "x", "redirect_uris": []string{"https://evil.example/cb"}},
+		"http fora do loopback": {"client_name": "x", "redirect_uris": []string{"http://chatgpt.com/cb"}},
+		"com fragmento":         {"client_name": "x", "redirect_uris": []string{redirect + "#x"}},
+		"sem uris":              {"client_name": "x", "redirect_uris": []string{}},
+		"cliente confidencial":  {"client_name": "x", "redirect_uris": []string{redirect}, "token_endpoint_auth_method": "client_secret_basic"},
+	} {
+		if st, out, _ := w.jsonPost("/oauth/register", body); st != 400 {
+			t.Fatalf("%s: registro deveria falhar: %d %v", name, st, out)
+		}
+	}
+	st, client, _ := w.jsonPost("/oauth/register", map[string]any{"client_name": "ChatGPT <script>", "redirect_uris": []string{redirect}})
+	cid, _ := client["client_id"].(string)
+	if st != 201 || !strings.HasPrefix(cid, "chc_") || client["token_endpoint_auth_method"] != "none" || strings.Contains(client["client_name"].(string), "<") {
+		t.Fatalf("registro = %d %v", st, client)
+	}
+
+	// 4) Consentimento (sessão da ana + autenticador): só pedidos válidos.
+	verifier, challenge := pkce()
+	q := url.Values{"client_id": {cid}, "redirect_uri": {redirect}, "response_type": {"code"}, "code_challenge": {challenge}, "code_challenge_method": {"S256"}, "state": {"abc123"}}
+	noFollow := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	ar, err := noFollow.Get(w.e.srv.URL + "/oauth/authorize?" + q.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ar.Body.Close()
+	if ar.StatusCode != 302 || !strings.HasPrefix(ar.Header.Get("Location"), "/oauth/consent?") {
+		t.Fatalf("authorize = %d %q", ar.StatusCode, ar.Header.Get("Location"))
+	}
+	expect(t, w.e.client().do("GET", "/api/v1/ai/oauth/preview?"+q.Encode(), nil), 401)
+	pv := w.ana.do("GET", "/api/v1/ai/oauth/preview?"+q.Encode(), nil)
+	expect(t, pv, 200)
+	if lv := pv.body["levels"].([]any); len(lv) != 1 || lv[0] != "read" || pv.body["redirectHost"] != "chatgpt.com" || strings.Contains(pv.body["client"].(map[string]any)["name"].(string), "<") {
+		t.Fatalf("preview = %v", pv.body)
+	}
+	bad := func(mod func(url.Values)) int {
+		v := url.Values{}
+		for k, x := range q {
+			v[k] = x
+		}
+		mod(v)
+		return w.ana.do("GET", "/api/v1/ai/oauth/preview?"+v.Encode(), nil).status
+	}
+	if bad(func(v url.Values) { v.Set("redirect_uri", "https://chatgpt.com/outro") }) != 400 ||
+		bad(func(v url.Values) { v.Set("code_challenge_method", "plain") }) != 400 ||
+		bad(func(v url.Values) { v.Del("code_challenge") }) != 400 ||
+		bad(func(v url.Values) { v.Set("client_id", "chc_inexistente") }) != 400 ||
+		bad(func(v url.Values) { v.Set("resource", "https://outro.example/mcp") }) != 400 {
+		t.Fatal("pedidos inválidos deveriam ser recusados na tela de consentimento")
+	}
+	approve := func(level string, ok bool) (*url.URL, resp) {
+		r := w.ana.do("POST", "/api/v1/ai/oauth/authorize", map[string]any{"clientId": cid, "redirectUri": redirect, "codeChallenge": challenge, "codeChallengeMethod": "S256",
+			"state": "abc123", "level": level, "approve": ok})
+		if r.status != 200 {
+			return nil, r
+		}
+		u, _ := url.Parse(r.body["redirectTo"].(string))
+		return u, r
+	}
+	if _, r := approve("write", true); r.status != 422 {
+		t.Fatalf("nível acima do liberado deveria falhar: %d", r.status)
+	}
+	denied, _ := approve("read", false)
+	if denied.Query().Get("error") != "access_denied" || denied.Query().Get("state") != "abc123" || denied.Query().Get("code") != "" {
+		t.Fatalf("negar = %v", denied)
+	}
+	back, _ := approve("read", true)
+	code := back.Query().Get("code")
+	if back.Host != "chatgpt.com" || back.Query().Get("state") != "abc123" || !strings.HasPrefix(code, "chmc_") {
+		t.Fatalf("retorno = %v", back)
+	}
+
+	// 5) Troca do código: PKCE, redirect e cliente precisam bater; código vale uma vez.
+	tok := func(extra url.Values) (int, map[string]any) {
+		v := url.Values{"grant_type": {"authorization_code"}, "client_id": {cid}, "code": {code}, "redirect_uri": {redirect}, "code_verifier": {verifier}}
+		for k, x := range extra {
+			v[k] = x
+		}
+		return w.formPost("/oauth/token", v)
+	}
+	if st, out := tok(url.Values{"code_verifier": {strings.Repeat("a", 50)}}); st != 400 || out["error"] != "invalid_grant" {
+		t.Fatalf("verifier errado = %d %v", st, out)
+	}
+	if st, out := tok(url.Values{"redirect_uri": {"https://chatgpt.com/outro"}}); st != 400 || out["error"] != "invalid_grant" {
+		t.Fatalf("redirect diferente = %d %v", st, out)
+	}
+	if st, out := tok(url.Values{"client_id": {"chc_outro"}}); st != 400 {
+		t.Fatalf("outro cliente = %d %v", st, out)
+	}
+	st, pair := tok(nil)
+	access, _ := pair["access_token"].(string)
+	refresh, _ := pair["refresh_token"].(string)
+	if st != 200 || !strings.HasPrefix(access, "chm_") || !strings.HasPrefix(refresh, "chmr_") || pair["token_type"] != "Bearer" || pair["expires_in"].(float64) != 3600 || pair["scope"] != "read" {
+		t.Fatalf("tokens = %d %v", st, pair)
+	}
+
+	// 6) O token OAuth funciona no /mcp, só leitura, com privacidade MÁXIMA mesmo com os filtros do administrador desligados.
+	w.receive("Marlon Contador Silva", "Meu CPF é 123.456.789-01, e-mail marlon@empresa.com, ligue (92) 98800-1111. senha: Abc12345!")
+	cidConv := mustConv(t, w.ana, "Marlon Contador Silva")["id"].(string)
+	names := toolNames(w, access)
+	if !names["read_messages"] || names["add_tag"] || names["draft_reply"] {
+		t.Fatalf("ferramentas do token OAuth de leitura: %v", names)
+	}
+	out, isErr := w.tool(access, "read_messages", map[string]any{"conversation_id": cidConv})
+	if isErr {
+		t.Fatalf("read_messages OAuth: %v", out)
+	}
+	txt := string(mustJSON(out))
+	for _, leak := range []string{"123.456.789-01", "marlon@empresa.com", "98800-1111", "Abc12345!"} {
+		if strings.Contains(txt, leak) {
+			t.Fatalf("o aplicativo OAuth recebeu dado sensível %q: %s", leak, txt)
+		}
+	}
+	conv, _ := w.tool(access, "get_conversation", map[string]any{"id": cidConv})
+	ct := conv["contact"].(map[string]any)
+	if _, has := ct["phone"]; has {
+		t.Fatalf("telefone do contato não pode sair para OAuth: %v", ct)
+	}
+	if _, has := ct["note"]; has {
+		t.Fatalf("observação interna não pode sair para OAuth: %v", ct)
+	}
+	if ct["name"] != "Marlon Contador Silva" || conv["id"] != cidConv {
+		t.Fatalf("o que o assistente precisa continua aparecendo: %v", conv)
+	}
+
+	// 7) Reuso do código revoga a concessão inteira (possível roubo).
+	if st, out := tok(nil); st != 400 || out["error"] != "invalid_grant" {
+		t.Fatalf("reuso do código = %d %v", st, out)
+	}
+	if st, _ := w.mcpCall(access, "tools/list", nil); st != 401 {
+		t.Fatalf("depois do reuso do código a concessão deveria estar revogada: %d", st)
+	}
+
+	// 8) Nova autorização: renovação com rotação e detecção de reuso do refresh.
+	v2, c2 := pkce()
+	q2 := url.Values{"client_id": {cid}, "redirect_uri": {redirect}, "code_challenge": {c2}, "code_challenge_method": {"S256"}}
+	r := w.ana.do("POST", "/api/v1/ai/oauth/authorize", map[string]any{"clientId": cid, "redirectUri": redirect, "codeChallenge": c2, "codeChallengeMethod": "S256", "level": "read", "approve": true})
+	expect(t, r, 200)
+	u2, _ := url.Parse(r.body["redirectTo"].(string))
+	_ = q2
+	_, pair = w.formPost("/oauth/token", url.Values{"grant_type": {"authorization_code"}, "client_id": {cid}, "code": {u2.Query().Get("code")}, "redirect_uri": {redirect}, "code_verifier": {v2}})
+	access, refresh = pair["access_token"].(string), pair["refresh_token"].(string)
+	st, pair2 := w.formPost("/oauth/token", url.Values{"grant_type": {"refresh_token"}, "client_id": {cid}, "refresh_token": {refresh}})
+	if st != 200 || pair2["access_token"] == access || pair2["refresh_token"] == refresh {
+		t.Fatalf("refresh = %d %v", st, pair2)
+	}
+	if st, _ := w.mcpCall(access, "tools/list", nil); st != 401 {
+		t.Fatal("o token de acesso anterior deveria ter sido revogado na renovação")
+	}
+	if st, _ := w.mcpCall(pair2["access_token"].(string), "tools/list", nil); st != 200 {
+		t.Fatal("o novo token de acesso deveria funcionar")
+	}
+	if st, out := w.formPost("/oauth/token", url.Values{"grant_type": {"refresh_token"}, "client_id": {"chc_outro"}, "refresh_token": {pair2["refresh_token"].(string)}}); st != 400 {
+		t.Fatalf("refresh com outro cliente = %d %v", st, out)
+	}
+	if st, _ := w.formPost("/oauth/token", url.Values{"grant_type": {"refresh_token"}, "client_id": {cid}, "refresh_token": {refresh}}); st != 400 {
+		t.Fatal("refresh já usado deveria falhar")
+	}
+	if st, _ := w.mcpCall(pair2["access_token"].(string), "tools/list", nil); st != 401 {
+		t.Fatal("reuso do refresh deveria revogar a concessão inteira")
+	}
+	if st, out := w.formPost("/oauth/token", url.Values{"grant_type": {"password"}}); st != 400 || out["error"] != "unsupported_grant_type" {
+		t.Fatalf("grant_type desconhecido = %d %v", st, out)
+	}
+
+	// 9) Aplicativos conectados: lista, desconexão pela pessoa e revogação pelo endpoint padrão.
+	connect := func() (string, string) {
+		vv, cc := pkce()
+		rr := w.ana.do("POST", "/api/v1/ai/oauth/authorize", map[string]any{"clientId": cid, "redirectUri": redirect, "codeChallenge": cc, "codeChallengeMethod": "S256", "level": "read", "approve": true})
+		expect(t, rr, 200)
+		uu, _ := url.Parse(rr.body["redirectTo"].(string))
+		_, pp := w.formPost("/oauth/token", url.Values{"grant_type": {"authorization_code"}, "client_id": {cid}, "code": {uu.Query().Get("code")}, "redirect_uri": {redirect}, "code_verifier": {vv}})
+		return pp["access_token"].(string), pp["refresh_token"].(string)
+	}
+	acc, ref := connect()
+	gl := w.ana.do("GET", "/api/v1/ai/grants", nil)
+	expect(t, gl, 200)
+	grants := gl.body["grants"].([]any)
+	if len(grants) != 1 || grants[0].(map[string]any)["level"] != "read" || !strings.HasPrefix(grants[0].(map[string]any)["client"].(string), "ChatGPT") {
+		t.Fatalf("aplicativos conectados da ana = %v", grants)
+	}
+	if n := len(w.bia.do("GET", "/api/v1/ai/grants", nil).body["grants"].([]any)); n != 0 {
+		t.Fatalf("a Bia viu %d aplicativos de outra pessoa", n)
+	}
+	expect(t, w.bia.do("DELETE", "/api/v1/ai/grants/"+grants[0].(map[string]any)["id"].(string), nil), 404)
+	expect(t, w.ana.do("DELETE", "/api/v1/ai/grants/"+grants[0].(map[string]any)["id"].(string), nil), 204)
+	if st, _ := w.mcpCall(acc, "tools/list", nil); st != 401 {
+		t.Fatal("desconectar o aplicativo deveria derrubar o token")
+	}
+	acc, ref = connect()
+	if st, _ := w.formPost("/oauth/revoke", url.Values{"client_id": {cid}, "token": {ref}}); st != 200 {
+		t.Fatalf("revoke = %d", st)
+	}
+	if st, _ := w.mcpCall(acc, "tools/list", nil); st != 401 {
+		t.Fatal("revogar o refresh deveria derrubar a concessão")
+	}
+
+	// 10) Desligar o OAuth derruba tudo na hora; e níveis mais altos só existem se o administrador liberou.
+	acc, _ = connect()
+	expect(t, w.admin.do("PUT", "/api/v1/ai/settings", map[string]any{"enabled": true, "allowOauth": false}), 200)
+	if st, _ := w.mcpCall(acc, "tools/list", nil); st != 403 {
+		t.Fatalf("OAuth desligado = %d", st)
+	}
+	expect(t, w.admin.do("PUT", "/api/v1/ai/settings", map[string]any{"enabled": true, "allowOauth": true, "allowWrite": true, "oauthRedirectHosts": []string{"chatgpt.com"}}), 200)
+	pv = w.ana.do("GET", "/api/v1/ai/oauth/preview?"+q.Encode(), nil)
+	if lv := pv.body["levels"].([]any); len(lv) != 2 {
+		t.Fatalf("com escrita liberada o consentimento oferece leitura e escrita: %v", lv)
+	}
+	// o aplicativo pediu só leitura: não oferecemos mais que isso
+	q.Set("scope", "read")
+	pv = w.ana.do("GET", "/api/v1/ai/oauth/preview?"+q.Encode(), nil)
+	if lv := pv.body["levels"].([]any); len(lv) != 1 {
+		t.Fatalf("scope=read limita a leitura: %v", lv)
 	}
 }

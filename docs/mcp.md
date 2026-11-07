@@ -3,8 +3,24 @@
 Servidor MCP que deixa assistentes de IA (Claude, ChatGPT, Grok e qualquer cliente MCP) trabalharem dentro do ChatHM:
 resumir atendimentos, achar clientes, sugerir respostas, organizar filas e etiquetas, consultar a agenda.
 
-Status: **etapas 1 a 4 implementadas** (tokens, chave do administrador, `/mcp` com 11 ferramentas de leitura, 9 de alteração e 2 de rascunho/pedido de envio, 3 prompts prontos, guia de conexão, mascaramento, limites e auditoria).
-Falta a etapa 5 (OAuth 2.1, para ChatGPT e claude.ai).
+Status: **etapas 1 a 5 implementadas** (tokens, chave do administrador, `/mcp` com 11 ferramentas de leitura, 9 de alteração e 2 de rascunho/pedido de envio, 3 prompts prontos, guia de conexão, privacidade em camadas, limites, auditoria e OAuth 2.1).
+Ainda não testado com ChatGPT/claude.ai/Grok reais: os redirecionamentos permitidos por padrão vêm de documentação e podem ser ajustados pelo administrador.
+
+### Privacidade das respostas (todas as etapas)
+
+1. **Sempre ligado, para qualquer cliente de IA:** senhas, códigos, tokens e chaves; cartão (Luhn), agência/conta, chave PIX, boleto.
+2. **Pelo perfil:** CPF/CNPJ/RG/CNH etc., e-mail, telefone, CEP. Clientes OAuth (ChatGPT, claude.ai) recebem **sempre** tudo ocultado e sem os campos `phone` e `note`; tokens pessoais seguem as opções do administrador.
+3. **Modo estrito (administrador):** nomes reduzidos a "Nome S." e observações internas removidas.
+
+Ids, nomes, texto das mensagens (já filtrado), horários, filas e etiquetas continuam visíveis para a IA funcionar. Código: `backend/internal/aiaccess/mask.go`.
+
+### Etapa 5: OAuth 2.1
+
+- Liga em *"Permitir conexão por login (ChatGPT, claude.ai)"* (`ai_settings.allow_oauth`) com lista de domínios de retorno (`oauth_redirect_hosts`; padrão: chatgpt.com, platform.openai.com, chat.openai.com, claude.ai, claude.com).
+- Endpoints: `/.well-known/oauth-protected-resource`, `/.well-known/oauth-authorization-server`, `POST /oauth/register` (RFC 7591, clientes públicos), `GET /oauth/authorize` (leva à tela `/oauth/consent`, que exige sessão + MFA), `POST /oauth/token`, `POST /oauth/revoke`.
+- PKCE S256 obrigatório; `resource` (RFC 8707) conferido; código vale 60 s e é de uso único (reuso revoga a concessão); acesso 1 h; renovação 30 dias com rotação e detecção de reuso.
+- A pessoa escolhe o nível (leitura / alterações / pedir envios), limitado pelo administrador. Em *Aplicativos conectados por login* ela desconecta quando quiser (derruba os tokens na hora). Reconvite e redefinição de MFA revogam as concessões.
+- Migração `00020_oauth.sql` (clientes, concessões, códigos, renovações; RLS ligado).
 
 ### Etapa 4: como ficou
 

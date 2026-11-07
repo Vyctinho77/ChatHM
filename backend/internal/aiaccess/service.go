@@ -52,6 +52,9 @@ type Settings struct {
 	// MaskEmails oculta e-mails (padrão ligado). StrictPrivacy reduz nomes a "Nome S." e remove observações internas.
 	MaskEmails    bool `json:"maskEmails"`
 	StrictPrivacy bool `json:"strictPrivacy"`
+	// AllowOAuth libera conectar ChatGPT/claude.ai por login. OAuthRedirectHosts: hosts permitidos nos endereços de retorno.
+	AllowOAuth         bool     `json:"allowOauth"`
+	OAuthRedirectHosts []string `json:"oauthRedirectHosts"`
 }
 
 // Token é um token pessoal (nunca inclui o segredo).
@@ -109,21 +112,26 @@ func NewService(db *pgxpool.Pool) *Service {
 
 func (s *Service) Settings(ctx context.Context) (Settings, error) {
 	var st Settings
-	err := s.db.QueryRow(ctx, `SELECT enabled, mask_documents, mask_phones, allow_write, allow_send, mask_emails, strict_privacy FROM ai_settings WHERE id`).
-		Scan(&st.Enabled, &st.MaskDocuments, &st.MaskPhones, &st.AllowWrite, &st.AllowSend, &st.MaskEmails, &st.StrictPrivacy)
+	err := s.db.QueryRow(ctx, `SELECT enabled, mask_documents, mask_phones, allow_write, allow_send, mask_emails, strict_privacy, allow_oauth, oauth_redirect_hosts FROM ai_settings WHERE id`).
+		Scan(&st.Enabled, &st.MaskDocuments, &st.MaskPhones, &st.AllowWrite, &st.AllowSend, &st.MaskEmails, &st.StrictPrivacy, &st.AllowOAuth, &st.OAuthRedirectHosts)
 	return st, err
 }
 
 // SetSettings (administrador). Desligar o acesso revoga nada: os tokens só deixam de funcionar enquanto estiver desligado.
 func (s *Service) SetSettings(ctx context.Context, actorID, ip string, in Settings) (Settings, error) {
-	err := database.InTx(ctx, s.db, func(tx pgx.Tx) error {
+	hosts, err := cleanHosts(in.OAuthRedirectHosts)
+	if err != nil {
+		return Settings{}, err
+	}
+	in.OAuthRedirectHosts = hosts
+	err = database.InTx(ctx, s.db, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `UPDATE ai_settings SET enabled = $1, mask_documents = $2, mask_phones = $3,
-			allow_write = $5, allow_send = $6, mask_emails = $7, strict_privacy = $8,
-			updated_at = now(), updated_by = $4 WHERE id`, in.Enabled, in.MaskDocuments, in.MaskPhones, actorID, in.AllowWrite, in.AllowSend, in.MaskEmails, in.StrictPrivacy); err != nil {
+			allow_write = $5, allow_send = $6, mask_emails = $7, strict_privacy = $8, allow_oauth = $9, oauth_redirect_hosts = $10,
+			updated_at = now(), updated_by = $4 WHERE id`, in.Enabled, in.MaskDocuments, in.MaskPhones, actorID, in.AllowWrite, in.AllowSend, in.MaskEmails, in.StrictPrivacy, in.AllowOAuth, hosts); err != nil {
 			return err
 		}
 		return audit.Record(ctx, tx, audit.Entry{ActorID: actorID, Action: "ai.settings.update", TargetType: "ai_settings", IP: ip,
-			Metadata: map[string]any{"enabled": in.Enabled, "maskDocuments": in.MaskDocuments, "maskPhones": in.MaskPhones, "allowWrite": in.AllowWrite, "allowSend": in.AllowSend, "maskEmails": in.MaskEmails, "strictPrivacy": in.StrictPrivacy}})
+			Metadata: map[string]any{"enabled": in.Enabled, "maskDocuments": in.MaskDocuments, "maskPhones": in.MaskPhones, "allowWrite": in.AllowWrite, "allowSend": in.AllowSend, "maskEmails": in.MaskEmails, "strictPrivacy": in.StrictPrivacy, "allowOauth": in.AllowOAuth, "oauthRedirectHosts": hosts}})
 	})
 	if err != nil {
 		return Settings{}, err
@@ -265,15 +273,22 @@ func (s *Service) Authenticate(ctx context.Context, raw string) (Principal, erro
 		return Principal{}, ErrBadToken
 	}
 	var (
-		p    Principal
-		hash []byte
-		last *time.Time
+		p       Principal
+		hash    []byte
+		last    *time.Time
+		kind    string
+		grantID *string
+		client  *string
 	)
 	err := s.db.QueryRow(ctx, `
-		SELECT t.id::text, t.prefix, t.scopes, t.token_hash, t.last_used_at, u.id::text, u.name, u.role = 'admin'
+		SELECT t.id::text, t.prefix, t.scopes, t.token_hash, t.last_used_at, u.id::text, u.name, u.role = 'admin',
+		       t.kind, t.grant_id::text, c.name
 		  FROM api_tokens t JOIN users u ON u.id = t.user_id
-		 WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND t.expires_at > now() AND u.is_active`, hashToken(raw)).
-		Scan(&p.TokenID, &p.Prefix, &p.Scopes, &hash, &last, &p.UserID, &p.Name, &p.Admin)
+		  LEFT JOIN oauth_grants g ON g.id = t.grant_id AND g.revoked_at IS NULL
+		  LEFT JOIN oauth_clients c ON c.client_id = g.client_id
+		 WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND t.expires_at > now() AND u.is_active
+		   AND (t.kind = 'personal' OR g.id IS NOT NULL)`, hashToken(raw)).
+		Scan(&p.TokenID, &p.Prefix, &p.Scopes, &hash, &last, &p.UserID, &p.Name, &p.Admin, &kind, &grantID, &client)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Principal{}, ErrBadToken
 	}
@@ -289,6 +304,18 @@ func (s *Service) Authenticate(ctx context.Context, raw string) (Principal, erro
 	}
 	if !st.Enabled {
 		return Principal{}, ErrDisabled
+	}
+	if kind == "oauth" {
+		if !st.AllowOAuth {
+			return Principal{}, ErrDisabled
+		}
+		p.OAuth = true
+		if client != nil {
+			p.ClientName = *client
+		}
+		if grantID != nil && (last == nil || time.Since(*last) > time.Minute) {
+			_, _ = s.db.Exec(ctx, `UPDATE oauth_grants SET last_used_at = now() WHERE id = $1`, *grantID)
+		}
 	}
 	for _, sc := range p.Scopes {
 		if sc == ScopeWrite && st.AllowWrite {

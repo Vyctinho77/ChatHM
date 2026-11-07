@@ -90,7 +90,9 @@ func NewRouter(d Deps) http.Handler {
 	if aiSvc == nil {
 		aiSvc = aiaccess.NewService(d.DB)
 	}
-	aiH := aiaccess.NewHandler(aiSvc)
+	baseURL := aiaccess.PublicBase(d.Config.AllowedOrigins)
+	aiH := aiaccess.NewHandler(aiSvc, baseURL)
+	oauthH := aiaccess.NewOAuthHandler(aiSvc, baseURL)
 	mcpH := aiaccess.NewMCP(aiSvc, d.Conversations, d.Segments, d.Tags, agendaSvc, d.Teams, d.Users, d.Config.AllowedOrigins, d.Logger)
 
 	// O WebSocket revalida a sessão periodicamente (logout/desativação encerram a conexão).
@@ -104,7 +106,9 @@ func NewRouter(d Deps) http.Handler {
 	}
 
 	// MCP (acesso por IA): só token Bearer, sem cookie; independe da sessão do app.
+	mcpH.SetBaseURL(baseURL)
 	r.Handle("/mcp", mcpH)
+	oauthH.Routes(r) // /.well-known/oauth-*, /oauth/register|authorize|token|revoke
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(d.Auth.LoadSession)

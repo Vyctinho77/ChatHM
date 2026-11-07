@@ -32,6 +32,24 @@ type MCP struct {
 	allowedOrigins map[string]bool
 	log            *slog.Logger
 	handler        http.Handler
+	base           BaseURLFunc
+}
+
+// SetBaseURL informa o endereço público (para anunciar os metadados OAuth nos 401).
+func (m *MCP) SetBaseURL(b BaseURLFunc) { m.base = b }
+
+// challenge monta o WWW-Authenticate; com OAuth ligado aponta para os metadados (RFC 9728).
+func (m *MCP) challenge(r *http.Request, invalid bool) string {
+	h := `Bearer realm="chathm"`
+	if invalid {
+		h += `, error="invalid_token"`
+	}
+	if m.base != nil {
+		if st, err := m.svc.Settings(r.Context()); err == nil && st.Enabled && st.AllowOAuth {
+			h += `, resource_metadata="` + m.base(r) + `/.well-known/oauth-protected-resource"`
+		}
+	}
+	return h
 }
 
 func NewMCP(svc *Service, convs *conversations.Service, segs *segments.Service, tg *tags.Service, ag *agenda.Service, tm *teams.Service, us *users.Service, allowedOrigins []string, log *slog.Logger) *MCP {
@@ -63,7 +81,7 @@ func (m *MCP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	authz := r.Header.Get("Authorization")
 	raw, ok := strings.CutPrefix(authz, "Bearer ")
 	if !ok || strings.TrimSpace(raw) == "" {
-		w.Header().Set("WWW-Authenticate", `Bearer realm="chathm"`)
+		w.Header().Set("WWW-Authenticate", m.challenge(r, false))
 		writeJSONError(w, http.StatusUnauthorized, "unauthorized", "Envie o token de acesso no cabeçalho Authorization: Bearer.")
 		return
 	}
@@ -73,7 +91,7 @@ func (m *MCP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusForbidden, "ai_disabled", "O acesso por IA está desligado neste escritório.")
 		return
 	case errors.Is(err, ErrBadToken):
-		w.Header().Set("WWW-Authenticate", `Bearer realm="chathm", error="invalid_token"`)
+		w.Header().Set("WWW-Authenticate", m.challenge(r, true))
 		writeJSONError(w, http.StatusUnauthorized, "invalid_token", "Token inválido, expirado ou revogado.")
 		return
 	case err != nil:
