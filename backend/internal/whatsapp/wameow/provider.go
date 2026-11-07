@@ -170,6 +170,84 @@ func (p *Provider) SendText(ctx context.Context, chatJID, messageID, text string
 	return err
 }
 
+// contextInfo monta a citação de uma mensagem. nil quando não há como identificar o autor (grupos antigos sem JID).
+func contextInfo(cli *whatsmeow.Client, chat types.JID, q *whatsapp.Quote) *waE2E.ContextInfo {
+	if q == nil || q.ExternalID == "" {
+		return nil
+	}
+	participant := q.SenderJID
+	switch {
+	case q.FromMe && cli.Store.ID != nil:
+		participant = cli.Store.ID.ToNonAD().String()
+	case participant == "" && chat.Server != types.GroupServer:
+		participant = chat.ToNonAD().String()
+	}
+	if participant == "" {
+		return nil
+	}
+	ci := &waE2E.ContextInfo{StanzaID: proto.String(q.ExternalID), Participant: proto.String(participant)}
+	if q.Text != "" {
+		ci.QuotedMessage = &waE2E.Message{Conversation: proto.String(q.Text)}
+	} else {
+		ci.QuotedMessage = &waE2E.Message{Conversation: proto.String("")}
+	}
+	return ci
+}
+
+func (p *Provider) SendTextQuoted(ctx context.Context, chatJID, messageID, text string, q whatsapp.Quote) error {
+	cli, err := p.client()
+	if err != nil {
+		return err
+	}
+	if cli == nil || !cli.IsConnected() || cli.Store.ID == nil {
+		return whatsapp.ErrNotConnected
+	}
+	to, err := types.ParseJID(chatJID)
+	if err != nil {
+		return fmt.Errorf("conversa inválida: %w", err)
+	}
+	msg := &waE2E.Message{Conversation: proto.String(text)}
+	if ci := contextInfo(cli, to, &q); ci != nil {
+		msg = &waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{Text: proto.String(text), ContextInfo: ci}}
+	}
+	_, err = cli.SendMessage(ctx, to, msg, whatsmeow.SendRequestExtra{ID: types.MessageID(messageID)})
+	return err
+}
+
+// EditText edita uma mensagem de texto enviada por este aparelho (dentro da janela do WhatsApp).
+func (p *Provider) EditText(ctx context.Context, chatJID, targetID, text string) error {
+	cli, err := p.client()
+	if err != nil {
+		return err
+	}
+	if !cli.IsConnected() || cli.Store.ID == nil {
+		return whatsapp.ErrNotConnected
+	}
+	to, err := types.ParseJID(chatJID)
+	if err != nil {
+		return fmt.Errorf("conversa inválida: %w", err)
+	}
+	_, err = cli.SendMessage(ctx, to, cli.BuildEdit(to, types.MessageID(targetID), &waE2E.Message{Conversation: proto.String(text)}))
+	return err
+}
+
+// Revoke apaga para todos uma mensagem enviada pelo escritório.
+func (p *Provider) Revoke(ctx context.Context, chatJID, targetID string) error {
+	cli, err := p.client()
+	if err != nil {
+		return err
+	}
+	if !cli.IsConnected() || cli.Store.ID == nil {
+		return whatsapp.ErrNotConnected
+	}
+	to, err := types.ParseJID(chatJID)
+	if err != nil {
+		return fmt.Errorf("conversa inválida: %w", err)
+	}
+	_, err = cli.SendMessage(ctx, to, cli.BuildRevoke(to, types.EmptyJID, types.MessageID(targetID)))
+	return err
+}
+
 func (p *Provider) client() (*whatsmeow.Client, error) {
 	p.mu.Lock()
 	cli := p.cli
@@ -197,7 +275,8 @@ func (p *Provider) SendMedia(ctx context.Context, chatJID, messageID string, m w
 			return err
 		}
 		msg = &waE2E.Message{ImageMessage: &waE2E.ImageMessage{
-			URL: &up.URL, DirectPath: &up.DirectPath, MediaKey: up.MediaKey,
+			ContextInfo: contextInfo(cli, to, m.Quote),
+			URL:         &up.URL, DirectPath: &up.DirectPath, MediaKey: up.MediaKey,
 			FileEncSHA256: up.FileEncSHA256, FileSHA256: up.FileSHA256, FileLength: &up.FileLength,
 			Mimetype: proto.String(m.MimeType), Caption: proto.String(m.Caption),
 			Width: proto.Uint32(uint32(m.Width)), Height: proto.Uint32(uint32(m.Height)),
@@ -208,7 +287,8 @@ func (p *Provider) SendMedia(ctx context.Context, chatJID, messageID string, m w
 			return err
 		}
 		a := &waE2E.AudioMessage{
-			URL: &up.URL, DirectPath: &up.DirectPath, MediaKey: up.MediaKey,
+			ContextInfo: contextInfo(cli, to, m.Quote),
+			URL:         &up.URL, DirectPath: &up.DirectPath, MediaKey: up.MediaKey,
 			FileEncSHA256: up.FileEncSHA256, FileSHA256: up.FileSHA256, FileLength: &up.FileLength,
 			Mimetype: proto.String(m.MimeType), Seconds: proto.Uint32(uint32(m.DurationSec)), PTT: proto.Bool(true),
 		}
@@ -222,7 +302,8 @@ func (p *Provider) SendMedia(ctx context.Context, chatJID, messageID string, m w
 			return err
 		}
 		msg = &waE2E.Message{DocumentMessage: &waE2E.DocumentMessage{
-			URL: &up.URL, DirectPath: &up.DirectPath, MediaKey: up.MediaKey,
+			ContextInfo: contextInfo(cli, to, m.Quote),
+			URL:         &up.URL, DirectPath: &up.DirectPath, MediaKey: up.MediaKey,
 			FileEncSHA256: up.FileEncSHA256, FileSHA256: up.FileSHA256, FileLength: &up.FileLength,
 			Mimetype: proto.String(m.MimeType), FileName: proto.String(m.FileName), Title: proto.String(m.FileName),
 			Caption: proto.String(m.Caption),

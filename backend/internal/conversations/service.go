@@ -71,6 +71,9 @@ type Sender interface {
 	SendText(ctx context.Context, chatJID, messageID, text string) error
 	SendMedia(ctx context.Context, chatJID, messageID string, m whatsapp.MediaSend) error
 	SendLocation(ctx context.Context, chatJID, messageID string, l whatsapp.Location) error
+	SendTextQuoted(ctx context.Context, chatJID, messageID, text string, q whatsapp.Quote) error
+	EditText(ctx context.Context, chatJID, targetID, text string) error
+	Revoke(ctx context.Context, chatJID, targetID string) error
 	ProfilePicture(ctx context.Context, jid string, preview bool) ([]byte, error)
 }
 
@@ -206,12 +209,18 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 	if m.Timestamp.IsZero() {
 		m.Timestamp = time.Now()
 	}
+	if m.EditOf != "" || m.RevokeOf != "" {
+		return false, s.ingestChange(ctx, m) // altera uma mensagem existente; não cria nenhuma
+	}
 	payload := m.Payload
 	if payload == nil {
 		payload = map[string]any{}
 	}
 	if m.IsGroup {
 		payload["group"] = true // mensagens de grupo mostram o autor
+		if m.SenderJID != "" {
+			payload["senderJid"] = m.SenderJID
+		}
 	}
 
 	var convID, msgID string
@@ -276,6 +285,9 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 			dir = "out"
 			sent := "sent"
 			status = &sent
+		}
+		if m.Quote != nil && m.Quote.ExternalID != "" {
+			payload["quoted"] = s.incomingQuote(ctx, tx, m)
 		}
 		pj, err := json.Marshal(payload)
 		if err != nil {
@@ -455,7 +467,7 @@ type Conversation struct {
 
 const messageCols = `m.id, m.conversation_id, m.direction, m.kind, m.body, m.payload, m.status,
 	m.sent_at, m.sender_name, m.delivered_at, m.read_at,
-	(SELECT a.id::text FROM attachments a WHERE a.message_id = m.id)`
+	(SELECT a.id::text FROM attachments a WHERE a.message_id = m.id), m.edited_at, m.deleted_at`
 
 type msgRow struct {
 	id, convID, dir, kind, body, sender string
@@ -464,10 +476,11 @@ type msgRow struct {
 	sentAt                              time.Time
 	deliveredAt, readAt                 *time.Time
 	attachmentID                        *string
+	editedAt, deletedAt                 *time.Time
 }
 
 func (r *msgRow) dest() []any {
-	return []any{&r.id, &r.convID, &r.dir, &r.kind, &r.body, &r.payload, &r.status, &r.sentAt, &r.sender, &r.deliveredAt, &r.readAt, &r.attachmentID}
+	return []any{&r.id, &r.convID, &r.dir, &r.kind, &r.body, &r.payload, &r.status, &r.sentAt, &r.sender, &r.deliveredAt, &r.readAt, &r.attachmentID, &r.editedAt, &r.deletedAt}
 }
 
 func (r msgRow) message() Message {
@@ -489,6 +502,25 @@ func (r msgRow) message() Message {
 	}
 	if r.sender != "" && (r.dir == "out" || m["group"] == true) {
 		m["authorName"] = r.sender
+	}
+	delete(m, "senderJid") // interno: só serve para citar a mensagem no WhatsApp
+	if q, ok := m["quoted"].(map[string]any); ok {
+		delete(q, "senderJid")
+	}
+	if r.editedAt != nil {
+		m["editedAt"] = r.editedAt.UTC().Format(time.RFC3339Nano)
+	}
+	if r.deletedAt != nil {
+		// Apagada para todos: o conteúdo some, a marca fica.
+		keep := Message{"id": r.id, "conversationId": r.convID, "direction": r.dir, "kind": r.kind,
+			"sentAt": m["sentAt"], "deleted": true}
+		for _, k := range []string{"status", "authorName", "group"} {
+			if v, ok := m[k]; ok {
+				keep[k] = v
+			}
+		}
+		keep["text"] = ""
+		return keep
 	}
 	switch r.kind {
 	case "text", "unsupported":
@@ -519,7 +551,7 @@ const listQuery = `
 	       coalesce((SELECT array_agg(t.name::text ORDER BY t.name) FROM conversation_tags cg
 	                  JOIN tags t ON t.id = cg.tag_id WHERE cg.conversation_id = c.id), '{}'),
 	       lm.id, lm.conversation_id, lm.direction, lm.kind, lm.body, lm.payload, lm.status,
-	       lm.sent_at, lm.sender_name, lm.delivered_at, lm.read_at
+	       lm.sent_at, lm.sender_name, lm.delivered_at, lm.read_at, lm.edited_at, lm.deleted_at
 	  FROM conversations c
 	  JOIN contacts ct ON ct.id = c.contact_id
 	  LEFT JOIN segments s ON s.id = c.segment_id
@@ -541,12 +573,13 @@ func scanConversation(row pgx.Row) (Conversation, error) {
 			payload                             []byte
 			status                              *string
 			sentAt, deliveredAt, readAt         *time.Time
+			editedAt, deletedAt                 *time.Time
 		}
 	)
 	err := row.Scan(&c.ID, &c.Status, &c.UnreadCount, &c.UpdatedAt, &c.Classification, &c.SnoozedUntil,
 		&c.Contact.ID, &name, &phone, &waID, &c.Contact.Company, &c.Contact.Note, &kind, &avatarVer,
 		&uID, &uName, &segKey, &segName, &c.Tags,
-		&lm.id, &lm.convID, &lm.dir, &lm.kind, &lm.body, &lm.payload, &lm.status, &lm.sentAt, &lm.sender, &lm.deliveredAt, &lm.readAt)
+		&lm.id, &lm.convID, &lm.dir, &lm.kind, &lm.body, &lm.payload, &lm.status, &lm.sentAt, &lm.sender, &lm.deliveredAt, &lm.readAt, &lm.editedAt, &lm.deletedAt)
 	if err != nil {
 		return c, err
 	}
@@ -568,6 +601,7 @@ func scanConversation(row pgx.Row) (Conversation, error) {
 		c.LastMessage = msgRow{
 			id: *lm.id, convID: *lm.convID, dir: *lm.dir, kind: *lm.kind, body: *lm.body, sender: *lm.sender,
 			payload: lm.payload, status: lm.status, sentAt: *lm.sentAt, deliveredAt: lm.deliveredAt, readAt: lm.readAt,
+			editedAt: lm.editedAt, deletedAt: lm.deletedAt,
 		}.message()
 	}
 	return c, nil
@@ -637,6 +671,7 @@ func (s *Service) Messages(ctx context.Context, v Viewer, conversationID string,
 		      JOIN conversations c ON c.id = m.conversation_id
 		      LEFT JOIN segments s ON s.id = c.segment_id
 		     WHERE c.contact_id = (SELECT contact_id FROM conversations WHERE id = $3) AND `+forViewer+`
+		       AND NOT EXISTS (SELECT 1 FROM message_hidden h WHERE h.message_id = m.id AND h.user_id = $1)
 		     ORDER BY m.sent_at DESC, m.created_at DESC LIMIT $4) x
 		 ORDER BY sent_at, created_at`, v.ID, v.Admin, conversationID, limit)
 	if err != nil {
@@ -757,6 +792,8 @@ type SendInput struct {
 
 	Lat, Lng      float64 // location
 	Name, Address string
+
+	ReplyTo string // id da mensagem respondida (opcional)
 }
 
 const (
@@ -952,6 +989,13 @@ func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInpu
 				}
 			}
 			externalID = s.sender.NewMessageID()
+			if in.ReplyTo != "" && kind != "location" {
+				q, err := s.resolveReply(ctx, tx, convID, in.ReplyTo)
+				if err != nil {
+					return err
+				}
+				payload["quoted"] = q
+			}
 			pj, err := json.Marshal(payload)
 			if err != nil {
 				return err
@@ -1049,6 +1093,9 @@ func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInpu
 func (s *Service) dispatch(ctx context.Context, kind, chatJID, externalID, text string, payload map[string]any, attKey string, att *media.Processed) error {
 	switch kind {
 	case "text":
+		if q := quoteFromPayload(payload); q != nil {
+			return s.sender.SendTextQuoted(ctx, chatJID, externalID, text, *q)
+		}
 		return s.sender.SendText(ctx, chatJID, externalID, text)
 	case "location":
 		f := func(k string) float64 { v, _ := payload[k].(float64); return v }
@@ -1078,7 +1125,7 @@ func (s *Service) dispatch(ctx context.Context, kind, chatJID, externalID, text 
 	}
 	md := whatsapp.MediaSend{
 		Kind: whatsapp.Kind(kind), Data: data, MimeType: str("mimeType"), FileName: str("fileName"), Caption: text,
-		DurationSec: num("durationSec"), Width: num("width"), Height: num("height"),
+		DurationSec: num("durationSec"), Width: num("width"), Height: num("height"), Quote: quoteFromPayload(payload),
 	}
 	if wf, ok := payload["waveform"].([]any); ok {
 		for _, v := range wf {

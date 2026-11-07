@@ -34,6 +34,8 @@ type Sent struct {
 	ChatJID, MessageID, Text string
 	Media                    *whatsapp.MediaSend
 	Location                 *whatsapp.Location
+	Quote                    *whatsapp.Quote
+	EditOf, RevokeOf         string
 }
 
 func New(h whatsapp.Handler) *Provider {
@@ -158,6 +160,21 @@ func (p *Provider) NewMessageID() string {
 
 func (p *Provider) SendText(_ context.Context, chatJID, messageID, text string) error {
 	return p.record(Sent{ChatJID: chatJID, MessageID: messageID, Text: text})
+}
+
+// SendTextQuoted registra o texto e a mensagem citada.
+func (p *Provider) SendTextQuoted(_ context.Context, chatJID, messageID, text string, q whatsapp.Quote) error {
+	return p.record(Sent{ChatJID: chatJID, MessageID: messageID, Text: text, Quote: &q})
+}
+
+// EditText registra a edição (EditOf = ID da mensagem alterada).
+func (p *Provider) EditText(_ context.Context, chatJID, targetID, text string) error {
+	return p.record(Sent{ChatJID: chatJID, MessageID: "EDIT-" + targetID + "-" + uuid.NewString(), Text: text, EditOf: targetID})
+}
+
+// Revoke registra o "apagar para todos".
+func (p *Provider) Revoke(_ context.Context, chatJID, targetID string) error {
+	return p.record(Sent{ChatJID: chatJID, MessageID: "REVOKE-" + targetID, RevokeOf: targetID})
 }
 
 func (p *Provider) SendMedia(_ context.Context, chatJID, messageID string, m whatsapp.MediaSend) error {

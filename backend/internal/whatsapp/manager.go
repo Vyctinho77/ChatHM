@@ -302,6 +302,18 @@ func (m *Manager) SendText(ctx context.Context, chatJID, messageID, text string)
 	return m.p.SendText(ctx, chatJID, messageID, text)
 }
 
+func (m *Manager) SendTextQuoted(ctx context.Context, chatJID, messageID, text string, q Quote) error {
+	return m.p.SendTextQuoted(ctx, chatJID, messageID, text, q)
+}
+
+func (m *Manager) EditText(ctx context.Context, chatJID, targetID, text string) error {
+	return m.p.EditText(ctx, chatJID, targetID, text)
+}
+
+func (m *Manager) Revoke(ctx context.Context, chatJID, targetID string) error {
+	return m.p.Revoke(ctx, chatJID, targetID)
+}
+
 func (m *Manager) SendMedia(ctx context.Context, chatJID, messageID string, md MediaSend) error {
 	return m.p.SendMedia(ctx, chatJID, messageID, md)
 }

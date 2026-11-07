@@ -52,6 +52,12 @@ type InboundMessage struct {
 	IsGroup    bool
 	GroupName  string
 	SenderName string
+	SenderJID  string // grupos: JID de quem escreveu (necessário para citar a mensagem)
+	// Edição/apagar vindos do WhatsApp: o evento não é uma mensagem nova, altera a original (EditOf/RevokeOf = ID externo).
+	EditOf   string
+	RevokeOf string
+	// Resposta a outra mensagem.
+	Quote      *InboundQuote
 	SenderID   string
 	FromMe     bool // enviada pelo celular do escritório
 	Historical bool // importada do histórico; não incrementa não lidas
@@ -61,6 +67,22 @@ type InboundMessage struct {
 	Payload    map[string]any // metadados (mídia, localização); nunca o binário
 	// Download baixa o arquivo da mídia (nil quando a mensagem não tem arquivo).
 	Download func(ctx context.Context) ([]byte, error) `json:"-"`
+}
+
+// InboundQuote é a mensagem que a recebida responde (citação).
+type InboundQuote struct {
+	ExternalID string
+	SenderJID  string
+	FromMe     bool   // a mensagem citada foi enviada pelo escritório
+	Text       string // prévia enviada junto (pode estar vazia; o servidor prefere a mensagem guardada)
+}
+
+// Quote identifica a mensagem que uma resposta cita.
+type Quote struct {
+	ExternalID string
+	FromMe     bool   // a mensagem citada é do escritório
+	SenderJID  string // quem escreveu (obrigatório em grupos quando FromMe=false)
+	Text       string // prévia do conteúdo citado
 }
 
 // MediaSend é um anexo a enviar (já validado e normalizado).
@@ -74,6 +96,7 @@ type MediaSend struct {
 	Waveform    []byte // 0–100 por barra (opcional)
 	Width       int
 	Height      int
+	Quote       *Quote // resposta a outra mensagem (opcional)
 }
 
 // Location é uma localização estática.
@@ -147,6 +170,12 @@ type Provider interface {
 	SendMedia(ctx context.Context, chatJID, messageID string, m MediaSend) error
 	// SendLocation envia uma localização estática.
 	SendLocation(ctx context.Context, chatJID, messageID string, l Location) error
+	// SendTextQuoted envia texto como resposta (citação) a outra mensagem.
+	SendTextQuoted(ctx context.Context, chatJID, messageID, text string, q Quote) error
+	// EditText edita um texto já enviado pelo escritório (janela de 20 minutos do WhatsApp).
+	EditText(ctx context.Context, chatJID, targetID, text string) error
+	// Revoke apaga para todos uma mensagem enviada pelo escritório.
+	Revoke(ctx context.Context, chatJID, targetID string) error
 	// ProfilePicture baixa a foto de perfil: miniatura (preview) ou tamanho grande. nil, nil quando não há foto ou ela é privada.
 	ProfilePicture(ctx context.Context, jid string, preview bool) ([]byte, error)
 }

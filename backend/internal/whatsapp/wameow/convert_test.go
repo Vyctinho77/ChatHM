@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -108,5 +109,51 @@ func TestConvertMessage(t *testing.T) {
 		if _, ok := convertMessage(ctx, nil, e); ok {
 			t.Fatalf("caso %d deveria ser ignorado", i)
 		}
+	}
+}
+
+func TestConvertEditRevokeAndQuote(t *testing.T) {
+	ctx := context.Background()
+	pn := types.NewJID("5592998112040", types.DefaultUserServer)
+
+	// Edição: o evento traz o ProtocolMessage de edição já desembrulhado.
+	edit := msgEvent(pn, &waE2E.Message{ProtocolMessage: &waE2E.ProtocolMessage{
+		Type:          waE2E.ProtocolMessage_MESSAGE_EDIT.Enum(),
+		Key:           &waCommon.MessageKey{ID: proto.String("ORIG-1")},
+		EditedMessage: &waE2E.Message{Conversation: proto.String("texto corrigido")},
+	}})
+	edit.IsEdit = true
+	got, ok := convertMessage(ctx, nil, edit)
+	if !ok || got.EditOf != "ORIG-1" || got.Body != "texto corrigido" {
+		t.Fatalf("edição = %+v ok=%v", got, ok)
+	}
+
+	// Apagar para todos.
+	got, ok = convertMessage(ctx, nil, msgEvent(pn, &waE2E.Message{ProtocolMessage: &waE2E.ProtocolMessage{
+		Type: waE2E.ProtocolMessage_REVOKE.Enum(), Key: &waCommon.MessageKey{ID: proto.String("ORIG-2")},
+	}}))
+	if !ok || got.RevokeOf != "ORIG-2" {
+		t.Fatalf("revoke = %+v ok=%v", got, ok)
+	}
+
+	// Resposta (citação) em texto.
+	got, ok = convertMessage(ctx, nil, msgEvent(pn, &waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+		Text: proto.String("sim, pode enviar"),
+		ContextInfo: &waE2E.ContextInfo{
+			StanzaID: proto.String("ORIG-3"), Participant: proto.String(pn.String()),
+			QuotedMessage: &waE2E.Message{Conversation: proto.String("Posso enviar o boleto?")},
+		},
+	}}))
+	if !ok || got.Quote == nil || got.Quote.ExternalID != "ORIG-3" || got.Quote.Text != "Posso enviar o boleto?" || got.Quote.FromMe {
+		t.Fatalf("citação = %+v", got.Quote)
+	}
+
+	// Grupo: guarda o JID de quem escreveu (necessário para citar depois).
+	grp := types.NewJID("120363000000000009", types.GroupServer)
+	ge := msgEvent(grp, &waE2E.Message{Conversation: proto.String("oi grupo")})
+	ge.Info.IsGroup = true
+	ge.Info.Sender = types.NewJID("5592911112222", types.DefaultUserServer)
+	if g, ok := convertMessage(ctx, nil, ge); !ok || g.SenderJID != "5592911112222@s.whatsapp.net" {
+		t.Fatalf("grupo = %+v", g)
 	}
 }

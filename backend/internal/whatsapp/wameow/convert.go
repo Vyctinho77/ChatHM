@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 
@@ -16,7 +17,7 @@ import (
 func convertMessage(ctx context.Context, cli *whatsmeow.Client, e *events.Message) (whatsapp.InboundMessage, bool) {
 	info := e.Info
 	chat := info.Chat
-	if chat.Server == types.BroadcastServer || chat.Server == types.NewsletterServer || e.IsEdit {
+	if chat.Server == types.BroadcastServer || chat.Server == types.NewsletterServer {
 		return whatsapp.InboundMessage{}, false
 	}
 	group := info.IsGroup || chat.Server == types.GroupServer
@@ -33,6 +34,7 @@ func convertMessage(ctx context.Context, cli *whatsmeow.Client, e *events.Messag
 		out.IsGroup = true
 		out.ContactWAID = chat.ToNonAD().String()
 		if !info.IsFromMe {
+			out.SenderJID = info.Sender.ToNonAD().String()
 			out.SenderName = info.PushName
 			if out.SenderName == "" && info.Sender.Server == types.DefaultUserServer {
 				out.SenderName = "+" + info.Sender.User
@@ -68,6 +70,32 @@ func convertMessage(ctx context.Context, cli *whatsmeow.Client, e *events.Messag
 
 	m := e.Message
 	switch {
+	case e.IsEdit:
+		// Edição feita no celular (ou por quem escreve): altera a mensagem original.
+		pm := m.GetProtocolMessage()
+		if pm == nil || pm.GetType() != waE2E.ProtocolMessage_MESSAGE_EDIT || pm.GetKey().GetID() == "" {
+			return whatsapp.InboundMessage{}, false
+		}
+		ed := pm.GetEditedMessage()
+		text := ed.GetConversation()
+		if text == "" {
+			text = ed.GetExtendedTextMessage().GetText()
+		}
+		if text == "" {
+			text = ed.GetImageMessage().GetCaption()
+		}
+		if text == "" {
+			text = ed.GetDocumentMessage().GetCaption()
+		}
+		if text == "" {
+			return whatsapp.InboundMessage{}, false
+		}
+		out.Kind, out.Body, out.EditOf = whatsapp.KindText, text, pm.GetKey().GetID()
+		return out, true
+	case m.GetProtocolMessage().GetType() == waE2E.ProtocolMessage_REVOKE && m.GetProtocolMessage().GetKey().GetID() != "":
+		// "Apagar para todos" feito no WhatsApp.
+		out.Kind, out.RevokeOf = whatsapp.KindText, m.GetProtocolMessage().GetKey().GetID()
+		return out, true
 	case m.GetConversation() != "":
 		out.Kind, out.Body = whatsapp.KindText, m.GetConversation()
 	case m.GetExtendedTextMessage() != nil:
@@ -129,8 +157,54 @@ func convertMessage(ctx context.Context, cli *whatsmeow.Client, e *events.Messag
 	case m.GetPollCreationMessage() != nil || m.GetPollCreationMessageV3() != nil:
 		out.Kind, out.Payload["label"] = whatsapp.KindUnsupported, "Enquete"
 	default:
-		// Reações, protocolo (apagar/editar), distribuição de chaves etc.
+		// Reações, outros protocolos, distribuição de chaves etc.
 		return whatsapp.InboundMessage{}, false
 	}
+	out.Quote = quoteOf(cli, m)
 	return out, true
+}
+
+// contextOf devolve o ContextInfo (citação, encaminhamento…) do conteúdo da mensagem.
+func contextOf(m *waE2E.Message) *waE2E.ContextInfo {
+	switch {
+	case m.GetExtendedTextMessage() != nil:
+		return m.GetExtendedTextMessage().GetContextInfo()
+	case m.GetImageMessage() != nil:
+		return m.GetImageMessage().GetContextInfo()
+	case m.GetAudioMessage() != nil:
+		return m.GetAudioMessage().GetContextInfo()
+	case m.GetDocumentMessage() != nil:
+		return m.GetDocumentMessage().GetContextInfo()
+	case m.GetLocationMessage() != nil:
+		return m.GetLocationMessage().GetContextInfo()
+	case m.GetVideoMessage() != nil:
+		return m.GetVideoMessage().GetContextInfo()
+	}
+	return nil
+}
+
+// quoteOf lê a mensagem que esta responde (nil quando não é uma resposta).
+func quoteOf(cli *whatsmeow.Client, m *waE2E.Message) *whatsapp.InboundQuote {
+	ci := contextOf(m)
+	if ci == nil || ci.GetStanzaID() == "" {
+		return nil
+	}
+	q := &whatsapp.InboundQuote{ExternalID: ci.GetStanzaID(), SenderJID: ci.GetParticipant()}
+	if cli != nil && cli.Store != nil && cli.Store.ID != nil {
+		if p, err := types.ParseJID(ci.GetParticipant()); err == nil && p.User == cli.Store.ID.User {
+			q.FromMe = true
+		}
+	}
+	qm := ci.GetQuotedMessage()
+	switch {
+	case qm.GetConversation() != "":
+		q.Text = qm.GetConversation()
+	case qm.GetExtendedTextMessage().GetText() != "":
+		q.Text = qm.GetExtendedTextMessage().GetText()
+	case qm.GetImageMessage() != nil:
+		q.Text = qm.GetImageMessage().GetCaption()
+	case qm.GetDocumentMessage() != nil:
+		q.Text = qm.GetDocumentMessage().GetFileName()
+	}
+	return q
 }

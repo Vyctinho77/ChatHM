@@ -46,6 +46,9 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Post("/conversations/{id}/messages", h.send)
 	r.Post("/conversations/{id}/read", h.read)
 	r.Get("/attachments/{id}", h.attachment)
+	r.Patch("/messages/{id}", h.editMessage)
+	r.Delete("/messages/{id}", h.deleteMessage)
+	r.Post("/messages/{id}/forward", h.forwardMessage)
 	r.Post("/conversations/{id}/close", h.close)
 	r.Post("/conversations/{id}/snooze", h.snooze)
 	r.Post("/conversations/{id}/resume", h.resume)
@@ -116,6 +119,7 @@ func (h *Handler) send(w http.ResponseWriter, r *http.Request) {
 			Lng     float64 `json:"lng"`
 			Name    string  `json:"name"`
 			Address string  `json:"address"`
+			ReplyTo string  `json:"replyTo"`
 		}
 		if !httpx.Decode(w, r, &body) {
 			return
@@ -124,7 +128,7 @@ func (h *Handler) send(w http.ResponseWriter, r *http.Request) {
 			httpx.Validation(w, httpx.FieldErrors{"kind": "Anexos são enviados como multipart/form-data."})
 			return
 		}
-		in = SendInput{ID: body.ID, Kind: body.Kind, Text: body.Text, Lat: body.Lat, Lng: body.Lng, Name: body.Name, Address: body.Address}
+		in = SendInput{ID: body.ID, Kind: body.Kind, Text: body.Text, Lat: body.Lat, Lng: body.Lng, Name: body.Name, Address: body.Address, ReplyTo: body.ReplyTo}
 	}
 	m, created, err := h.svc.Send(r.Context(), viewer(r), chi.URLParam(r, "id"), in)
 	if err != nil {
@@ -226,6 +230,7 @@ func (h *Handler) readUpload(w http.ResponseWriter, r *http.Request) (SendInput,
 		return SendInput{}, false
 	}
 	in.Att, in.HD = &p, hdFlag
+	in.ReplyTo = r.FormValue("replyTo")
 	return in, true
 }
 
@@ -454,4 +459,45 @@ func (h *Handler) avatar(w http.ResponseWriter, r *http.Request) {
 	hd.Set("Cache-Control", "private, max-age=86400")
 	hd.Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(b))
+}
+
+// editMessage: PATCH /messages/{id} {text} — edita uma mensagem de texto enviada (até 20 min).
+func (h *Handler) editMessage(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Text string `json:"text"`
+	}
+	if !httpx.Decode(w, r, &body) {
+		return
+	}
+	m, err := h.svc.EditMessage(r.Context(), viewer(r), chi.URLParam(r, "id"), body.Text)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, m)
+}
+
+// deleteMessage: DELETE /messages/{id}?scope=me|everyone.
+func (h *Handler) deleteMessage(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.DeleteMessage(r.Context(), viewer(r), chi.URLParam(r, "id"), r.URL.Query().Get("scope")); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
+// forwardMessage: POST /messages/{id}/forward {conversationIds} — resultado por conversa.
+func (h *Handler) forwardMessage(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ConversationIDs []string `json:"conversationIds"`
+	}
+	if !httpx.Decode(w, r, &body) {
+		return
+	}
+	res, err := h.svc.ForwardMessage(r.Context(), viewer(r), chi.URLParam(r, "id"), body.ConversationIDs)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"results": res})
 }
