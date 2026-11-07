@@ -2,6 +2,7 @@ import { ChevronsUpDown, LogOut } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { Menu, MenuItem } from "@/components/Menu";
 import { logout, useSetMe, type Me } from "@/features/auth/api";
+import { ThemeSwitcher } from "./ThemeSwitcher";
 
 const roleLabel = { admin: "Administrador", agent: "Atendente" } as const;
 
@@ -36,6 +37,10 @@ export function UserMenu({ me }: { me: Me }) {
           <div className="border-b border-line px-3 py-2">
             <p className="truncate text-[13px] font-medium">{me.user.name}</p>
             <p className="truncate text-[11.5px] text-muted">{me.user.email}</p>
+          </div>
+          <div className="flex items-center justify-between gap-3 border-b border-line px-3 py-3">
+            <span className="text-xs text-muted">Tema</span>
+            <ThemeSwitcher />
           </div>
           <MenuItem
             icon={<LogOut />}
