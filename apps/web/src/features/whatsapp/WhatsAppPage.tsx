@@ -8,7 +8,7 @@ import { DetailSkeleton } from "@/components/Skeleton";
 import { Alert, Button, Field, IconButton, Modal, Spinner } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { stateDot, stateLabel, useConnect, useConnection, useDisconnect, useSimulateInbound, useRequestHistory } from "./api";
+import { stateDot, stateLabel, useConnect, useConnection, useDisconnect, useSimulateInbound, useSimulateTyping, useRequestHistory } from "./api";
 
 function useSecondsLeft(iso?: string) {
   const [now, setNow] = useState(() => Date.now());
@@ -217,6 +217,7 @@ export function WhatsAppPage() {
 /** Formulário de teste: disponível só com o provedor simulado (desenvolvimento). */
 function Simulator() {
   const sim = useSimulateInbound();
+  const typing = useSimulateTyping();
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ phone: "5511988887777", name: "Cliente teste", text: "Bom dia, quero emitir uma nota" });
   function submit(e: FormEvent) {
@@ -254,9 +255,12 @@ function Simulator() {
           <Button type="submit" loading={sim.isPending} disabled={!form.name.trim() || !form.text.trim() || !form.phone.replace(/\D/g, "")}>
             <Send className="size-4" /> Enviar teste
           </Button>
+          <Button type="button" variant="ghost" loading={typing.isPending} disabled={!form.phone.replace(/\D/g, "")} onClick={() => typing.mutate(form.phone)}>Testar digitando</Button>
           {sim.isSuccess && <span className="text-[12px] text-muted">Entregue. Veja em Conversas.</span>}
           {sim.error && <span className="text-[12px] text-danger">{errorMessage(sim.error)}</span>}
         </div>
+        {typing.isSuccess && <p role="status" className="text-xs text-muted">Indicador enviado por 10 segundos. Veja a conversa desse contato na lista; envie uma mensagem de teste primeiro se ela ainda não existir.</p>}
+        {typing.error && <p role="alert" className="text-xs text-danger">{errorMessage(typing.error)}</p>}
         <p className="text-[11px] text-muted">Disponível apenas no ambiente de desenvolvimento.</p>
       </form>
     </section>

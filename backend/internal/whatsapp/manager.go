@@ -59,6 +59,7 @@ type Manager struct {
 	pub              Publisher
 	ingest           Ingestor
 	onRcpt           ReceiptHandler
+	onTyping         func(context.Context, Typing) error
 	avatarMu         sync.Mutex
 	avatarBusy       map[string]bool
 	avatarSem        chan struct{}

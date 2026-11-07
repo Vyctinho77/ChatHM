@@ -52,6 +52,10 @@ export function useSimulateInbound() {
   });
 }
 
+export function useSimulateTyping() {
+  return useMutation({ mutationFn: (phone: string) => post<void>("/dev/whatsapp/typing", { phone }) });
+}
+
 export const stateLabel: Record<ConnectionState, string> = {
   disconnected: "Desconectado",
   pending_qr: "Aguardando leitura do QR Code",

@@ -5,11 +5,13 @@ import { conversationKeys } from "@/features/conversations/store.api";
 import type { Conversation, Message } from "@/features/conversations/types";
 import { connectionKey, type Connection, type HistoryProgress } from "@/features/whatsapp/api";
 import { reminderKey } from "@/features/conversations/reminders";
+import { applyTyping, clearTyping, type TypingUpdate } from "@/features/conversations/typing";
 
 type ServerEvent =
   | { type: "conversation.updated"; data: Conversation }
   | { type: "conversation.removed"; data: { id: string } }
   | { type: "conversation.reminder.updated"; data: { id: string } }
+  | { type: "conversation.typing"; data: TypingUpdate }
   | { type: "message.created"; data: Message }
   | { type: "message.updated"; data: Message }
   | { type: "whatsapp.status"; data: Omit<Connection, "qr" | "simulator"> }
@@ -24,6 +26,7 @@ export function applyRealtimeEvent(qc: QueryClient, ev: ServerEvent | HistoryEve
   switch (ev.type) {
     case "conversation.updated": {
       const c = ev.data;
+      if (c.status === "closed") clearTyping(c.id);
       const previous = qc.getQueryData<Conversation[]>(conversationKeys.list)?.find((x) => x.id === c.id);
       if (previous?.assignee?.id !== c.assignee?.id) void qc.invalidateQueries({ queryKey: reminderKey });
       qc.setQueryData<Conversation[]>(conversationKeys.list, (old) => {
@@ -34,6 +37,7 @@ export function applyRealtimeEvent(qc: QueryClient, ev: ServerEvent | HistoryEve
       break;
     }
     case "conversation.removed": {
+      clearTyping(ev.data.id);
       // Perdeu acesso (ex.: outra pessoa assumiu uma conversa da fila geral).
       qc.setQueryData<Conversation[]>(conversationKeys.list, (old) => old?.filter((c) => c.id !== ev.data.id));
       qc.removeQueries({ queryKey: conversationKeys.messages(ev.data.id) });
@@ -42,6 +46,10 @@ export function applyRealtimeEvent(qc: QueryClient, ev: ServerEvent | HistoryEve
     }
     case "conversation.reminder.updated":
       void qc.invalidateQueries({ queryKey: reminderKey });
+      break;
+    case "conversation.typing":
+      // Never retain typing state for conversations outside the current visible list.
+      if (qc.getQueryData<Conversation[]>(conversationKeys.list)?.some((c) => c.id === ev.data.conversationId && c.status !== "closed")) applyTyping(ev.data);
       break;
     case "message.created":
     case "message.updated": {
@@ -54,6 +62,7 @@ export function applyRealtimeEvent(qc: QueryClient, ev: ServerEvent | HistoryEve
       break;
     }
     case "whatsapp.status":
+      if (ev.data.state !== "connected") clearTyping();
       qc.setQueryData<Connection>(connectionKey, (old) => ({
         ...old,
         ...ev.data,
@@ -133,6 +142,7 @@ export function useRealtime(enabled: boolean) {
         }
       };
       ws.onclose = (e) => {
+        clearTyping();
         if (stopped) return;
         startPolling();
         if (e.code === 4401) {
@@ -148,6 +158,7 @@ export function useRealtime(enabled: boolean) {
     connect();
     document.addEventListener("visibilitychange", onVisible);
     return () => {
+      clearTyping();
       stopped = true;
       document.removeEventListener("visibilitychange", onVisible);
       stopPolling();

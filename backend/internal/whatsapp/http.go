@@ -48,6 +48,7 @@ func (h *HTTPHandler) Routes(r chi.Router) {
 		r.Post("/whatsapp/history", h.requestHistory)
 		if h.sim != nil {
 			r.Post("/dev/whatsapp/inbound", h.simulate)
+			r.Post("/dev/whatsapp/typing", h.simulateTyping)
 		}
 	})
 }
@@ -98,6 +99,31 @@ func (h *HTTPHandler) disconnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, connectionView{Status: h.m.Status()})
+}
+
+func (h *HTTPHandler) simulateTyping(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Phone string `json:"phone"`
+	}
+	if !httpx.Decode(w, r, &in) {
+		return
+	}
+	digits := strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, in.Phone)
+	if len(digits) < 10 || len(digits) > 15 {
+		httpx.Validation(w, httpx.FieldErrors{"phone": "Informe um telefone com DDI e DDD."})
+		return
+	}
+	if !h.m.Connected() {
+		httpx.Error(w, http.StatusConflict, "not_connected", "Conecte o WhatsApp simulado para testar.")
+		return
+	}
+	h.m.OnTyping(Typing{ChatJID: digits + "@s.whatsapp.net", ContactWAID: digits, SenderID: "contact", Active: true})
+	httpx.NoContent(w)
 }
 
 func (h *HTTPHandler) simulate(w http.ResponseWriter, r *http.Request) {

@@ -27,6 +27,7 @@ func convertMessage(ctx context.Context, cli *whatsmeow.Client, e *events.Messag
 		FromMe:     info.IsFromMe,
 		Timestamp:  info.Timestamp,
 		Payload:    map[string]any{},
+		SenderID:   typingSender(info.MessageSource),
 	}
 	if group {
 		out.IsGroup = true

@@ -21,6 +21,8 @@ import { TransferMenu } from "./TransferMenu";
 import { filterConversations, type ConversationFilter as Filter } from "./conversationFilter";
 import { reminderColors, useReminders, type Reminder } from "./reminders";
 import { ReminderEditor } from "./ReminderEditor";
+import { useTyping } from "./typing";
+import { TypingIndicator } from "./TypingIndicator";
 import type { ContactRecord, Conversation, MessageHit, SegmentKey, SegmentOption } from "./types";
 
 export function ConversationList({ selectedId, onSelect }: { selectedId?: string; onSelect: (id: string) => void }) {
@@ -281,6 +283,7 @@ function ConversationRow({
   onEditReminder: () => void;
 }) {
   const unread = c.unreadCount > 0;
+  const typing = useTyping(c.id);
   const last = c.lastMessage;
   return (
     <motion.li
@@ -322,9 +325,9 @@ function ConversationRow({
             )}
           </div>
           <div className="mt-px flex items-center gap-1 text-[12.5px] text-muted">
-            {last?.direction === "out" && <Ticks status={last.status} />}
+            {!typing && last?.direction === "out" && <Ticks status={last.status} />}
             <span className="flex min-w-0 items-center gap-1">
-              {last ? <MessagePreview m={last} /> : <span className="italic">Nova conversa — escreva a primeira mensagem</span>}
+              {typing ? <TypingIndicator /> : last ? <MessagePreview m={last} /> : <span className="italic">Nova conversa — escreva a primeira mensagem</span>}
             </span>
             <AnimatePresence initial={false}>
               {!unread && c.assignee && c.assignee.id !== myId && (

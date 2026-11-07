@@ -52,6 +52,7 @@ type InboundMessage struct {
 	IsGroup    bool
 	GroupName  string
 	SenderName string
+	SenderID   string
 	FromMe     bool // enviada pelo celular do escritório
 	Historical bool // importada do histórico; não incrementa não lidas
 	Timestamp  time.Time
@@ -103,6 +104,14 @@ type Handler interface {
 	OnMessage(InboundMessage)
 	OnReceipt(Receipt)
 }
+
+// Typing is transient provider state, never persisted as a message.
+type Typing struct {
+	ChatJID, ContactWAID, SenderID string
+	Active                         bool
+}
+
+type TypingHandler interface{ OnTyping(Typing) }
 
 // PairEvent é emitido durante o pareamento por QR Code.
 type PairEvent struct {

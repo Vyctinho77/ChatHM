@@ -127,6 +127,45 @@ body {
   background-size: 18px 18px;
 }
 
+/* Indicador de digitação: brilho neutro e pontos em sequência. */
+.typing-gradient {
+  color: var(--c-muted);
+}
+
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+  .typing-gradient {
+    background-image: linear-gradient(110deg, var(--c-muted) 20%, var(--c-text) 45%, var(--c-muted) 70%);
+    background-size: 250% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+    animation: typing-gradient 2.2s linear infinite;
+  }
+}
+
+.typing-dot {
+  display: inline-block;
+  width: 0.28em;
+  opacity: 0;
+  animation: typing-dot 1.5s ease-in-out infinite;
+}
+
+@keyframes typing-gradient {
+  from { background-position: 180% 0; }
+  to { background-position: -80% 0; }
+}
+
+@keyframes typing-dot {
+  0%, 12%, 100% { opacity: 0; transform: translateY(2px) scale(0.5); }
+  30%, 65% { opacity: 1; transform: translateY(0) scale(1); }
+  85% { opacity: 0; transform: translateY(-2px) scale(0.5); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .typing-gradient { animation: none; background: none; color: var(--c-muted); }
+  .typing-dot { animation: none; opacity: 1; transform: none; }
+}
+
 /* Barras de rolagem finas. */
 * {
   scrollbar-width: thin;

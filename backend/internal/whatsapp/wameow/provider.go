@@ -277,10 +277,12 @@ func (p *Provider) handle(cli *whatsmeow.Client) func(any) {
 				acc.DeviceJID = cli.Store.ID.String()
 			}
 			p.h.OnConnected(acc)
+			p.enableTyping(cli)
 			p.scheduleContactSync(cli)
 		case *events.PushNameSetting:
 			if cli.Store.ID != nil && cli.IsLoggedIn() {
 				p.h.OnConnected(whatsapp.Account{Phone: "+" + cli.Store.ID.User, Name: cli.Store.PushName, DeviceJID: cli.Store.ID.String()})
+				p.enableTyping(cli)
 			}
 		case *events.LoggedOut:
 			p.h.OnDisconnected("Aparelho desvinculado no celular.", true)
@@ -305,6 +307,14 @@ func (p *Provider) handle(cli *whatsmeow.Client) func(any) {
 			go p.importHistory(cli, e)
 		case *events.Contact, *events.AppStateSyncComplete:
 			p.scheduleContactSync(cli)
+		case *events.ChatPresence:
+			if h, ok := p.h.(whatsapp.TypingHandler); ok {
+				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				if update, valid := convertTyping(ctx, cli, e); valid {
+					h.OnTyping(update)
+				}
+				cancel()
+			}
 		case *events.Receipt:
 			if r, ok := convertReceipt(e); ok {
 				p.h.OnReceipt(r)

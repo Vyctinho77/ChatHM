@@ -361,6 +361,9 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 	if !m.Historical {
 		after := s.publishState(ctx, convID, before)
 		s.publishMessage(ctx, EventMessageCreated, msgID, after)
+		if !m.FromMe {
+			s.publishTyping(convID, m.SenderID, false, after)
+		}
 	}
 	if !m.Historical && m.Download != nil && s.store != nil && s.media != nil {
 		go func() {

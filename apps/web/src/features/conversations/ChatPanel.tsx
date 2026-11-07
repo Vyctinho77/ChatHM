@@ -24,6 +24,8 @@ import { buildOutgoing, capabilities, useConversationActions, useMessages, useSe
 import { statusLabel } from "./receipts";
 import { segmentClass, segmentLabel, type Conversation, type Message } from "./types";
 import { SnoozeDialog, SnoozeNotice } from "./SnoozeDialog";
+import { useTyping } from "./typing";
+import { TypingIndicator } from "./TypingIndicator";
 
 export function ChatPanel({
   conversation: c,
@@ -38,6 +40,7 @@ export function ChatPanel({
 }) {
   const { data: messages, isPending } = useMessages(c.id);
   const actions = useConversationActions();
+  const typing = useTyping(c.id);
   const send = useSendMessage(c.id);
   const { data: me } = useMe();
   const isAdmin = me?.user.role === "admin";
@@ -230,7 +233,7 @@ export function ChatPanel({
                 {segmentLabel(c)}
               </span>
             </span>
-            {c.contact.phone !== c.contact.name && (
+            {typing ? <TypingIndicator announce className="text-[11.5px]" /> : c.contact.phone !== c.contact.name && (
               <span className="block truncate text-[11.5px] text-muted">{c.contact.phone}</span>
             )}
           </span>
