@@ -68,6 +68,10 @@ func (w *world) mkToken(c *client, name string) string {
 func TestAIAccessTokensAndSwitch(t *testing.T) {
 	w := setupWorld(t)
 
+	// A linha única de configuração pode faltar (banco restaurado): a tela recria com os padrões em vez de dar erro interno.
+	if _, err := w.e.pool.Exec(t.Context(), `DELETE FROM ai_settings`); err != nil {
+		t.Fatal(err)
+	}
 	// Desligado por padrão: ninguém cria token nem usa o /mcp.
 	r := w.ana.do("GET", "/api/v1/ai/settings", nil)
 	expect(t, r, 200)

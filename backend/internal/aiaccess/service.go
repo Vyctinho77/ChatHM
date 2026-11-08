@@ -110,10 +110,22 @@ func NewService(db *pgxpool.Pool) *Service {
 
 // --- configuração ----------------------------------------------------------
 
+const selectSettings = `SELECT enabled, mask_documents, mask_phones, allow_write, allow_send, mask_emails, strict_privacy, allow_oauth, oauth_redirect_hosts FROM ai_settings WHERE id`
+
 func (s *Service) Settings(ctx context.Context) (Settings, error) {
 	var st Settings
-	err := s.db.QueryRow(ctx, `SELECT enabled, mask_documents, mask_phones, allow_write, allow_send, mask_emails, strict_privacy, allow_oauth, oauth_redirect_hosts FROM ai_settings WHERE id`).
-		Scan(&st.Enabled, &st.MaskDocuments, &st.MaskPhones, &st.AllowWrite, &st.AllowSend, &st.MaskEmails, &st.StrictPrivacy, &st.AllowOAuth, &st.OAuthRedirectHosts)
+	scan := func() error {
+		return s.db.QueryRow(ctx, selectSettings).
+			Scan(&st.Enabled, &st.MaskDocuments, &st.MaskPhones, &st.AllowWrite, &st.AllowSend, &st.MaskEmails, &st.StrictPrivacy, &st.AllowOAuth, &st.OAuthRedirectHosts)
+	}
+	err := scan()
+	if errors.Is(err, pgx.ErrNoRows) {
+		// A migração cria a linha única; se ela faltar (banco restaurado, linha apagada), recria com os padrões (tudo desligado).
+		if _, ierr := s.db.Exec(ctx, `INSERT INTO ai_settings (id) VALUES (true) ON CONFLICT (id) DO NOTHING`); ierr != nil {
+			return st, ierr
+		}
+		err = scan()
+	}
 	return st, err
 }
 
@@ -124,6 +136,9 @@ func (s *Service) SetSettings(ctx context.Context, actorID, ip string, in Settin
 		return Settings{}, err
 	}
 	in.OAuthRedirectHosts = hosts
+	if _, err := s.Settings(ctx); err != nil { // garante a linha única antes de atualizar
+		return Settings{}, err
+	}
 	err = database.InTx(ctx, s.db, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `UPDATE ai_settings SET enabled = $1, mask_documents = $2, mask_phones = $3,
 			allow_write = $5, allow_send = $6, mask_emails = $7, strict_privacy = $8, allow_oauth = $9, oauth_redirect_hosts = $10,
