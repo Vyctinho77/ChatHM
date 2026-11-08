@@ -36,7 +36,7 @@ function QuotedBlock({ q, onJump }: { q: Quoted; onJump?: (id: string) => void }
   const kind = quotedKind[q.kind];
   const body = (
     <>
-      <span className="block truncate text-[12px] font-semibold text-brand-ink [.bg-out_&]:text-white">{q.fromMe ? q.author || "Você" : q.author || "Cliente"}</span>
+      <span className="block truncate text-[12px] font-semibold text-brand-ink [.bg-out_&]:text-out-fg">{q.fromMe ? q.author || "Você" : q.author || "Cliente"}</span>
       <span className="flex items-center gap-1 text-[12.5px] opacity-80">
         {kind && q.kind !== "text" && <span className="shrink-0">{kind.icon}</span>}
         <span className="line-clamp-2 break-words">{q.text || kind?.label || "Mensagem"}</span>

@@ -104,16 +104,34 @@ func (h *Handler) people(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) updatePreferences(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Theme string `json:"theme"`
+		Theme          *string     `json:"theme"`
+		ChatAppearance *Appearance `json:"chatAppearance"`
 	}
 	if !httpx.Decode(w, r, &in) {
 		return
 	}
-	if err := h.svc.SetTheme(r.Context(), auth.MustFromContext(r.Context()).UserID, in.Theme); err != nil {
-		writeError(w, r, err)
+	if in.Theme == nil && in.ChatAppearance == nil {
+		httpx.Validation(w, httpx.FieldErrors{"theme": "Informe o tema ou a aparência do chat."})
 		return
 	}
-	httpx.JSON(w, http.StatusOK, map[string]string{"theme": in.Theme})
+	userID := auth.MustFromContext(r.Context()).UserID
+	out := map[string]any{}
+	if in.Theme != nil {
+		if err := h.svc.SetTheme(r.Context(), userID, *in.Theme); err != nil {
+			writeError(w, r, err)
+			return
+		}
+		out["theme"] = *in.Theme
+	}
+	if in.ChatAppearance != nil {
+		a, err := h.svc.SetAppearance(r.Context(), userID, *in.ChatAppearance)
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		out["chatAppearance"] = a
+	}
+	httpx.JSON(w, http.StatusOK, out)
 }
 
 func writeError(w http.ResponseWriter, r *http.Request, err error) {

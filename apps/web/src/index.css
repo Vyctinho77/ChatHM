@@ -21,8 +21,8 @@
   --c-brand-ink: #53611f;
   --c-out: #5f6e24;
   --c-out-text: #ffffff;
-  --c-in: #292929;
-  --c-in-text: #ffffff;
+  --c-in: #ffffff;
+  --c-in-text: #111111;
   --c-unread: #8b9d40;
   --c-read: #006fc9;
   --c-auth-bg: #eceeee;
@@ -30,7 +30,8 @@
   --c-danger: #dc2626;
   --c-warning: #b7791f;
   --chat-wallpaper: url("./assets/wallpapers/chat-light.webp");
-  --chat-wallpaper-overlay: rgb(216 220 220 / 0.6);
+  /* Intensidade do desenho do fundo (0 = liso, 1 = original). A pessoa pode mudar em "Aparência do chat". */
+  --wallpaper-i: 0.25;
 }
 
 .dark {
@@ -58,7 +59,7 @@
   --c-danger: #f87171;
   --c-warning: #f5c542;
   --chat-wallpaper: url("./assets/wallpapers/chat-dark.webp");
-  --chat-wallpaper-overlay: transparent;
+  --wallpaper-i: 0.5;
 }
 
 @theme inline {
@@ -123,10 +124,10 @@ body {
 }
 
 /* O fundo fica no painel externo; só a lista de mensagens rola sobre ele.
-   A camada neutra suaviza o fundo claro e mantém os traços em 40% da intensidade original. */
+   A camada da cor do chat cobre o desenho na proporção (1 - intensidade): 0 = fundo liso, 1 = desenho original. */
 .chat-wallpaper {
   background-color: var(--c-chat);
-  background-image: linear-gradient(var(--chat-wallpaper-overlay), var(--chat-wallpaper-overlay)), var(--chat-wallpaper);
+  background-image: linear-gradient(color-mix(in srgb, var(--c-chat) calc((1 - var(--wallpaper-i)) * 100%), transparent), color-mix(in srgb, var(--c-chat) calc((1 - var(--wallpaper-i)) * 100%), transparent)), var(--chat-wallpaper);
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;

@@ -1,7 +1,9 @@
-import { ChevronsUpDown, LogOut } from "lucide-react";
+import { useState } from "react";
+import { ChevronsUpDown, LogOut, Palette } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { Menu, MenuItem } from "@/components/Menu";
 import { logout, useSetMe, type Me } from "@/features/auth/api";
+import { ChatAppearanceDialog } from "./ChatAppearanceDialog";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 
 const roleLabel = { admin: "Administrador", agent: "Atendente" } as const;
@@ -9,7 +11,9 @@ const roleLabel = { admin: "Administrador", agent: "Atendente" } as const;
 /** Perfil do usuário no rodapé do menu lateral; o menu abre para cima. */
 export function UserMenu({ me }: { me: Me }) {
   const setMe = useSetMe();
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
   return (
+    <>
     <Menu
       align="left"
       placement="top"
@@ -43,6 +47,15 @@ export function UserMenu({ me }: { me: Me }) {
             <ThemeSwitcher />
           </div>
           <MenuItem
+            icon={<Palette />}
+            onClick={() => {
+              close();
+              setAppearanceOpen(true);
+            }}
+          >
+            Aparência do chat
+          </MenuItem>
+          <MenuItem
             icon={<LogOut />}
             danger
             onClick={async () => {
@@ -56,5 +69,7 @@ export function UserMenu({ me }: { me: Me }) {
         </>
       )}
     </Menu>
+    <ChatAppearanceDialog open={appearanceOpen} onClose={() => setAppearanceOpen(false)} />
+    </>
   );
 }

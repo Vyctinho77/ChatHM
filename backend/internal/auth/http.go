@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"slices"
@@ -175,12 +176,14 @@ func (s *Service) clearCookie(w http.ResponseWriter) {
 // Handlers
 
 type UserView struct {
-	ID         string `json:"id"`
-	Email      string `json:"email"`
-	Name       string `json:"name"`
-	Role       Role   `json:"role"`
-	Theme      string `json:"theme"`
-	MFAEnabled bool   `json:"mfaEnabled"`
+	ID    string `json:"id"`
+	Email string `json:"email"`
+	Name  string `json:"name"`
+	Role  Role   `json:"role"`
+	Theme string `json:"theme"`
+	// ChatAppearance: intensidade do papel de parede e cores dos balões escolhidas pela pessoa.
+	ChatAppearance json.RawMessage `json:"chatAppearance"`
+	MFAEnabled     bool            `json:"mfaEnabled"`
 }
 
 type MeResponse struct {
@@ -190,11 +193,18 @@ type MeResponse struct {
 	MFASetupRequired bool     `json:"mfaSetupRequired"`
 }
 
+func appearanceJSON(b []byte) json.RawMessage {
+	if len(b) == 0 {
+		return json.RawMessage(`{}`)
+	}
+	return json.RawMessage(b)
+}
+
 func (s *Service) me(sess *Session) MeResponse {
 	return MeResponse{
 		User: UserView{
 			ID: sess.UserID, Email: sess.Email, Name: sess.Name, Role: sess.Role,
-			Theme: sess.Theme, MFAEnabled: sess.MFAEnabled,
+			Theme: sess.Theme, ChatAppearance: appearanceJSON(sess.Appearance), MFAEnabled: sess.MFAEnabled,
 		},
 		CSRFToken:        sess.CSRFToken,
 		MFARequired:      sess.MFAPending(),

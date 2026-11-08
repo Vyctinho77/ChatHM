@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { AppSkeleton } from "@/components/Skeleton";
 import { Alert, Button } from "@/components/ui";
 import { setUnauthorizedHandler } from "@/lib/api";
+import { setAppearance } from "@/lib/chatAppearance";
 import { useSystemThemeSync } from "@/lib/theme";
 import { meKey, useMe } from "@/features/auth/api";
 import { LoginPage } from "@/features/auth/LoginPage";
@@ -30,6 +31,12 @@ export function Root() {
   useEffect(() => {
     if (serverTheme) setTheme(serverTheme);
   }, [serverTheme]);
+
+  // Aparência do chat salva no usuário (cores dos balões e fundo) também prevalece ao entrar.
+  const serverAppearance = me.data ? JSON.stringify(me.data.user.chatAppearance ?? {}) : null;
+  useEffect(() => {
+    if (serverAppearance !== null) setAppearance(JSON.parse(serverAppearance));
+  }, [serverAppearance]);
 
   if (me.isPending) {
     return <AppSkeleton />;

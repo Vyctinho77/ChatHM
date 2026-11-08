@@ -3,8 +3,10 @@ package users
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/mail"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -330,6 +332,39 @@ func (s *Service) SetTheme(ctx context.Context, userID, theme string) error {
 	}
 	_, err := s.db.Exec(ctx, `UPDATE users SET theme = $2 WHERE id = $1`, userID, theme)
 	return err
+}
+
+// Appearance é a aparência do chat de uma pessoa. Campos vazios usam o padrão do tema.
+// Wallpaper: intensidade do papel de parede de 0 a 100 (nil = padrão). Out/In: cor de fundo dos balões enviados/recebidos (#rrggbb).
+type Appearance struct {
+	Wallpaper *int   `json:"wallpaper,omitempty"`
+	Out       string `json:"out,omitempty"`
+	In        string `json:"in,omitempty"`
+}
+
+var hexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+
+// SetAppearance valida e salva a aparência do chat do próprio usuário (substitui a anterior).
+func (s *Service) SetAppearance(ctx context.Context, userID string, a Appearance) (Appearance, error) {
+	errs := httpx.FieldErrors{}
+	if a.Wallpaper != nil && (*a.Wallpaper < 0 || *a.Wallpaper > 100) {
+		errs["wallpaper"] = "A intensidade do fundo deve ficar entre 0 e 100."
+	}
+	for field, v := range map[string]*string{"out": &a.Out, "in": &a.In} {
+		if *v != "" && !hexColor.MatchString(*v) {
+			errs[field] = "Use uma cor no formato #rrggbb."
+		}
+		*v = strings.ToLower(*v)
+	}
+	if len(errs) > 0 {
+		return Appearance{}, errs
+	}
+	raw, err := json.Marshal(a)
+	if err != nil {
+		return Appearance{}, err
+	}
+	_, err = s.db.Exec(ctx, `UPDATE users SET chat_appearance = $2 WHERE id = $1`, userID, raw)
+	return a, err
 }
 
 // Person é uma pessoa do escritório, como aparece em "transferir para": sem e-mail nem dados de acesso.

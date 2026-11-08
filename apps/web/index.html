@@ -16,6 +16,9 @@
           var t = localStorage.getItem("chathm:theme") || "system";
           var dark = t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
           document.documentElement.classList.toggle("dark", dark);
+          // Aparência do chat (cores dos balões e fundo) escolhida pela pessoa, guardada já calculada.
+          var v = JSON.parse(localStorage.getItem("chathm:chat-vars") || "{}");
+          for (var k in v) if (/^--(wallpaper-i|c-out|c-out-text|c-in|c-in-text)$/.test(k)) document.documentElement.style.setProperty(k, v[k]);
         } catch (e) {}
       })();
     </script>

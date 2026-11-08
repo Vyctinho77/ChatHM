@@ -73,6 +73,7 @@ type Session struct {
 	Name        string
 	Role        Role
 	Theme       string
+	Appearance  []byte // aparência do chat (JSON validado em users.SetAppearance)
 	MFAEnabled  bool
 	MFAVerified bool
 	CSRFToken   string
@@ -261,7 +262,7 @@ func (s *Service) Authenticate(ctx context.Context, token string) (*Session, err
 		lastSeen time.Time
 	)
 	err := s.db.QueryRow(ctx, `
-		SELECT s.id, s.user_id, u.email, u.name, u.role, u.theme, u.mfa_enabled,
+		SELECT s.id, s.user_id, u.email, u.name, u.role, u.theme, u.chat_appearance, u.mfa_enabled,
 		       s.mfa_verified, s.csrf_token, s.expires_at, s.last_seen_at
 		  FROM sessions s JOIN users u ON u.id = s.user_id
 		 WHERE s.token_hash = $1
@@ -270,7 +271,7 @@ func (s *Service) Authenticate(ctx context.Context, token string) (*Session, err
 		   AND s.last_seen_at > now() - make_interval(secs => $2)
 		   AND u.is_active`,
 		hashToken(token), s.cfg.IdleTimeout.Seconds(),
-	).Scan(&sess.ID, &sess.UserID, &sess.Email, &sess.Name, &role, &sess.Theme, &sess.MFAEnabled,
+	).Scan(&sess.ID, &sess.UserID, &sess.Email, &sess.Name, &role, &sess.Theme, &sess.Appearance, &sess.MFAEnabled,
 		&sess.MFAVerified, &sess.CSRFToken, &sess.ExpiresAt, &lastSeen)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNoSession

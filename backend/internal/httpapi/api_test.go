@@ -466,6 +466,47 @@ func TestThemePreference(t *testing.T) {
 	}
 }
 
+func TestChatAppearancePreference(t *testing.T) {
+	e := setup(t)
+	e.createUser("a@x.com", auth.RoleAgent)
+	e.createUser("b@x.com", auth.RoleAgent)
+	a := e.client().mustLogin("a@x.com")
+	b := e.client().mustLogin("b@x.com")
+	path := "/api/v1/me/preferences"
+
+	// Sem nada para salvar, cor fora do formato e intensidade fora da faixa são recusados.
+	expect(t, a.do("PATCH", path, map[string]any{}), 422)
+	expect(t, a.do("PATCH", path, map[string]any{"chatAppearance": map[string]any{"out": "verde"}}), 422)
+	expect(t, a.do("PATCH", path, map[string]any{"chatAppearance": map[string]any{"in": "url(javascript:x)"}}), 422)
+	expect(t, a.do("PATCH", path, map[string]any{"chatAppearance": map[string]any{"wallpaper": 101}}), 422)
+	expect(t, a.do("PATCH", path, map[string]any{"chatAppearance": map[string]any{"wallpaper": -1}}), 422)
+
+	// Padrão: vazio. Salvar normaliza a cor e fica só para quem salvou.
+	app := func(c *client) map[string]any {
+		return c.do("GET", "/api/v1/auth/me", nil).body["user"].(map[string]any)["chatAppearance"].(map[string]any)
+	}
+	if len(app(a)) != 0 {
+		t.Fatalf("padrão = %v", app(a))
+	}
+	expect(t, a.do("PATCH", path, map[string]any{"chatAppearance": map[string]any{"wallpaper": 20, "out": "#5F6E24", "in": "#FFFFFF"}}), 200)
+	got := app(a)
+	if got["wallpaper"] != float64(20) || got["out"] != "#5f6e24" || got["in"] != "#ffffff" {
+		t.Fatalf("aparência = %v", got)
+	}
+	if len(app(b)) != 0 {
+		t.Fatalf("a aparência de uma pessoa vazou para outra: %v", app(b))
+	}
+	// Salvar o tema não apaga a aparência; voltar ao padrão é salvar vazio.
+	expect(t, a.do("PATCH", path, map[string]any{"theme": "light"}), 200)
+	if app(a)["out"] != "#5f6e24" {
+		t.Fatalf("o tema apagou a aparência: %v", app(a))
+	}
+	expect(t, a.do("PATCH", path, map[string]any{"chatAppearance": map[string]any{}}), 200)
+	if len(app(a)) != 0 {
+		t.Fatalf("padrão não voltou: %v", app(a))
+	}
+}
+
 func TestAdminMFA(t *testing.T) {
 	e := setup(t, opts{requireAdminMFA: true})
 	e.createUser("adm@x.com", auth.RoleAdmin)

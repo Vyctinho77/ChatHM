@@ -1,11 +1,12 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, get, post } from "@/lib/api";
+import type { Appearance } from "@/lib/chatAppearance";
 import type { Theme } from "@/lib/theme";
 
 export type Role = "admin" | "agent";
 
 export type Me = {
-  user: { id: string; email: string; name: string; role: Role; theme: Theme; mfaEnabled: boolean };
+  user: { id: string; email: string; name: string; role: Role; theme: Theme; chatAppearance?: Appearance; mfaEnabled: boolean };
   csrfToken: string;
   mfaRequired: boolean;
   mfaSetupRequired: boolean;
