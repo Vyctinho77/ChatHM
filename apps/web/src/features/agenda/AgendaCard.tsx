@@ -1,7 +1,7 @@
-import { useState, type FormEvent } from "react";
+import { useId, useState, type FormEvent, type InputHTMLAttributes } from "react";
 import { useNavigate } from "react-router";
-import { CalendarDays, Clock, MessageSquareText, Plus, UserRound, Users, X } from "lucide-react";
-import { Alert, Button, Field, IconButton } from "@/components/ui";
+import { CalendarDays, Check, ChevronDown, Clock, MessageSquareText, Plus, UserRound, Users, X } from "lucide-react";
+import { Alert, Button, IconButton } from "@/components/ui";
 import { errorMessage, fieldErrors } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { longDate } from "./dates";
@@ -174,7 +174,17 @@ function DayView({ date, items, teamNames, onView, onClose }: Props & { date: st
 }
 
 const fieldCls =
-  "w-full rounded-lg border border-line bg-elevated px-3 text-[13px] outline-none transition-colors placeholder:text-muted focus:border-accent";
+  "w-full min-w-0 rounded-xl border border-line/60 bg-app/50 px-3 text-[13px] text-fg outline-none transition-colors placeholder:text-muted/70 hover:border-line focus:border-brand focus:ring-2 focus:ring-brand/15";
+const labelCls = "flex min-w-0 flex-col gap-2 text-xs font-medium text-muted";
+
+function AgendaField({ label, error, className, ...input }: InputHTMLAttributes<HTMLInputElement> & { label: string; error?: string }) {
+  const id = useId();
+  return <div className={cn(labelCls, className)}>
+    <label htmlFor={id}>{label}</label>
+    <input {...input} id={id} aria-invalid={!!error} aria-describedby={error ? `${id}-error` : undefined} className={cn(fieldCls, "h-10 [color-scheme:light] dark:[color-scheme:dark]", error && "border-danger")} />
+    {error && <p id={`${id}-error`} className="text-xs font-normal text-danger">{error}</p>}
+  </div>;
+}
 
 function FormView({
   editing,
@@ -193,6 +203,7 @@ function FormView({
   const [contact, setContact] = useState(editing?.contact?.conversationId ?? "");
   const [note, setNote] = useState(editing?.note ?? "");
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const formId = useId();
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -221,10 +232,13 @@ function FormView({
 
   return (
     <form onSubmit={submit}>
-      <Header title={editing ? "Editar item" : "Novo item"} onClose={onClose} />
-      <div className="flex flex-col gap-3 px-4 pb-4">
+      <header className="flex items-center justify-between gap-3 px-5 pb-3 pt-4">
+        <h2 className="text-sm font-semibold">{editing ? "Editar item" : "Novo item"}</h2>
+        <IconButton label="Fechar" className="-mr-1 size-7" onClick={onClose}><X className="size-4" /></IconButton>
+      </header>
+      <div className="flex flex-col gap-4 px-5 pb-5">
         {save.error && <Alert>{errorMessage(save.error)}</Alert>}
-        <div role="radiogroup" aria-label="Tipo" className="flex rounded-lg bg-elevated p-0.5 text-[13px]">
+        <div role="radiogroup" aria-label="Tipo" className="flex gap-2 text-xs">
           {(["appointment", "deadline"] as const).map((k) => (
             <button
               key={k}
@@ -233,56 +247,68 @@ function FormView({
               aria-checked={kind === k}
               onClick={() => setKind(k)}
               className={cn(
-                "flex-1 rounded-md py-1.5 font-medium text-muted transition-colors",
-                kind === k && "bg-hover text-fg shadow-sm",
+                "flex flex-1 items-center justify-center gap-1.5 rounded-full border px-3 py-2 font-medium transition-colors",
+                kind === k ? "border-brand/30 bg-brand/10 text-brand-ink" : "border-line/70 text-muted hover:bg-hover hover:text-fg",
               )}
             >
-              {kindLabel[k]}
+              {k === "appointment" ? <CalendarDays className="size-3.5" /> : <Clock className="size-3.5" />}{kindLabel[k]}
             </button>
           ))}
         </div>
-        <Field label="Título" value={title} error={errors.title} autoFocus onChange={(e) => setTitle(e.target.value)} />
-        <div className="flex gap-3">
-          <Field className="flex-1" label="Data" type="date" value={day} error={errors.date} onChange={(e) => setDay(e.target.value)} />
+        <div className="border-b border-line/60 pb-3">
+          <label htmlFor={`${formId}-title`} className="sr-only">Título</label>
+          <input id={`${formId}-title`} value={title} autoFocus placeholder="Adicionar título" maxLength={120} aria-invalid={!!errors.title} aria-describedby={errors.title ? `${formId}-title-error` : undefined} onChange={(e) => { setTitle(e.target.value); if (errors.title) setErrors((previous) => ({ ...previous, title: "" })); }} className="w-full min-w-0 rounded-sm bg-transparent py-1 text-lg font-medium leading-7 text-fg outline-none placeholder:font-normal placeholder:text-muted/60 focus-visible:ring-2 focus-visible:ring-brand/30" />
+          {errors.title && <p id={`${formId}-title-error`} className="mt-1 text-xs text-danger">{errors.title}</p>}
+        </div>
+        <div className={cn("grid gap-3", kind === "appointment" && "grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]")}>
+          <AgendaField label="Data" type="date" value={day} error={errors.date} onChange={(e) => setDay(e.target.value)} />
           {kind === "appointment" && (
-            <Field className="w-28" label="Hora" type="time" value={time} error={errors.time} onChange={(e) => setTime(e.target.value)} />
+            <AgendaField label="Horário" type="time" value={time} error={errors.time} onChange={(e) => setTime(e.target.value)} />
           )}
         </div>
-        <label className="flex flex-col gap-1.5 text-[13px] font-medium">
+        <label className={labelCls}>
           Equipe
-          <select className={cn(fieldCls, "h-9 font-normal")} value={team} onChange={(e) => setTeam(e.target.value)}>
+          <span className="relative">
+          <select aria-invalid={!!errors.team} aria-describedby={errors.team ? `${formId}-team-error` : undefined} className={cn(fieldCls, "h-10 appearance-none pr-9 font-normal", errors.team && "border-danger")} value={team} onChange={(e) => setTeam(e.target.value)}>
+            {teamNames.length === 0 && <option value="">Nenhuma equipe disponível</option>}
             {teamNames.map((t) => (
               <option key={t}>{t}</option>
             ))}
           </select>
-          {errors.team && <span className="text-xs font-normal text-danger">{errors.team}</span>}
+          <ChevronDown aria-hidden className="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-muted" />
+          </span>
+          {errors.team && <span id={`${formId}-team-error`} className="text-xs font-normal text-danger">{errors.team}</span>}
         </label>
-        <label className="flex flex-col gap-1.5 text-[13px] font-medium">
-          Cliente <span className="-mt-1 text-[11.5px] font-normal text-muted">opcional</span>
-          <select className={cn(fieldCls, "h-9 font-normal")} value={contact} onChange={(e) => setContact(e.target.value)}>
-            <option value="">Sem cliente</option>
+        <label className={labelCls}>
+          <span className="flex items-center gap-1.5">Cliente <span className="text-[10px] font-normal text-muted/70">opcional</span></span>
+          <span className="relative">
+          <select className={cn(fieldCls, "h-10 appearance-none pr-9 font-normal")} value={contact} onChange={(e) => setContact(e.target.value)}>
+            <option value="">Selecionar cliente</option>
             {contacts.map((c) => (
               <option key={c.conversationId} value={c.conversationId}>
                 {c.name}
               </option>
             ))}
           </select>
+          <ChevronDown aria-hidden className="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-muted" />
+          </span>
         </label>
-        <label className="flex flex-col gap-1.5 text-[13px] font-medium">
-          Observação
+        <label className={labelCls}>
+          <span className="flex items-center gap-1.5">Observação <span className="text-[10px] font-normal text-muted/70">opcional</span></span>
           <textarea
-            rows={3}
+            rows={2}
+            placeholder="Adicionar detalhes…"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            className={cn(fieldCls, "resize-none py-2 font-normal")}
+            className={cn(fieldCls, "resize-none py-2.5 font-normal leading-relaxed")}
           />
         </label>
-        <div className="flex justify-end gap-2 pt-1">
-          <Button type="button" variant="secondary" onClick={() => (editing ? onView({ type: "item", id: editing.id }) : onClose())}>
+        <div className="flex items-center justify-end gap-2 border-t border-line/60 pt-4">
+          <Button type="button" variant="ghost" onClick={() => (editing ? onView({ type: "item", id: editing.id }) : onClose())}>
             Cancelar
           </Button>
           <Button type="submit" loading={save.isPending} disabled={teamNames.length === 0}>
-            Salvar
+            {!save.isPending && <Check className="size-3.5" />} Salvar
           </Button>
         </div>
       </div>
