@@ -316,8 +316,12 @@ function ConversationRow({
         <Avatar name={c.contact.name} src={c.contact.avatarUrl} group={c.contact.kind === "group"} size="list" />
         </span>
         <div className="relative min-w-0 flex-1">
-          <div className="flex items-baseline gap-2">
-            <span className="truncate text-[13.5px] font-medium">{c.contact.name}</span>
+          <div className="flex items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
+              <span className="truncate text-[13.5px] font-medium">{c.contact.name}</span>
+              {c.tags[0] && <span title={c.tags[0]} className="max-w-[45%] shrink-0 truncate rounded-full border border-line px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wide text-fg/75">{c.tags[0]}</span>}
+              {c.tags.length > 1 && <span title={c.tags.slice(1).join(", ")} aria-label={`Outras etiquetas: ${c.tags.slice(1).join(", ")}`} className="shrink-0 text-[10px] font-medium text-muted">+{c.tags.length - 1}</span>}
+            </div>
             {last && (
               <span className={cn("ml-auto shrink-0 text-[11px] tabular-nums", unread ? "font-semibold text-unread" : "text-muted")}>
                 {formatListTime(last.sentAt)}
@@ -349,29 +353,21 @@ function ConversationRow({
               )}
             </AnimatePresence>
           </div>
-          {(c.tags.length > 0 || c.status === "closed") && (
+          {c.status === "closed" && (
             <div className="mt-1 flex flex-wrap gap-1">
               {c.status === "closed" && (
                 <span className="rounded-full bg-hover px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wide text-muted">
                   Encerrada
                 </span>
               )}
-              {c.tags.map((t) => (
-                <span
-                  key={t}
-                  className="rounded-full border border-line px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wide text-fg/75"
-                >
-                  {t}
-                </span>
-              ))}
             </div>
           )}
           {c.snoozedUntil && <p className="mt-1 flex items-center gap-1 text-[11px] text-muted"><Clock3 className="size-3 shrink-0" />Retorna {new Date(c.snoozedUntil).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</p>}
         </div>
       </button>
       {showReminder && <div className="-mt-1 pb-2.5 pl-14 pr-2.5">
-        <button type="button" disabled={!reminderReady} onClick={onEditReminder} aria-label={`${reminder ? "Editar" : "Adicionar"} lembrete de ${c.contact.name}`} title={reminder?.text} className={cn("flex w-full items-start gap-1.5 rounded-md px-2 py-1.5 text-left text-[11.5px] leading-4 transition-colors disabled:opacity-50", reminder ? reminderColors[reminder.color].style : "text-muted hover:bg-hover hover:text-fg")}>
-          <StickyNote className="mt-px size-3 shrink-0" />
+        <button type="button" disabled={!reminderReady} onClick={onEditReminder} aria-label={`${reminder ? "Editar" : "Adicionar"} lembrete de ${c.contact.name}`} title={reminder?.text} className={cn("flex w-full items-start gap-1.5 rounded-md px-2 py-1.5 text-left text-xs leading-[17px] transition-colors disabled:opacity-50", reminder ? reminderColors[reminder.color].style : "text-muted hover:bg-hover hover:text-fg")}>
+          <StickyNote className="mt-0.5 size-[13px] shrink-0" />
           <span className="min-w-0 break-words line-clamp-2">{reminder?.text ?? (reminderReady ? "Adicionar lembrete" : "Carregando lembrete…")}</span>
         </button>
       </div>}
