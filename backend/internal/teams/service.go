@@ -74,6 +74,25 @@ func (s *Service) canView(ctx context.Context, sess *auth.Session, teamID string
 	return nil
 }
 
+// canManageMembers: o administrador mexe em qualquer equipe; o gestor só nas equipes de que participa
+// (as demais respondem como inexistentes, sem confirmar que existem).
+func (s *Service) canManageMembers(ctx context.Context, sess *auth.Session, teamID string) error {
+	if sess.IsAdmin() {
+		return nil
+	}
+	if !sess.IsManager() {
+		return ErrNotFound
+	}
+	ok, err := IsMember(ctx, s.db, teamID, sess.UserID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrNotFound
+	}
+	return nil
+}
+
 const selectTeam = `
 	SELECT t.id, t.name, t.description, t.created_at,
 	       (SELECT count(*) FROM team_members m WHERE m.team_id = t.id)
@@ -259,6 +278,9 @@ func (s *Service) AddMember(ctx context.Context, sess *auth.Session, ip, teamID,
 	if !httpx.ValidUUID(userID) {
 		return ErrUserNotFound
 	}
+	if err := s.canManageMembers(ctx, sess, teamID); err != nil {
+		return err
+	}
 	return database.InTx(ctx, s.db, func(tx pgx.Tx) error {
 		var exists bool
 		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM teams WHERE id = $1)`, teamID).Scan(&exists); err != nil {
@@ -288,6 +310,9 @@ func (s *Service) AddMember(ctx context.Context, sess *auth.Session, ip, teamID,
 func (s *Service) RemoveMember(ctx context.Context, sess *auth.Session, ip, teamID, userID string) error {
 	if !httpx.ValidUUID(teamID) || !httpx.ValidUUID(userID) {
 		return ErrNotFound
+	}
+	if err := s.canManageMembers(ctx, sess, teamID); err != nil {
+		return err
 	}
 	return database.InTx(ctx, s.db, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `DELETE FROM team_members WHERE team_id = $1 AND user_id = $2`, teamID, userID)

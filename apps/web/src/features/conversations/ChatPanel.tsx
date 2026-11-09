@@ -8,7 +8,7 @@ import { Menu, MenuItem } from "@/components/Menu";
 import { Alert, IconButton } from "@/components/ui";
 import { ChatSkeleton } from "@/components/Skeleton";
 import { errorMessage, isRejection } from "@/lib/api";
-import { useMe } from "@/features/auth/api";
+import { canSupervise, useMe } from "@/features/auth/api";
 import { cn } from "@/lib/cn";
 import { formatDayDivider, formatTime, sameDay } from "@/lib/format";
 import { Composer } from "./Composer";
@@ -49,7 +49,7 @@ export function ChatPanel({
   const contactTitle = c.contact.kind === "group" || c.contact.saved ? c.contact.name : c.contact.phone || c.contact.name;
   const send = useSendMessage(c.id);
   const { data: me } = useMe();
-  const isAdmin = me?.user.role === "admin";
+  const isAdmin = canSupervise(me?.user.role); // administrador ou gestor
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   const [statusExpanded, setStatusExpanded] = useState(true);
   // Muda ao devolver um texto recusado ao campo de mensagem (remonta o Composer).
@@ -185,7 +185,7 @@ export function ChatPanel({
   const closed = c.status === "closed";
   // Outra pessoa já assumiu: só ela responde (o servidor também garante isso).
   const lockedByOther = !!c.assignee && !mine && !closed;
-  // O responsável encerra; administradores também podem encerrar qualquer atendimento.
+  // O responsável encerra; administradores e gestores também encerram qualquer atendimento que enxergam.
   const canClose = capabilities.close && !closed && (mine || isAdmin);
   const showAttendanceStatus = !lockedByOther && !closed && !c.snoozedUntil;
 

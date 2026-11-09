@@ -103,6 +103,19 @@ export function useSetUserTeams() {
   });
 }
 
+/** Gestor (e administrador) montam a equipe: adicionar e remover pessoas de uma equipe. */
+export function useTeamMembership(teamId: string) {
+  const qc = useQueryClient();
+  const done = () => {
+    void qc.invalidateQueries({ queryKey: teamKeys.members(teamId) });
+    void qc.invalidateQueries({ queryKey: teamKeys.teams });
+    void qc.invalidateQueries({ queryKey: ["people"] });
+  };
+  const add = useMutation({ mutationFn: (userId: string) => put<void>(`/teams/${teamId}/members/${userId}`), onSuccess: done });
+  const remove = useMutation({ mutationFn: (userId: string) => del<void>(`/teams/${teamId}/members/${userId}`), onSuccess: done });
+  return { add, remove };
+}
+
 /** Pessoa do escritório (visível a qualquer usuário autenticado; sem e-mail). */
 export type Person = { id: string; name: string; role: Role; teams: string[] };
 

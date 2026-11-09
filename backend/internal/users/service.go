@@ -135,7 +135,7 @@ func (in *CreateInput) validate() error {
 		f["password"] = err.Error()
 	}
 	if !in.Role.Valid() {
-		f["role"] = "Perfil deve ser admin ou agent."
+		f["role"] = "Perfil deve ser administrador, gestor ou atendente."
 	}
 	for _, id := range in.TeamIDs {
 		if !httpx.ValidUUID(id) {
@@ -208,7 +208,7 @@ func (s *Service) Update(ctx context.Context, actorID, ip, id string, in UpdateI
 		}
 	}
 	if in.Role != nil && !in.Role.Valid() {
-		f["role"] = "Perfil deve ser admin ou agent."
+		f["role"] = "Perfil deve ser administrador, gestor ou atendente."
 	}
 	if err := f.Err(); err != nil {
 		return User{}, err

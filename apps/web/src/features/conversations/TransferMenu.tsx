@@ -69,7 +69,7 @@ export function TransferMenu({
         <p className="px-3 pb-2 text-[12px] text-muted">
           {c.status === "closed"
             ? "Atendimento encerrado."
-            : `${c.assignee?.name ?? "Outra pessoa"} está atendendo; só ela (ou um administrador) pode transferir.`}
+            : `${c.assignee?.name ?? "Outra pessoa"} está atendendo; só ela (ou um gestor/administrador) pode transferir.`}
         </p>
       )}
       {isPending && <Spinner className="mx-auto my-3" />}

@@ -104,7 +104,7 @@ func (s *Service) contact(ctx context.Context, sess *auth.Session, i *Item) erro
 	if i.Contact == nil {
 		return nil
 	}
-	c, err := s.convs.Get(ctx, conversations.Viewer{ID: sess.UserID, Name: sess.Name, Admin: sess.IsAdmin()}, i.Contact.ConversationID)
+	c, err := s.convs.Get(ctx, conversations.Viewer{ID: sess.UserID, Name: sess.Name, Admin: sess.IsAdmin(), Supervisor: sess.IsManager()}, i.Contact.ConversationID)
 	if errors.Is(err, conversations.ErrNotFound) {
 		i.Contact = nil
 		return nil
@@ -174,7 +174,7 @@ func (s *Service) Save(ctx context.Context, sess *auth.Session, id, ip string, i
 		return Item{}, err
 	}
 	if in.ConversationID != "" {
-		if _, err := s.convs.Get(ctx, conversations.Viewer{ID: sess.UserID, Name: sess.Name, Admin: sess.IsAdmin()}, in.ConversationID); err != nil {
+		if _, err := s.convs.Get(ctx, conversations.Viewer{ID: sess.UserID, Name: sess.Name, Admin: sess.IsAdmin(), Supervisor: sess.IsManager()}, in.ConversationID); err != nil {
 			if errors.Is(err, conversations.ErrNotFound) {
 				return Item{}, ErrNotFound
 			}

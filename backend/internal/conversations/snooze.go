@@ -37,7 +37,7 @@ func (s *Service) Snooze(ctx context.Context, v Viewer, id string, until *time.T
 		if status == "closed" {
 			return ErrClosed
 		}
-		if !v.Admin && (assignee == nil || *assignee != v.ID) {
+		if !v.CanSupervise() && (assignee == nil || *assignee != v.ID) {
 			return ErrForbidden
 		}
 		if until == nil && previous == nil {

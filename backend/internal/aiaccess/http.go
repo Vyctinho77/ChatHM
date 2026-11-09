@@ -147,7 +147,7 @@ func (h *Handler) sendSuggestion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sess := auth.MustFromContext(r.Context())
-	msg, err := h.svc.Send(r.Context(), conversations.Viewer{ID: sess.UserID, Name: sess.Name, Admin: sess.IsAdmin()}, httpx.ClientIP(r), chi.URLParam(r, "id"), in.Text)
+	msg, err := h.svc.Send(r.Context(), conversations.Viewer{ID: sess.UserID, Name: sess.Name, Admin: sess.IsAdmin(), Supervisor: sess.IsManager()}, httpx.ClientIP(r), chi.URLParam(r, "id"), in.Text)
 	if err != nil {
 		h.fail(w, r, err)
 		return

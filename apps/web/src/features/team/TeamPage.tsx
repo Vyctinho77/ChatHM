@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router";
-import { ChevronDown, Copy, EllipsisVertical, Eye, EyeOff, KeyRound, Pencil, Plus, RefreshCw, ShieldCheck, Smartphone, Trash2, UserPlus, UsersRound } from "lucide-react";
+import { ChevronDown, Copy, EllipsisVertical, Eye, EyeOff, KeyRound, Pencil, Plus, RefreshCw, ShieldCheck, Smartphone, Trash2, UserPlus, UsersRound, X } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { Menu, MenuItem } from "@/components/Menu";
 import { Page, PageHeader } from "@/components/list";
@@ -19,16 +19,25 @@ import {
   type InviteResult,
   useDeleteTeam,
   useMembers,
+  usePeople,
   useResetPassword,
   useSetUserTeams,
+  useTeamMembership,
   useTeams,
   useUpdateUser,
   useUsers,
+  type Member,
   type Team,
   type User,
 } from "./api";
 
-const roleLabel: Record<Role, string> = { admin: "Administrador", agent: "Atendente" };
+const roleLabel: Record<Role, string> = { admin: "Administrador", manager: "Gestor", agent: "Atendente" };
+
+const roleHint: Record<Role, string> = {
+  agent: "Atende as filas das equipes de que participa.",
+  manager: "Como o atendente, e também supervisiona as equipes dele: transfere, assume, encerra e adia atendimentos de colegas e monta a própria equipe. Não mexe em pessoas, filas, WhatsApp nem integrações.",
+  admin: "Acesso total: pessoas, equipes, filas, WhatsApp e integrações.",
+};
 
 function fieldsOf(err: unknown): FieldErrors {
   return err instanceof ApiError ? err.fields : {};
@@ -37,6 +46,7 @@ function fieldsOf(err: unknown): FieldErrors {
 export function TeamPage() {
   const { data: me } = useMe();
   const isAdmin = me?.user.role === "admin";
+  const isManager = me?.user.role === "manager";
   const [params] = useSearchParams();
   const teamsList = useTeams();
   // Sem nenhuma equipe ainda, o gestor começa por Equipes (?aba=equipes também abre direto nela).
@@ -89,7 +99,7 @@ export function TeamPage() {
         )}
         </div>
         <div className="mx-auto max-w-5xl">
-          {isAdmin && tab === "members" ? <PeopleTab creating={inviting} onCloseCreate={() => setInviting(false)} /> : <TeamsTab isAdmin={isAdmin} creating={creatingTeam} onCloseCreate={() => setCreatingTeam(false)} />}
+          {isAdmin && tab === "members" ? <PeopleTab creating={inviting} onCloseCreate={() => setInviting(false)} /> : <TeamsTab isAdmin={isAdmin} canEditMembers={isAdmin || isManager} creating={creatingTeam} onCloseCreate={() => setCreatingTeam(false)} />}
         </div>
       </div>
       {accessOpen && <Modal open onClose={() => setAccessOpen(false)} title="Acesso da equipe"><TeamAccessCard /></Modal>}
@@ -213,7 +223,7 @@ function RoleSelect({ value, onChange }: { value: Role; onChange: (r: Role) => v
     <fieldset className="flex flex-col gap-1.5">
       <legend className="mb-1.5 text-sm font-medium">Perfil</legend>
       <div className="flex gap-2">
-        {(["agent", "admin"] as Role[]).map((r) => (
+        {(["agent", "manager", "admin"] as Role[]).map((r) => (
           <button
             key={r}
             type="button"
@@ -228,6 +238,7 @@ function RoleSelect({ value, onChange }: { value: Role; onChange: (r: Role) => v
           </button>
         ))}
       </div>
+      <p className="text-xs text-muted">{roleHint[value]}</p>
     </fieldset>
   );
 }
@@ -396,7 +407,7 @@ function ResetPasswordModal({ user, onClose }: { user: User; onClose: () => void
 // ---------------------------------------------------------------------------
 // Equipes
 
-function TeamsTab({ isAdmin, creating, onCloseCreate }: { isAdmin: boolean; creating: boolean; onCloseCreate: () => void }) {
+function TeamsTab({ isAdmin, canEditMembers, creating, onCloseCreate }: { isAdmin: boolean; canEditMembers: boolean; creating: boolean; onCloseCreate: () => void }) {
   const teams = useTeams();
   return (
     <>
@@ -410,16 +421,18 @@ function TeamsTab({ isAdmin, creating, onCloseCreate }: { isAdmin: boolean; crea
         </div>
       )}
       <div className="divide-y divide-line">
-        {teams.data?.map((t) => <TeamCard key={t.id} team={t} isAdmin={isAdmin} />)}
+        {teams.data?.map((t) => <TeamCard key={t.id} team={t} isAdmin={isAdmin} canEditMembers={canEditMembers} />)}
       </div>
       <CreateTeamModal open={creating} onClose={onCloseCreate} />
     </>
   );
 }
 
-function TeamCard({ team, isAdmin }: { team: Team; isAdmin: boolean }) {
+function TeamCard({ team, isAdmin, canEditMembers }: { team: Team; isAdmin: boolean; canEditMembers: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const members = useMembers(team.id, expanded);
+  const membership = useTeamMembership(team.id);
+  const meId = useMe().data?.user.id; // ninguém se tira da própria equipe por engano (perderia o acesso)
   const remove = useDeleteTeam();
   const [confirming, setConfirming] = useState(false);
   return (
@@ -465,6 +478,7 @@ function TeamCard({ team, isAdmin }: { team: Team; isAdmin: boolean }) {
       {team.description && <p className="mt-3 whitespace-pre-wrap text-[13px] text-muted sm:hidden">{team.description}</p>}
       {members.isPending && <Spinner className="mt-3" />}
       {members.error && <Alert>{errorMessage(members.error)}</Alert>}
+      {(membership.add.error || membership.remove.error) && <Alert>{errorMessage(membership.add.error ?? membership.remove.error)}</Alert>}
       {members.data?.length === 0 && <p className="mt-3 text-[13px] text-muted">Nenhuma pessoa nesta equipe.</p>}
       <ul className="mt-3 flex flex-col gap-3">
         {members.data?.map((m) => (
@@ -472,11 +486,52 @@ function TeamCard({ team, isAdmin }: { team: Team; isAdmin: boolean }) {
             <Avatar name={m.name} size="sm" />
             <span className="truncate">{m.name}</span>
             <span className="ml-auto text-xs text-muted">{roleLabel[m.role]}</span>
+            {canEditMembers && m.userId !== meId && (
+              <IconButton label={`Remover ${m.name} da equipe ${team.name}`} onClick={() => membership.remove.mutate(m.userId)} disabled={membership.remove.isPending}>
+                <X className="size-4" />
+              </IconButton>
+            )}
           </li>
         ))}
       </ul>
+      {canEditMembers && expanded && (
+        <AddMember members={members.data ?? []} membership={membership} />
+      )}
       </div>
     </article>
+  );
+}
+
+/** Gestor e administrador: escolhem quem entra na equipe (pessoas do escritório que ainda não participam). */
+function AddMember({ members, membership }: { members: Member[]; membership: ReturnType<typeof useTeamMembership> }) {
+  const people = usePeople();
+  const [chosen, setChosen] = useState("");
+  const inTeam = new Set(members.map((m) => m.userId));
+  const candidates = (people.data ?? []).filter((p) => !inTeam.has(p.id));
+  if (people.isPending) return <Spinner className="mt-3" />;
+  return (
+    <form
+      className="mt-4 flex items-center gap-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (chosen) membership.add.mutate(chosen, { onSuccess: () => setChosen("") });
+      }}
+    >
+      <select
+        aria-label="Adicionar pessoa à equipe"
+        value={chosen}
+        onChange={(e) => setChosen(e.target.value)}
+        className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-elevated px-2 text-[13px]"
+      >
+        <option value="">{candidates.length === 0 ? "Todas as pessoas já estão na equipe" : "Adicionar pessoa…"}</option>
+        {candidates.map((p) => (
+          <option key={p.id} value={p.id}>{p.name} ({roleLabel[p.role]})</option>
+        ))}
+      </select>
+      <Button type="submit" variant="secondary" disabled={!chosen} loading={membership.add.isPending}>
+        <UserPlus className="size-4" /> Adicionar
+      </Button>
+    </form>
   );
 }
 

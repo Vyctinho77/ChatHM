@@ -56,7 +56,7 @@ func (s *Service) CreateSuggestion(ctx context.Context, p Principal, convID, int
 	if intent != "draft" && intent != "send" {
 		return Suggestion{}, errors.New("intent inválido")
 	}
-	v := conversations.Viewer{ID: p.UserID, Name: p.Name, Admin: p.Admin}
+	v := conversations.Viewer{ID: p.UserID, Name: p.Name, Admin: p.Admin, Supervisor: p.Manager}
 	c, err := s.convs.Get(ctx, v, convID)
 	if err != nil {
 		return Suggestion{}, err

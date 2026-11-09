@@ -24,11 +24,12 @@ import (
 type Role string
 
 const (
-	RoleAdmin Role = "admin"
-	RoleAgent Role = "agent" // atendente
+	RoleAdmin   Role = "admin"
+	RoleManager Role = "manager" // gestor: supervisiona as equipes de que participa, sem mexer na configuração do escritório
+	RoleAgent   Role = "agent"   // atendente
 )
 
-func (r Role) Valid() bool { return r == RoleAdmin || r == RoleAgent }
+func (r Role) Valid() bool { return r == RoleAdmin || r == RoleManager || r == RoleAgent }
 
 type Config struct {
 	CookieName      string
@@ -80,7 +81,12 @@ type Session struct {
 	ExpiresAt   time.Time
 }
 
-func (s *Session) IsAdmin() bool { return s.Role == RoleAdmin }
+func (s *Session) IsAdmin() bool   { return s.Role == RoleAdmin }
+func (s *Session) IsManager() bool { return s.Role == RoleManager }
+
+// CanSupervise: administrador e gestor podem agir nas conversas de outras pessoas que já enxergam
+// (transferir, assumir, encerrar, adiar). A visibilidade em si não muda: continua pela equipe.
+func (s *Session) CanSupervise() bool { return s.IsAdmin() || s.IsManager() }
 
 // MFAPending indica que o usuário passou da senha mas ainda não do segundo fator.
 func (s *Session) MFAPending() bool { return s.MFAEnabled && !s.MFAVerified }

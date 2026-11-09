@@ -26,6 +26,10 @@ func (h *Handler) Routes(r chi.Router) {
 		r.Post("/teams", h.create)
 		r.Patch("/teams/{id}", h.update)
 		r.Delete("/teams/{id}", h.delete)
+	})
+	// Gestor: monta a própria equipe (só as equipes de que participa; o serviço confere).
+	r.Group(func(r chi.Router) {
+		r.Use(auth.RequireSupervisor)
 		r.Put("/teams/{id}/members/{userId}", h.addMember)
 		r.Delete("/teams/{id}/members/{userId}", h.removeMember)
 	})

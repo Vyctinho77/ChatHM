@@ -77,6 +77,7 @@ type Principal struct {
 	UserID  string
 	Name    string
 	Admin   bool
+	Manager bool // gestor: age nas conversas de outras pessoas da equipe (como no app)
 	TokenID string
 	Prefix  string
 	Scopes  []string
@@ -296,14 +297,14 @@ func (s *Service) Authenticate(ctx context.Context, raw string) (Principal, erro
 		client  *string
 	)
 	err := s.db.QueryRow(ctx, `
-		SELECT t.id::text, t.prefix, t.scopes, t.token_hash, t.last_used_at, u.id::text, u.name, u.role = 'admin',
+		SELECT t.id::text, t.prefix, t.scopes, t.token_hash, t.last_used_at, u.id::text, u.name, u.role = 'admin', u.role = 'manager',
 		       t.kind, t.grant_id::text, c.name
 		  FROM api_tokens t JOIN users u ON u.id = t.user_id
 		  LEFT JOIN oauth_grants g ON g.id = t.grant_id AND g.revoked_at IS NULL
 		  LEFT JOIN oauth_clients c ON c.client_id = g.client_id
 		 WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND t.expires_at > now() AND u.is_active
 		   AND (t.kind = 'personal' OR g.id IS NOT NULL)`, hashToken(raw)).
-		Scan(&p.TokenID, &p.Prefix, &p.Scopes, &hash, &last, &p.UserID, &p.Name, &p.Admin, &kind, &grantID, &client)
+		Scan(&p.TokenID, &p.Prefix, &p.Scopes, &hash, &last, &p.UserID, &p.Name, &p.Admin, &p.Manager, &kind, &grantID, &client)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Principal{}, ErrBadToken
 	}

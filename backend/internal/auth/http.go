@@ -104,6 +104,17 @@ func RequireAdmin(next http.Handler) http.Handler {
 	})
 }
 
+// RequireSupervisor exige administrador ou gestor. Deve vir depois de RequireSession.
+func RequireSupervisor(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !MustFromContext(r.Context()).CanSupervise() {
+			httpx.Error(w, http.StatusForbidden, "forbidden", "Acesso restrito a administradores e gestores.")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func isSafeMethod(m string) bool {
 	return m == http.MethodGet || m == http.MethodHead || m == http.MethodOptions
 }

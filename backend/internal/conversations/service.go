@@ -82,7 +82,12 @@ type Viewer struct {
 	ID    string
 	Name  string
 	Admin bool
+	// Supervisor (gestor): age nas conversas de outras pessoas que o viewer já pode ver. Não amplia a visibilidade.
+	Supervisor bool
 }
+
+// CanSupervise: administrador ou gestor.
+func (v Viewer) CanSupervise() bool { return v.Admin || v.Supervisor }
 
 type Service struct {
 	store      storage.Store
@@ -1191,7 +1196,7 @@ func (s *Service) Close(ctx context.Context, v Viewer, convID string) error {
 		if status == "closed" {
 			return nil
 		}
-		if !v.Admin && (assignee == nil || *assignee != v.ID) {
+		if !v.CanSupervise() && (assignee == nil || *assignee != v.ID) {
 			return ErrForbidden
 		}
 		if _, err := tx.Exec(ctx, `UPDATE conversations SET status = 'closed', closed_at = now(), snoozed_until = NULL, snoozed_by = NULL WHERE id = $1`, convID); err != nil {
@@ -1248,7 +1253,7 @@ func (s *Service) Transfer(ctx context.Context, v Viewer, convID, targetID strin
 		if status == "closed" {
 			return ErrClosed
 		}
-		if assignee != nil && *assignee != v.ID && !v.Admin {
+		if assignee != nil && *assignee != v.ID && !v.CanSupervise() {
 			return &TakenError{Assignee: assigneeName}
 		}
 

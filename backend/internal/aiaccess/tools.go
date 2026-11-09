@@ -26,7 +26,7 @@ const instructions = "ChatHM: central de atendimento de um escritório de contab
 
 func (m *MCP) server(p Principal) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "chathm", Version: "1.0.0"}, &mcp.ServerOptions{Instructions: instructions})
-	v := conversations.Viewer{ID: p.UserID, Name: p.Name, Admin: p.Admin}
+	v := conversations.Viewer{ID: p.UserID, Name: p.Name, Admin: p.Admin, Supervisor: p.Manager}
 
 	type listConvs struct {
 		Filter string `json:"filter,omitempty" jsonschema:"all (padrão), mine (minhas), unassigned (sem responsável) ou snoozed (adiadas)"`
@@ -263,8 +263,11 @@ func (m *MCP) server(p Principal) *mcp.Server {
 }
 
 func roleOf(p Principal) auth.Role {
-	if p.Admin {
+	switch {
+	case p.Admin:
 		return auth.RoleAdmin
+	case p.Manager:
+		return auth.RoleManager
 	}
 	return auth.RoleAgent
 }

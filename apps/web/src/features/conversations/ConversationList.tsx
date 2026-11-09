@@ -7,7 +7,7 @@ import { Logo } from "@/components/Logo";
 import { Menu, MenuItem } from "@/components/Menu";
 import { Badge, IconButton } from "@/components/ui";
 import { ListSkeleton } from "@/components/Skeleton";
-import { useMe } from "@/features/auth/api";
+import { canSupervise, useMe } from "@/features/auth/api";
 import { cn } from "@/lib/cn";
 import { formatListTime } from "@/lib/format";
 import { matches } from "@/lib/search";
@@ -29,7 +29,7 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
   const { data, isPending } = useConversations();
   const actions = useConversationActions();
   const { data: meData } = useMe();
-  const isAdmin = meData?.user.role === "admin";
+  const isAdmin = canSupervise(meData?.user.role); // administrador ou gestor
   const [ctx, setCtx] = useState<{ id: string; x: number; y: number } | null>(null);
   // O filtro de fila fica na URL (?fila=folha): a tela Filas / Segmentos abre a lista já filtrada.
   const [params, setParams] = useSearchParams();

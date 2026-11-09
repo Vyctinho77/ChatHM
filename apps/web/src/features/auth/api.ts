@@ -3,7 +3,10 @@ import { ApiError, get, post } from "@/lib/api";
 import type { Appearance } from "@/lib/chatAppearance";
 import type { Theme } from "@/lib/theme";
 
-export type Role = "admin" | "agent";
+export type Role = "admin" | "manager" | "agent";
+
+/** Administrador e gestor agem nas conversas de outras pessoas que já enxergam (transferir, assumir, encerrar, adiar). */
+export const canSupervise = (role: Role | undefined) => role === "admin" || role === "manager";
 
 export type Me = {
   user: { id: string; email: string; name: string; role: Role; theme: Theme; chatAppearance?: Appearance; mfaEnabled: boolean };

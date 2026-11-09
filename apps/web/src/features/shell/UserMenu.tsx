@@ -6,7 +6,7 @@ import { logout, useSetMe, type Me } from "@/features/auth/api";
 import { ChatAppearanceDialog } from "./ChatAppearanceDialog";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 
-const roleLabel = { admin: "Administrador", agent: "Atendente" } as const;
+const roleLabel = { admin: "Administrador", manager: "Gestor", agent: "Atendente" } as const;
 
 /** Perfil do usuário no rodapé do menu lateral; o menu abre para cima. */
 export function UserMenu({ me }: { me: Me }) {
