@@ -391,6 +391,10 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 	if err == nil && retryID != "" {
 		s.queueHistoricalPDF(retryID, retryConv, m)
 	}
+	// "PARAR": o cliente não quer avisos automáticos. Vale na hora e é auditado; a mensagem segue o fluxo normal.
+	if err == nil && msgID != "" && !m.FromMe && !m.Historical && m.Kind == whatsapp.KindText && IsOptOut(m.Body) {
+		s.optOut(ctx, m.ContactWAID)
+	}
 	if err != nil || msgID == "" {
 		return false, err
 	}

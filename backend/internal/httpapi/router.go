@@ -15,6 +15,7 @@ import (
 	"github.com/vyctinho77/chathm/backend/internal/agenda"
 	"github.com/vyctinho77/chathm/backend/internal/aiaccess"
 	"github.com/vyctinho77/chathm/backend/internal/auth"
+	"github.com/vyctinho77/chathm/backend/internal/automation"
 	"github.com/vyctinho77/chathm/backend/internal/config"
 	"github.com/vyctinho77/chathm/backend/internal/conversations"
 	"github.com/vyctinho77/chathm/backend/internal/instance"
@@ -42,6 +43,7 @@ type Deps struct {
 	WhatsApp      *whatsapp.Manager
 	Instance      *instance.Service
 	AI            *aiaccess.Service
+	Automation    *automation.Service
 	// Simulate habilita POST /dev/whatsapp/inbound (provedor fake em development).
 	Simulate func(whatsapp.InboundMessage)
 }
@@ -92,8 +94,13 @@ func NewRouter(d Deps) http.Handler {
 	}
 	baseURL := aiaccess.PublicBase(d.Config.AllowedOrigins)
 	aiH := aiaccess.NewHandler(aiSvc, baseURL)
+	autoSvc := d.Automation
+	if autoSvc == nil {
+		autoSvc = automation.NewService(d.DB, d.Conversations, nil, nil, d.Logger)
+	}
+	autoH := automation.NewHandler(autoSvc, d.WhatsApp.Connected)
 	oauthH := aiaccess.NewOAuthHandler(aiSvc, baseURL)
-	mcpH := aiaccess.NewMCP(aiSvc, d.Conversations, d.Segments, d.Tags, agendaSvc, d.Teams, d.Users, d.Config.AllowedOrigins, d.Logger)
+	mcpH := aiaccess.NewMCP(aiSvc, d.Conversations, d.Segments, d.Tags, agendaSvc, d.Teams, d.Users, autoSvc, d.Config.AllowedOrigins, d.Logger)
 
 	// O WebSocket revalida a sessão periodicamente (logout/desativação encerram a conexão).
 	validateWS := func(ctx context.Context, r *http.Request) bool {
@@ -135,6 +142,7 @@ func NewRouter(d Deps) http.Handler {
 			waH.Routes(r)
 			agendaH.Routes(r)
 			aiH.Routes(r)
+			autoH.Routes(r)
 			r.Get("/ws", d.Hub.Handler(validateWS))
 
 			r.Group(func(r chi.Router) {

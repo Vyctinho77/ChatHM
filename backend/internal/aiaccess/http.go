@@ -100,12 +100,13 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) {
 		Name          string   `json:"name"`
 		ExpiresInDays int      `json:"expiresInDays"`
 		Scopes        []string `json:"scopes"`
+		Provider      string   `json:"provider"`
 	}
 	if !httpx.Decode(w, r, &in) {
 		return
 	}
 	sess := auth.MustFromContext(r.Context())
-	raw, t, err := h.svc.Create(r.Context(), sess.UserID, clientIP(r), in.Name, in.ExpiresInDays, in.Scopes)
+	raw, t, err := h.svc.Create(r.Context(), sess.UserID, clientIP(r), in.Name, in.ExpiresInDays, in.Scopes, in.Provider)
 	if err != nil {
 		h.fail(w, r, err)
 		return

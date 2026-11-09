@@ -11,6 +11,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/vyctinho77/chathm/backend/internal/agenda"
+	"github.com/vyctinho77/chathm/backend/internal/automation"
 	"github.com/vyctinho77/chathm/backend/internal/conversations"
 	"github.com/vyctinho77/chathm/backend/internal/segments"
 	"github.com/vyctinho77/chathm/backend/internal/tags"
@@ -29,6 +30,7 @@ type MCP struct {
 	agenda         *agenda.Service
 	teams          *teams.Service
 	users          *users.Service
+	auto           *automation.Service
 	allowedOrigins map[string]bool
 	log            *slog.Logger
 	handler        http.Handler
@@ -52,8 +54,8 @@ func (m *MCP) challenge(r *http.Request, invalid bool) string {
 	return h
 }
 
-func NewMCP(svc *Service, convs *conversations.Service, segs *segments.Service, tg *tags.Service, ag *agenda.Service, tm *teams.Service, us *users.Service, allowedOrigins []string, log *slog.Logger) *MCP {
-	m := &MCP{svc: svc, convs: convs, segs: segs, tags: tg, agenda: ag, teams: tm, users: us, allowedOrigins: map[string]bool{}, log: log}
+func NewMCP(svc *Service, convs *conversations.Service, segs *segments.Service, tg *tags.Service, ag *agenda.Service, tm *teams.Service, us *users.Service, auto *automation.Service, allowedOrigins []string, log *slog.Logger) *MCP {
+	m := &MCP{svc: svc, convs: convs, segs: segs, tags: tg, agenda: ag, teams: tm, users: us, auto: auto, allowedOrigins: map[string]bool{}, log: log}
 	for _, o := range allowedOrigins {
 		m.allowedOrigins[strings.TrimRight(o, "/")] = true
 	}

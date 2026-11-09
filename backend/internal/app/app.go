@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/vyctinho77/chathm/backend/internal/auth"
+	"github.com/vyctinho77/chathm/backend/internal/automation"
 	"github.com/vyctinho77/chathm/backend/internal/config"
 	"github.com/vyctinho77/chathm/backend/internal/conversations"
 	"github.com/vyctinho77/chathm/backend/internal/instance"
@@ -38,6 +39,7 @@ type Services struct {
 	WhatsApp      *whatsapp.Manager
 	Instance      *instance.Service
 	AI            *aiaccess.Service
+	Automation    *automation.Service
 	// Simulate entrega mensagens fictícias (somente provedor fake em development).
 	Simulate func(whatsapp.InboundMessage)
 }
@@ -113,6 +115,7 @@ func NewServices(ctx context.Context, cfg config.Config, db *pgxpool.Pool, opt O
 		AI:            aiaccess.NewService(db),
 	}
 	s.AI.Attach(convs, hub)
+	s.Automation = automation.NewService(db, convs, store, mediaSvc, opt.Logger)
 	if cfg.SeedExampleData {
 		if err := s.Segments.EnsureDefaults(ctx); err != nil {
 			return nil, err

@@ -24,10 +24,12 @@ import (
 )
 
 const (
-	tokenPrefix      = "chm_"
-	ScopeRead        = "read"
-	ScopeWrite       = "write"
-	ScopeSend        = "send"
+	tokenPrefix = "chm_"
+	ScopeRead   = "read"
+	ScopeWrite  = "write"
+	ScopeSend   = "send"
+	// ScopeAutomate: iniciar mensagens automáticas (fila com aprovação do administrador). Só tokens pessoais.
+	ScopeAutomate    = "automate"
 	maxTokensPerUser = 10
 	defaultTTLDays   = 90
 	maxTTLDays       = 365
@@ -55,6 +57,8 @@ type Settings struct {
 	// AllowOAuth libera conectar ChatGPT/claude.ai por login. OAuthRedirectHosts: hosts permitidos nos endereços de retorno.
 	AllowOAuth         bool     `json:"allowOauth"`
 	OAuthRedirectHosts []string `json:"oauthRedirectHosts"`
+	// AllowAutomation libera tokens com escopo "automate": a IA enfileira mensagens automáticas (sempre com aprovação do administrador na fase atual).
+	AllowAutomation bool `json:"allowAutomation"`
 }
 
 // Token é um token pessoal (nunca inclui o segredo).
@@ -68,6 +72,7 @@ type Token struct {
 	LastUsedAt *time.Time `json:"lastUsedAt,omitempty"`
 	Revoked    bool       `json:"revoked"`
 	Expired    bool       `json:"expired"`
+	Provider   string     `json:"provider"`        // claude | chatgpt | grok | gemini | other | ""
 	Owner      string     `json:"owner,omitempty"` // só na visão do administrador
 	OwnerID    string     `json:"ownerId,omitempty"`
 }
@@ -88,6 +93,11 @@ type Principal struct {
 	// OAuth: token emitido a um aplicativo de IA hospedado por terceiros (ChatGPT, claude.ai): privacidade máxima, sem opção.
 	OAuth      bool
 	ClientName string
+	// Automate: o token tem escopo "automate" E o administrador liberou envios automáticos (nunca para clientes OAuth).
+	Automate bool
+	// Provider e App identificam a IA (a tela mostra a logo do provedor nas mensagens automáticas).
+	Provider string
+	App      string
 }
 
 type Service struct {
@@ -111,13 +121,13 @@ func NewService(db *pgxpool.Pool) *Service {
 
 // --- configuração ----------------------------------------------------------
 
-const selectSettings = `SELECT enabled, mask_documents, mask_phones, allow_write, allow_send, mask_emails, strict_privacy, allow_oauth, oauth_redirect_hosts FROM ai_settings WHERE id`
+const selectSettings = `SELECT enabled, mask_documents, mask_phones, allow_write, allow_send, mask_emails, strict_privacy, allow_oauth, oauth_redirect_hosts, allow_automation FROM ai_settings WHERE id`
 
 func (s *Service) Settings(ctx context.Context) (Settings, error) {
 	var st Settings
 	scan := func() error {
 		return s.db.QueryRow(ctx, selectSettings).
-			Scan(&st.Enabled, &st.MaskDocuments, &st.MaskPhones, &st.AllowWrite, &st.AllowSend, &st.MaskEmails, &st.StrictPrivacy, &st.AllowOAuth, &st.OAuthRedirectHosts)
+			Scan(&st.Enabled, &st.MaskDocuments, &st.MaskPhones, &st.AllowWrite, &st.AllowSend, &st.MaskEmails, &st.StrictPrivacy, &st.AllowOAuth, &st.OAuthRedirectHosts, &st.AllowAutomation)
 	}
 	err := scan()
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -142,8 +152,8 @@ func (s *Service) SetSettings(ctx context.Context, actorID, ip string, in Settin
 	}
 	err = database.InTx(ctx, s.db, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `UPDATE ai_settings SET enabled = $1, mask_documents = $2, mask_phones = $3,
-			allow_write = $5, allow_send = $6, mask_emails = $7, strict_privacy = $8, allow_oauth = $9, oauth_redirect_hosts = $10,
-			updated_at = now(), updated_by = $4 WHERE id`, in.Enabled, in.MaskDocuments, in.MaskPhones, actorID, in.AllowWrite, in.AllowSend, in.MaskEmails, in.StrictPrivacy, in.AllowOAuth, hosts); err != nil {
+			allow_write = $5, allow_send = $6, mask_emails = $7, strict_privacy = $8, allow_oauth = $9, oauth_redirect_hosts = $10, allow_automation = $11,
+			updated_at = now(), updated_by = $4 WHERE id`, in.Enabled, in.MaskDocuments, in.MaskPhones, actorID, in.AllowWrite, in.AllowSend, in.MaskEmails, in.StrictPrivacy, in.AllowOAuth, hosts, in.AllowAutomation); err != nil {
 			return err
 		}
 		return audit.Record(ctx, tx, audit.Entry{ActorID: actorID, Action: "ai.settings.update", TargetType: "ai_settings", IP: ip,
@@ -163,7 +173,7 @@ func hashToken(raw string) []byte {
 }
 
 // Create cria um token pessoal. O segredo é devolvido só aqui.
-func (s *Service) Create(ctx context.Context, userID, ip, name string, ttlDays int, scopes []string) (string, Token, error) {
+func (s *Service) Create(ctx context.Context, userID, ip, name string, ttlDays int, scopes []string, provider string) (string, Token, error) {
 	name = strings.TrimSpace(name)
 	if name == "" || utf8.RuneCountInString(name) > 80 {
 		return "", Token{}, httpx.FieldErrors{"name": "Dê um nome de até 80 caracteres (ex.: Claude no meu notebook)."}
@@ -189,9 +199,20 @@ func (s *Service) Create(ctx context.Context, userID, ip, name string, ttlDays i
 					granted = append(granted, x)
 				}
 			}
+		case ScopeAutomate:
+			if !contains(granted, ScopeAutomate) {
+				granted = append(granted, ScopeAutomate)
+			}
 		default:
 			return "", Token{}, httpx.FieldErrors{"scopes": "Escopo inválido."}
 		}
+	}
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	if !validProvider(provider) {
+		return "", Token{}, httpx.FieldErrors{"provider": "Escolha o provedor da IA: Claude, ChatGPT, Grok, Gemini ou Outro."}
+	}
+	if contains(granted, ScopeAutomate) && provider == "" {
+		return "", Token{}, httpx.FieldErrors{"provider": "Para envios automáticos, informe o provedor da IA (a logo dele aparece nas mensagens)."}
 	}
 	st, err := s.Settings(ctx)
 	if err != nil {
@@ -203,7 +224,10 @@ func (s *Service) Create(ctx context.Context, userID, ip, name string, ttlDays i
 	if contains(granted, ScopeSend) && !st.AllowSend {
 		return "", Token{}, httpx.FieldErrors{"scopes": "O administrador ainda não liberou pedidos de envio pela IA (aba MCP)."}
 	}
-	if len(granted) > 1 && !st.AllowWrite {
+	if contains(granted, ScopeAutomate) && !st.AllowAutomation {
+		return "", Token{}, httpx.FieldErrors{"scopes": "O administrador ainda não liberou envios automáticos pela IA (aba MCP)."}
+	}
+	if n := len(granted); n > 1 && !st.AllowWrite && !(n == 2 && contains(granted, ScopeAutomate)) {
 		return "", Token{}, httpx.FieldErrors{"scopes": "O administrador ainda não liberou alterações pela IA (aba MCP)."}
 	}
 	var active int
@@ -223,13 +247,13 @@ func (s *Service) Create(ctx context.Context, userID, ip, name string, ttlDays i
 	var t Token
 	err = database.InTx(ctx, s.db, func(tx pgx.Tx) error {
 		if err := tx.QueryRow(ctx, `
-			INSERT INTO api_tokens (user_id, name, prefix, token_hash, expires_at, scopes) VALUES ($1, $2, $3, $4, $5, $6)
-			RETURNING id::text, name, prefix, scopes, expires_at, created_at`,
-			userID, name, prefix, hashToken(raw), exp, granted).Scan(&t.ID, &t.Name, &t.Prefix, &t.Scopes, &t.ExpiresAt, &t.CreatedAt); err != nil {
+			INSERT INTO api_tokens (user_id, name, prefix, token_hash, expires_at, scopes, provider) VALUES ($1, $2, $3, $4, $5, $6, $7)
+			RETURNING id::text, name, prefix, scopes, expires_at, created_at, provider`,
+			userID, name, prefix, hashToken(raw), exp, granted, provider).Scan(&t.ID, &t.Name, &t.Prefix, &t.Scopes, &t.ExpiresAt, &t.CreatedAt, &t.Provider); err != nil {
 			return err
 		}
 		return audit.Record(ctx, tx, audit.Entry{ActorID: userID, Action: "ai.token.create", TargetType: "api_token", TargetID: t.ID, IP: ip,
-			Metadata: map[string]any{"prefix": prefix, "expiresInDays": ttlDays, "scopes": granted}})
+			Metadata: map[string]any{"prefix": prefix, "expiresInDays": ttlDays, "scopes": granted, "provider": provider}})
 	})
 	if err != nil {
 		return "", Token{}, err
@@ -241,7 +265,7 @@ func (s *Service) Create(ctx context.Context, userID, ip, name string, ttlDays i
 func (s *Service) List(ctx context.Context, userID string, all bool) ([]Token, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT t.id::text, t.name, t.prefix, t.scopes, t.expires_at, t.created_at, t.last_used_at, t.revoked_at IS NOT NULL,
-		       t.expires_at <= now(), u.name, u.id::text
+		       t.expires_at <= now(), u.name, u.id::text, t.provider
 		  FROM api_tokens t JOIN users u ON u.id = t.user_id
 		 WHERE ($2::boolean OR t.user_id = $1)
 		 ORDER BY t.created_at DESC LIMIT 200`, userID, all)
@@ -252,7 +276,7 @@ func (s *Service) List(ctx context.Context, userID string, all bool) ([]Token, e
 	out := []Token{}
 	for rows.Next() {
 		var t Token
-		if err := rows.Scan(&t.ID, &t.Name, &t.Prefix, &t.Scopes, &t.ExpiresAt, &t.CreatedAt, &t.LastUsedAt, &t.Revoked, &t.Expired, &t.Owner, &t.OwnerID); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.Prefix, &t.Scopes, &t.ExpiresAt, &t.CreatedAt, &t.LastUsedAt, &t.Revoked, &t.Expired, &t.Owner, &t.OwnerID, &t.Provider); err != nil {
 			return nil, err
 		}
 		if !all {
@@ -298,13 +322,13 @@ func (s *Service) Authenticate(ctx context.Context, raw string) (Principal, erro
 	)
 	err := s.db.QueryRow(ctx, `
 		SELECT t.id::text, t.prefix, t.scopes, t.token_hash, t.last_used_at, u.id::text, u.name, u.role = 'admin', u.role = 'manager',
-		       t.kind, t.grant_id::text, c.name
+		       t.kind, t.grant_id::text, c.name, t.provider
 		  FROM api_tokens t JOIN users u ON u.id = t.user_id
 		  LEFT JOIN oauth_grants g ON g.id = t.grant_id AND g.revoked_at IS NULL
 		  LEFT JOIN oauth_clients c ON c.client_id = g.client_id
 		 WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND t.expires_at > now() AND u.is_active
 		   AND (t.kind = 'personal' OR g.id IS NOT NULL)`, hashToken(raw)).
-		Scan(&p.TokenID, &p.Prefix, &p.Scopes, &hash, &last, &p.UserID, &p.Name, &p.Admin, &p.Manager, &kind, &grantID, &client)
+		Scan(&p.TokenID, &p.Prefix, &p.Scopes, &hash, &last, &p.UserID, &p.Name, &p.Admin, &p.Manager, &kind, &grantID, &client, &p.Provider)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Principal{}, ErrBadToken
 	}
@@ -340,7 +364,14 @@ func (s *Service) Authenticate(ctx context.Context, raw string) (Principal, erro
 		if sc == ScopeSend && st.AllowSend && st.AllowWrite {
 			p.Send = true
 		}
+		if sc == ScopeAutomate && st.AllowAutomation && kind == "personal" {
+			p.Automate = true
+		}
 	}
+	if p.Provider == "" && p.OAuth {
+		p.Provider = providerOf(p.ClientName)
+	}
+	p.App = appName(p.Provider, p.ClientName)
 	if last == nil || time.Since(*last) > time.Minute {
 		_, _ = s.db.Exec(ctx, `UPDATE api_tokens SET last_used_at = now() WHERE id = $1`, p.TokenID)
 	}
@@ -410,4 +441,42 @@ func MaskerFor(st Settings, p Principal) Masker {
 		return Masker{Documents: true, Phones: true, Emails: true, Addresses: true, Strict: st.StrictPrivacy}
 	}
 	return Masker{Documents: st.MaskDocuments, Phones: st.MaskPhones, Emails: st.MaskEmails, Addresses: st.MaskDocuments, Strict: st.StrictPrivacy}
+}
+
+// validProvider: provedores de IA reconhecidos (cada um tem a sua logo na tela).
+func validProvider(p string) bool {
+	switch p {
+	case "", "claude", "chatgpt", "grok", "gemini", "other":
+		return true
+	}
+	return false
+}
+
+// providerOf deduz o provedor pelo nome do aplicativo OAuth ("Claude", "ChatGPT"...).
+func providerOf(client string) string {
+	c := strings.ToLower(client)
+	switch {
+	case strings.Contains(c, "claude") || strings.Contains(c, "anthropic"):
+		return "claude"
+	case strings.Contains(c, "chatgpt") || strings.Contains(c, "openai"):
+		return "chatgpt"
+	case strings.Contains(c, "grok") || strings.Contains(c, "xai") || strings.Contains(c, "x.ai"):
+		return "grok"
+	case strings.Contains(c, "gemini") || strings.Contains(c, "google"):
+		return "gemini"
+	}
+	return "other"
+}
+
+var providerNames = map[string]string{"claude": "Claude", "chatgpt": "ChatGPT", "grok": "Grok", "gemini": "Gemini", "other": "IA"}
+
+// appName: o nome mostrado ao lado da logo.
+func appName(provider, client string) string {
+	if strings.TrimSpace(client) != "" {
+		return client
+	}
+	if n, ok := providerNames[provider]; ok {
+		return n
+	}
+	return "IA"
 }
