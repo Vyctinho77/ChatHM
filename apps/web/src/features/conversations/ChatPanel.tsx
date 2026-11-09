@@ -1,6 +1,6 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowDown, ArrowLeft, CheckCheck, ChevronDown, ChevronUp, CircleCheck, Clock3, EllipsisVertical, PanelRight, Search, UserRoundPlus, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, CheckCheck, ChevronDown, ChevronUp, CircleCheck, Clock3, EllipsisVertical, Search, UserRoundPlus, X } from "lucide-react";
 import { useSearchParams } from "react-router";
 import { fold, matches } from "@/lib/search";
 import { ViewableAvatar } from "@/components/AvatarViewer";
@@ -341,6 +341,15 @@ export function ChatPanel({
               <CircleCheck className="size-5" />
             </IconButton>
           )}
+          {canClose && (
+            <IconButton
+              label={c.snoozedUntil ? "Alterar adiamento" : "Adiar atendimento"}
+              active={!!c.snoozedUntil || snoozeOpen}
+              onClick={() => setSnoozeOpen(true)}
+            >
+              <Clock3 className="size-5" />
+            </IconButton>
+          )}
           <IconButton
             label="Pesquisar na conversa"
             active={search !== null}
@@ -348,15 +357,6 @@ export function ChatPanel({
           >
             <Search className="size-5" />
           </IconButton>
-          <span className="hidden md:contents">
-            <IconButton
-              label={contactOpen ? "Fechar dados do contato" : "Dados do contato"}
-              active={contactOpen}
-              onClick={onToggleContact}
-            >
-              <PanelRight className="size-5" />
-            </IconButton>
-          </span>
           <Menu
             trigger={({ toggle }) => (
               <IconButton label="Mais opções" onClick={toggle}>
@@ -366,10 +366,6 @@ export function ChatPanel({
           >
             {(close) => (
               <>
-                <MenuItem onClick={() => (onToggleContact(), close())}>Dados do contato</MenuItem>
-                <MenuItem icon={<Clock3 />} disabled={!canClose} onClick={() => { setSnoozeOpen(true); close(); }}>
-                  {c.snoozedUntil ? "Alterar adiamento" : "Adiar atendimento"}
-                </MenuItem>
                 <MenuItem
                   icon={<UserRoundPlus />}
                   disabled={closed}
