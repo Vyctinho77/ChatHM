@@ -29,7 +29,9 @@ const (
 	ScopeWrite  = "write"
 	ScopeSend   = "send"
 	// ScopeAutomate: iniciar avisos sob a autonomia do assunto. Exige autorização explícita do usuário.
-	ScopeAutomate    = "automate"
+	ScopeAutomate = "automate"
+	// ScopeAttend: a IA envia e responde como um atendente (sem mensagens prontas). Só administrador cria; token pessoal.
+	ScopeAttend      = "attend"
 	maxTokensPerUser = 10
 	defaultTTLDays   = 90
 	maxTTLDays       = 365
@@ -59,6 +61,8 @@ type Settings struct {
 	OAuthRedirectHosts []string `json:"oauthRedirectHosts"`
 	// AllowAutomation libera pedidos com escopo "automate", sob as regras e autonomia de cada assunto.
 	AllowAutomation bool `json:"allowAutomation"`
+	// AllowAttend libera tokens "attend": a IA conversa e envia como um atendente.
+	AllowAttend bool `json:"allowAttend"`
 }
 
 // Token é um token pessoal (nunca inclui o segredo).
@@ -95,6 +99,8 @@ type Principal struct {
 	ClientName string
 	// Automate: a conexão recebeu "automate" explicitamente e o administrador liberou envios automáticos.
 	Automate bool
+	// Attend: a conexão tem o escopo "attend" E o administrador liberou o atendente autônomo (só token pessoal).
+	Attend bool
 	// Provider e App identificam a IA (a tela mostra a logo do provedor nas mensagens automáticas).
 	Provider string
 	App      string
@@ -121,13 +127,13 @@ func NewService(db *pgxpool.Pool) *Service {
 
 // --- configuração ----------------------------------------------------------
 
-const selectSettings = `SELECT enabled, mask_documents, mask_phones, allow_write, allow_send, mask_emails, strict_privacy, allow_oauth, oauth_redirect_hosts, allow_automation FROM ai_settings WHERE id`
+const selectSettings = `SELECT enabled, mask_documents, mask_phones, allow_write, allow_send, mask_emails, strict_privacy, allow_oauth, oauth_redirect_hosts, allow_automation, allow_attend FROM ai_settings WHERE id`
 
 func (s *Service) Settings(ctx context.Context) (Settings, error) {
 	var st Settings
 	scan := func() error {
 		return s.db.QueryRow(ctx, selectSettings).
-			Scan(&st.Enabled, &st.MaskDocuments, &st.MaskPhones, &st.AllowWrite, &st.AllowSend, &st.MaskEmails, &st.StrictPrivacy, &st.AllowOAuth, &st.OAuthRedirectHosts, &st.AllowAutomation)
+			Scan(&st.Enabled, &st.MaskDocuments, &st.MaskPhones, &st.AllowWrite, &st.AllowSend, &st.MaskEmails, &st.StrictPrivacy, &st.AllowOAuth, &st.OAuthRedirectHosts, &st.AllowAutomation, &st.AllowAttend)
 	}
 	err := scan()
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -152,8 +158,8 @@ func (s *Service) SetSettings(ctx context.Context, actorID, ip string, in Settin
 	}
 	err = database.InTx(ctx, s.db, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `UPDATE ai_settings SET enabled = $1, mask_documents = $2, mask_phones = $3,
-			allow_write = $5, allow_send = $6, mask_emails = $7, strict_privacy = $8, allow_oauth = $9, oauth_redirect_hosts = $10, allow_automation = $11,
-			updated_at = now(), updated_by = $4 WHERE id`, in.Enabled, in.MaskDocuments, in.MaskPhones, actorID, in.AllowWrite, in.AllowSend, in.MaskEmails, in.StrictPrivacy, in.AllowOAuth, hosts, in.AllowAutomation); err != nil {
+			allow_write = $5, allow_send = $6, mask_emails = $7, strict_privacy = $8, allow_oauth = $9, oauth_redirect_hosts = $10, allow_automation = $11, allow_attend = $12,
+			updated_at = now(), updated_by = $4 WHERE id`, in.Enabled, in.MaskDocuments, in.MaskPhones, actorID, in.AllowWrite, in.AllowSend, in.MaskEmails, in.StrictPrivacy, in.AllowOAuth, hosts, in.AllowAutomation, in.AllowAttend); err != nil {
 			return err
 		}
 		return audit.Record(ctx, tx, audit.Entry{ActorID: actorID, Action: "ai.settings.update", TargetType: "ai_settings", IP: ip,
@@ -203,6 +209,12 @@ func (s *Service) Create(ctx context.Context, userID, ip, name string, ttlDays i
 			if !contains(granted, ScopeAutomate) {
 				granted = append(granted, ScopeAutomate)
 			}
+		case ScopeAttend:
+			for _, x := range []string{ScopeWrite, ScopeSend, ScopeAttend} {
+				if !contains(granted, x) {
+					granted = append(granted, x)
+				}
+			}
 		default:
 			return "", Token{}, httpx.FieldErrors{"scopes": "Escopo inválido."}
 		}
@@ -211,7 +223,7 @@ func (s *Service) Create(ctx context.Context, userID, ip, name string, ttlDays i
 	if !validProvider(provider) {
 		return "", Token{}, httpx.FieldErrors{"provider": "Escolha o provedor da IA: Claude, ChatGPT, Grok, Gemini ou Outro."}
 	}
-	if contains(granted, ScopeAutomate) && provider == "" {
+	if (contains(granted, ScopeAutomate) || contains(granted, ScopeAttend)) && provider == "" {
 		return "", Token{}, httpx.FieldErrors{"provider": "Para envios automáticos, informe o provedor da IA (a logo dele aparece nas mensagens)."}
 	}
 	st, err := s.Settings(ctx)
@@ -226,6 +238,9 @@ func (s *Service) Create(ctx context.Context, userID, ip, name string, ttlDays i
 	}
 	if contains(granted, ScopeAutomate) && !st.AllowAutomation {
 		return "", Token{}, httpx.FieldErrors{"scopes": "O administrador ainda não liberou envios automáticos pela IA (aba MCP)."}
+	}
+	if contains(granted, ScopeAttend) && !st.AllowAttend {
+		return "", Token{}, httpx.FieldErrors{"scopes": "O administrador ainda não liberou o atendente autônomo (aba MCP)."}
 	}
 	if n := len(granted); n > 1 && !st.AllowWrite && !(n == 2 && contains(granted, ScopeAutomate)) {
 		return "", Token{}, httpx.FieldErrors{"scopes": "O administrador ainda não liberou alterações pela IA (aba MCP)."}
@@ -363,6 +378,9 @@ func (s *Service) Authenticate(ctx context.Context, raw string) (Principal, erro
 		}
 		if sc == ScopeSend && st.AllowSend && st.AllowWrite {
 			p.Send = true
+		}
+		if sc == ScopeAttend && st.AllowAttend && st.AllowWrite && st.AllowSend && kind == "personal" {
+			p.Attend = true
 		}
 		if sc == ScopeAutomate && st.AllowAutomation && st.AllowWrite && st.AllowSend {
 			p.Automate = true

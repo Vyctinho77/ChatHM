@@ -37,6 +37,9 @@ type AutomatedSend struct {
 	Provider  string           // claude | chatgpt | grok | gemini | other: aparece como logo na conversa
 	App       string           // nome do aplicativo de IA
 	SendID    string           // id do envio na fila (rastreio)
+	// Attend: atendente autônomo (a IA age como um atendente). Aceita conversa em andamento, de outra pessoa ou adiada;
+	// continua recusando grupos e clientes que pediram para parar. A mensagem sai com o rótulo "atendimento por IA".
+	Attend bool
 }
 
 // SendAutomated envia uma mensagem automática. Diferente de Send, ela:
@@ -70,6 +73,9 @@ func (s *Service) SendAutomated(ctx context.Context, in AutomatedSend) (Message,
 	}
 
 	payload := map[string]any{"automated": true, "aiProvider": in.Provider, "aiApp": in.App}
+	if in.Attend {
+		payload["aiMode"] = "attend"
+	}
 	if in.SendID != "" {
 		payload["automationSendId"] = in.SendID
 	}
@@ -114,10 +120,10 @@ func (s *Service) SendAutomated(ctx context.Context, in AutomatedSend) (Message,
 			SELECT id, snoozed_until, assignee_id::text FROM conversations WHERE contact_id = $1 AND status <> 'closed' FOR UPDATE`, in.ContactID).Scan(&convID, &snoozed, &assignee)
 		switch {
 		case err == nil:
-			if assignee != nil {
+			if assignee != nil && !in.Attend {
 				return &ErrAutomatedBlocked{Reason: "o contato está em atendimento pela equipe"}
 			}
-			if snoozed != nil {
+			if snoozed != nil && !in.Attend {
 				return &ErrAutomatedBlocked{Reason: "a conversa está adiada"}
 			}
 		case errors.Is(err, pgx.ErrNoRows):

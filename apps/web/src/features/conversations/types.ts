@@ -38,6 +38,7 @@ type Base = {
   authorName?: string; // atendente que enviou (ou, em grupos, quem escreveu)
   automated?: boolean; // enviada pela IA (envio automático aprovado)
   aiProvider?: string; // claude | chatgpt | grok | gemini | other
+  aiMode?: string; // attend: a IA atendeu como um atendente
   aiApp?: string; // nome do aplicativo de IA
   group?: boolean; // mensagem de grupo: mostra o autor também nas recebidas
   quoted?: Quoted; // esta mensagem responde a outra

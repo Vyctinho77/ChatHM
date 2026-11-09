@@ -179,3 +179,24 @@ OAuth não invalida pedidos da mesma concessão ainda autorizada.
 manter o servidor e o WhatsApp conectados. Isto não cria um agendador de execuções do ChatGPT
 ou Claude: novos pedidos ainda dependem de uma execução do assistente pelo MCP. O ChatHM
 processa de forma independente os pedidos já recebidos; não executa um modelo de IA próprio.
+
+## 14. Atendente autônomo (escopo `attend`)
+
+Pedido do escritório: a IA agir **como um atendente comum**, sem categorias, sem aprovação e sem texto pronto. É um modo separado dos envios automáticos.
+
+**Como liga:** (1) administrador ativa *Permitir atendente autônomo* em MCP → Permissões (desligado por padrão; exige pedidos de envio ligados);
+(2) só **administrador** cria o token, escolhendo "Atendente autônomo" e o provedor da IA (a logo aparece na mensagem). Só token pessoal, nunca OAuth.
+
+**O que a IA faz:** a ferramenta `send_as_attendant` envia **na hora** (texto livre de até 1500 caracteres, PDF opcional da biblioteca), respondendo a uma conversa
+(`conversation_id`) ou escrevendo a um contato (`contact_id`, abre o atendimento sozinho). Pode responder a quem acabou de escrever, entrar em conversa
+com responsável ou adiada, usar links, números e formatação. A IA só alcança contatos que a pessoa dona do token enxerga.
+
+**O que continua bloqueado, de propósito:** cliente que respondeu PARAR (ou foi marcado); grupos; a chave mestra e o *Pausar tudo*;
+teto de velocidade (40 mensagens em 10 minutos e 600 por dia) para o número não ser bloqueado pelo WhatsApp;
+dados sigilosos (senhas, códigos, chave PIX, cartão) já nunca chegam à IA pelo mascaramento do MCP.
+
+**Rastro:** a mensagem leva `automated`, `aiMode=attend`, `aiProvider` e `aiApp` (a tela mostra a logo e "atendimento por IA"), a assinatura "Assistente do escritório" vai em
+negrito no WhatsApp, e cada envio entra na auditoria (`automation.attend.send`) e no registro de uso do MCP. Não assume a conversa nem muda responsável.
+
+**Limites a saber:** o MCP não avisa a IA quando um cliente escreve; ela precisa consultar as conversas (por exemplo, rodando de tempos em tempos).
+Quem usa um número pelo protocolo não oficial do WhatsApp assume o risco de bloqueio; o limite de velocidade reduz, não elimina.
