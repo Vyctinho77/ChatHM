@@ -22,7 +22,6 @@ import { filterConversations, unreadByTab, type ConversationFilter as Filter } f
 import { reminderColors, useReminders, type Reminder } from "./reminders";
 import { ReminderEditor } from "./ReminderEditor";
 import { useTyping } from "./typing";
-import { AssigneeChip } from "./AssigneeChip";
 import { TypingIndicator } from "./TypingIndicator";
 import type { ContactRecord, Conversation, MessageHit, SegmentKey, SegmentOption } from "./types";
 
@@ -194,11 +193,7 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
             )}
           >
             {c.label}
-            {c.key !== "snoozed" && tabUnread[c.key] > 0 && (
-              <span title={`${tabUnread[c.key]} com mensagens novas`} className="min-w-4 rounded-full bg-unread px-1 text-center text-[10px] font-semibold leading-4 tabular-nums text-accent-fg">
-                {tabUnread[c.key] > 99 ? "99+" : tabUnread[c.key]}
-              </span>
-            )}
+            {c.key === "mine" && tabUnread.mine > 0 && <span title={`${tabUnread.mine} com mensagens novas`} className="text-[10px] tabular-nums">{tabUnread.mine > 99 ? "99+" : tabUnread.mine}</span>}
             {c.key === "snoozed" && all.some((x) => x.snoozedUntil) && <span className="text-[10px] tabular-nums">{all.filter((x) => x.snoozedUntil).length}</span>}
           </button>
         ))}
@@ -326,7 +321,6 @@ function ConversationRow({
           <div className="flex items-center gap-2">
             <div className="flex min-w-0 flex-1 items-center gap-1.5">
               <span className="truncate text-[13.5px] font-medium">{c.contact.name}</span>
-              {c.assignee && c.status !== "closed" && <AssigneeChip name={c.assignee.name} mine={c.assignee.id === myId} />}
               {c.tags[0] && <span title={c.tags[0]} className="max-w-[45%] shrink-0 truncate rounded-full border border-line px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wide text-fg/75">{c.tags[0]}</span>}
               {c.tags.length > 1 && <span title={c.tags.slice(1).join(", ")} aria-label={`Outras etiquetas: ${c.tags.slice(1).join(", ")}`} className="shrink-0 text-[10px] font-medium text-muted">+{c.tags.length - 1}</span>}
             </div>
@@ -341,11 +335,21 @@ function ConversationRow({
             <span className="flex min-w-0 items-center gap-1">
               {typing ? <TypingIndicator /> : last ? <MessagePreview m={last} /> : <span className="italic">Nova conversa — escreva a primeira mensagem</span>}
             </span>
+            {/* Embaixo da hora: quem está atendendo (nomes grandes de cliente não escondem o responsável). */}
+            {c.assignee && c.status !== "closed" && (
+              <span
+                className={cn("ml-auto max-w-[42%] shrink-0 truncate text-[11px]", c.assignee.id === myId ? "font-medium text-brand-ink" : "text-muted")}
+                title={c.assignee.id === myId ? "Você está atendendo" : `Atendendo: ${c.assignee.name}`}
+              >
+                <span className="sr-only">Atendendo: </span>
+                {c.assignee.id === myId ? "Você" : c.assignee.name.trim().split(/\s+/)[0]}
+              </span>
+            )}
             <AnimatePresence initial={false}>
               {unread && (
                 <motion.span
                   key="badge"
-                  className="ml-auto"
+                  className={cn(!c.assignee || c.status === "closed" ? "ml-auto" : "")}
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
                   exit={{ scale: 0 }}

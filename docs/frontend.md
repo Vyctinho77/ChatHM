@@ -101,5 +101,5 @@ O build normal não inclui esse código (a condição `import.meta.env.VITE_DEMO
   chat ou em pasta nunca abre o arquivo no navegador; pasta e arquivo vazio mostram aviso.
 - **Digitando**: além do cabeçalho e da lista, uma bolha com três pontos aparece no fim das mensagens (e a conversa rola até ela
   se a pessoa já está no fim).
-- **Quem atende**: um selo com o primeiro nome do responsável fica ao lado do nome do cliente na lista e no cabeçalho (“Você” para
+- **Quem atende**: o primeiro nome do responsável aparece embaixo da hora na lista de conversas e, dentro da conversa, em um selo ao lado do nome do cliente (“Você” para
   o próprio usuário). A etiqueta da fila geral só diz “Não atribuídos” enquanto ninguém atende; com responsável, diz “Fila geral”.
