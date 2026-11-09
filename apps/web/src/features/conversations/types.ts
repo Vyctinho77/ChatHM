@@ -83,6 +83,7 @@ export type Conversation = {
   classification?: "none" | "keyword" | "conflict";
   status: ConversationStatus;
   snoozedUntil?: string;
+  participants?: { id: string; name: string }[]; // pessoas incluídas no atendimento (veem e respondem sem assumir)
   assignee?: { id: string; name: string };
   unreadCount: number;
   tags: string[];

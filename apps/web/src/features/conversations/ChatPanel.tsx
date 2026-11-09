@@ -1,6 +1,6 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowDown, ArrowLeft, CheckCheck, ChevronDown, ChevronUp, CircleCheck, Clock3, EllipsisVertical, Search, UserRoundPlus, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, CheckCheck, ChevronDown, ChevronUp, CircleCheck, Clock3, EllipsisVertical, Search, UserRoundPlus, UsersRound, X } from "lucide-react";
 import { useSearchParams } from "react-router";
 import { fold, matches } from "@/lib/search";
 import { ViewableAvatar } from "@/components/AvatarViewer";
@@ -194,13 +194,16 @@ export function ChatPanel({
   const mine = c.assignee?.id === actions.me.id;
   const closed = c.status === "closed";
   // Outra pessoa já assumiu: só ela responde (o servidor também garante isso).
-  const lockedByOther = !!c.assignee && !mine && !closed;
+  const participating = !!c.participants?.some((p) => p.id === actions.me.id); // incluída no atendimento: responde sem assumir
+  const lockedByOther = !!c.assignee && !mine && !participating && !closed;
   // O responsável encerra; administradores e gestores também encerram qualquer atendimento que enxergam.
   const canClose = capabilities.close && !closed && (mine || isAdmin);
   const showAttendanceStatus = !lockedByOther && !closed && !c.snoozedUntil;
 
   const canTransfer = !closed && (mine || isAdmin || !c.assignee);
   const [transferAt, setTransferAt] = useState<{ x: number; y: number } | null>(null);
+  const [participantsAt, setParticipantsAt] = useState<{ x: number; y: number } | null>(null);
+  const canManageParticipants = !closed && (mine || participating || isAdmin);
   // Por que não dá para enviar arquivos agora (ou null): o mesmo que o campo de mensagem avisa.
   const dropBlocked = !capabilities.send
     ? (capabilities.sendUnavailableReason ?? "O envio está indisponível.")
@@ -314,6 +317,11 @@ export function ChatPanel({
                 {segmentLabel(c)}
               </span>
               {c.assignee && !closed && <AssigneeChip name={c.assignee.name} mine={mine} className="max-w-[9rem]" />}
+              {!!c.participants?.length && !closed && (
+                <span title={`Também no atendimento: ${c.participants.map((p) => p.name).join(", ")}`} className="max-w-[10rem] shrink-0 truncate text-[11px] text-muted">
+                  + {c.participants.map((p) => (p.id === actions.me.id ? "você" : p.name.trim().split(/\s+/)[0])).join(", ")}
+                </span>
+              )}
             </span>
             {typing && <TypingIndicator announce className="text-[11.5px]" />}
           </span>
@@ -334,6 +342,18 @@ export function ChatPanel({
               }}
             >
               <UserRoundPlus className="size-5" />
+            </IconButton>
+          )}
+          {!closed && (
+            <IconButton
+              label="Participantes do atendimento"
+              active={!!c.participants?.length}
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                setParticipantsAt({ x: r.right - 256, y: r.bottom + 4 });
+              }}
+            >
+              <UsersRound className="size-5" />
             </IconButton>
           )}
           {canClose && (
@@ -375,6 +395,16 @@ export function ChatPanel({
                   }}
                 >
                   Transferir…
+                </MenuItem>
+                <MenuItem
+                  icon={<UsersRound />}
+                  disabled={closed}
+                  onClick={() => {
+                    close();
+                    setParticipantsAt({ x: window.innerWidth - 280, y: 56 });
+                  }}
+                >
+                  Incluir pessoa no atendimento…
                 </MenuItem>
                 <MenuItem
                   icon={<CircleCheck />}
@@ -630,6 +660,18 @@ export function ChatPanel({
         <Suspense fallback={null}>
           <PdfViewer pdf={openPdf} onClose={closePdf} />
         </Suspense>
+      )}
+      {participantsAt && (
+        <TransferMenu
+          variant="participants"
+          conversation={c}
+          x={participantsAt.x}
+          y={participantsAt.y}
+          myId={actions.me.id}
+          canTransfer={canManageParticipants}
+          onPick={(p) => actions.toggleParticipant(c.id, p)}
+          onClose={() => setParticipantsAt(null)}
+        />
       )}
       {transferAt && (
         <TransferMenu

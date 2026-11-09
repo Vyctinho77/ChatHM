@@ -53,6 +53,8 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Post("/conversations/{id}/snooze", h.snooze)
 	r.Post("/conversations/{id}/resume", h.resume)
 	r.Post("/conversations/{id}/transfer", h.transfer)
+	r.Post("/conversations/{id}/participants", h.addParticipant)
+	r.Delete("/conversations/{id}/participants/{userId}", h.removeParticipant)
 	r.Put("/conversations/{id}/tags/{tagId}", h.addTag)
 	r.Delete("/conversations/{id}/tags/{tagId}", h.removeTag)
 	r.Patch("/contacts/{id}", h.updateContact)
@@ -500,4 +502,35 @@ func (h *Handler) forwardMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"results": res})
+}
+
+func (h *Handler) participantError(w http.ResponseWriter, r *http.Request, err error) {
+	var taken *TakenError
+	if errors.As(err, &taken) {
+		httpx.Error(w, http.StatusConflict, "conversation_taken", "Só o responsável, quem já participa ou um administrador/gestor pode mudar os participantes.")
+		return
+	}
+	writeError(w, r, err)
+}
+
+func (h *Handler) addParticipant(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		UserID string `json:"userId"`
+	}
+	if !httpx.Decode(w, r, &in) {
+		return
+	}
+	if err := h.svc.AddParticipant(r.Context(), viewer(r), chi.URLParam(r, "id"), in.UserID); err != nil {
+		h.participantError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
+func (h *Handler) removeParticipant(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.RemoveParticipant(r.Context(), viewer(r), chi.URLParam(r, "id"), chi.URLParam(r, "userId")); err != nil {
+		h.participantError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
 }

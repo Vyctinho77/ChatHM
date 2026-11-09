@@ -333,7 +333,7 @@ const ConversationRow = memo(function ConversationRow({
                 title={c.assignee.id === myId ? "Você está atendendo" : `Atendendo: ${c.assignee.name}`}
               >
                 <span className="sr-only">Atendendo: </span>
-                {c.assignee.id === myId ? "Você" : c.assignee.name.trim().split(/\s+/)[0]}
+                {c.assignee.id === myId ? "Você" : c.participants?.some((p) => p.id === myId) ? `${c.assignee.name.trim().split(/\s+/)[0]} + você` : c.assignee.name.trim().split(/\s+/)[0]}
               </span>
             )}
             <AnimatePresence initial={false}>

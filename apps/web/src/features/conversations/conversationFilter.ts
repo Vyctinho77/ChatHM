@@ -7,7 +7,8 @@ export function filterConversations(conversations: Conversation[], filter: Conve
     if (c.status === "closed") return false;
     // Only the server clears the deadline, so a pending return never appears in both tabs.
     if (filter === "snoozed" ? !c.snoozedUntil : !!c.snoozedUntil) return false;
-    if (filter === "mine" && c.assignee?.id !== myId) return false;
+    // "Minhas": as que eu atendo e as em que fui incluída como participante.
+    if (filter === "mine" && c.assignee?.id !== myId && !c.participants?.some((p) => p.id === myId)) return false;
     // "Não atribuídos" = fila geral e sem responsável: atendimento iniciado (com responsável) sai desta aba.
     if (filter === "general" && (c.segment !== "geral" || c.assignee)) return false;
     if (filter === "groups" && c.contact.kind !== "group") return false;

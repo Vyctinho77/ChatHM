@@ -131,3 +131,12 @@ describe("rótulo da fila geral", () => {
     expect(segmentLabel({ segment: "folha", segmentName: "Folha de pagamento", assignee: { id: "ana" } })).toBe("Folha de pagamento");
   });
 });
+
+describe("participants", () => {
+  it("shows a conversation I was included in under Mine, but not under Unassigned", () => {
+    const other = conversation("c1", { assignee: { id: "ana", name: "Ana" }, participants: [{ id: "me", name: "Eu" }] });
+    const notMine = conversation("c2", { assignee: { id: "ana", name: "Ana" } });
+    expect(filterConversations([other, notMine], "mine", "me", null).map((c) => c.id)).toEqual(["c1"]);
+    expect(filterConversations([other], "general", "me", null)).toEqual([]);
+  });
+});
