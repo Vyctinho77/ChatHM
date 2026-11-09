@@ -191,10 +191,12 @@ type AuthorizeParams struct {
 	ClientID, RedirectURI, CodeChallenge, CodeChallengeMethod, State, Scope, Resource, ExpectedResource string
 }
 
-var levelOrder = []string{ScopeRead, ScopeWrite, ScopeSend}
+var levelOrder = []string{ScopeRead, ScopeWrite, ScopeSend, ScopeAutomate}
 
 func levelScopes(level string) []string {
 	switch level {
+	case ScopeAutomate:
+		return []string{ScopeRead, ScopeWrite, ScopeSend, ScopeAutomate}
 	case ScopeSend:
 		return []string{ScopeRead, ScopeWrite, ScopeSend}
 	case ScopeWrite:
@@ -237,6 +239,9 @@ func (s *Service) Preview(ctx context.Context, p AuthorizeParams) (Client, []str
 		max = 1
 		if st.AllowSend {
 			max = 2
+			if st.AllowAutomation {
+				max = 3
+			}
 		}
 	}
 	if sc := strings.Fields(p.Scope); len(sc) > 0 {

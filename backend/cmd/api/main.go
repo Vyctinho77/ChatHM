@@ -65,7 +65,7 @@ func run() error {
 	}
 	go svcs.Auth.RunJanitor(ctx, time.Hour)
 	go svcs.Conversations.RunSnoozeWorker(ctx)
-	go svcs.Automation.Run(ctx) // fila de envios automáticos da IA (já aprovados), no ritmo do escritório
+	go svcs.Automation.Run(ctx) // fila persistente: aprovação humana ou autonomia do assunto, no ritmo do escritório
 	if err := svcs.WhatsApp.Start(ctx); err != nil {
 		return err
 	}

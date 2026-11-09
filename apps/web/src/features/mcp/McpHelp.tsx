@@ -70,7 +70,7 @@ export function McpHelp({ userId }: { userId: string }) {
           { title: "Ative o acesso por IA", text: <>Ligue o {sectionLink("acesso por IA", "mcp-access")}. Se você for atendente, peça a ativação ao administrador.</> },
           { title: "Defina o que o assistente pode acessar", text: <>Revise {sectionLink("Permissões", "mcp-permissions")} e {sectionLink("Privacidade", "mcp-privacy")}. Você pode começar com somente leitura.</> },
           { title: "Escolha a forma de conexão", text: <>Por token: crie um acesso em {sectionLink("Tokens de acesso", "mcp-tokens")} e copie-o para seu assistente. Por login: habilite {sectionLink("Conexão por login", "mcp-login")} e autorize o aplicativo no ChatHM.</> },
-          { title: "Teste no seu assistente", text: "Peça um resumo de uma conversa ou uma consulta à fila. Mensagens para clientes continuam dependendo da sua aprovação." },
+          { title: "Teste no seu assistente", text: "Peça um resumo de uma conversa ou uma consulta à fila. Avisos podem enviar sem aprovação nos assuntos autorizados em Envios automáticos; respostas sugeridas continuam com revisão." },
         ].map((step, index) => <li key={step.title} className="flex items-start gap-3">
           <span aria-hidden="true" className="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand/15 text-xs font-semibold text-brand-ink">{index + 1}</span>
           <div><h3 className="text-[13px] font-medium">{step.title}</h3><p className="mt-1 text-xs leading-relaxed text-muted">{step.text}</p></div>

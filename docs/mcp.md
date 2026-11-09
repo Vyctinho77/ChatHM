@@ -20,15 +20,16 @@ Ids, nomes, texto das mensagens (já filtrado), horários, filas e etiquetas con
 - Liga em *"Permitir conexão por login (ChatGPT, claude.ai)"* (`ai_settings.allow_oauth`) com lista de domínios de retorno (`oauth_redirect_hosts`; padrão: chatgpt.com, platform.openai.com, chat.openai.com, claude.ai, claude.com).
 - Endpoints: `/.well-known/oauth-protected-resource`, `/.well-known/oauth-authorization-server`, `POST /oauth/register` (RFC 7591, clientes públicos), `GET /oauth/authorize` (leva à tela `/oauth/consent`, que exige sessão + MFA), `POST /oauth/token`, `POST /oauth/revoke`.
 - PKCE S256 obrigatório; `resource` (RFC 8707) conferido; código vale 60 s e é de uso único (reuso revoga a concessão); acesso 1 h; renovação 30 dias com rotação e detecção de reuso.
-- A pessoa escolhe o nível (leitura / alterações / pedir envios), limitado pelo administrador. Em *Aplicativos conectados por login* ela desconecta quando quiser (derruba os tokens na hora). Reconvite e redefinição de MFA revogam as concessões.
+- A pessoa escolhe o nível (leitura / alterações / pedir envios / avisos automáticos), limitado pelo administrador. Automação exige consentimento explícito novo; conexões antigas não ganham permissões. Em *Aplicativos conectados por login* ela desconecta quando quiser (derruba os tokens e bloqueia seus pedidos autônomos na fila). Reconvite e redefinição de MFA revogam as concessões.
 - Migração `00020_oauth.sql` (clientes, concessões, códigos, renovações; RLS ligado).
 
 ### Etapa 4: como ficou
 
-- **A IA nunca envia.** Duas ferramentas deixam uma **sugestão** (`ai_suggestions`) para a pessoa do token aprovar:
+- **Respostas precisam de aprovação.** Duas ferramentas deixam uma **sugestão** (`ai_suggestions`) para a pessoa do token aprovar:
   `draft_reply(conversation_id, text, reply_to?)` (escopo de escrita) e `send_message(conversation_id, text, reply_to?)` (escopo **`send`**, que o administrador
   libera em *"Permitir que a IA peça envios (com aprovação)"*, `ai_settings.allow_send`, exige as alterações liberadas). As duas respondem
   `{status: "aguardando_aprovacao"}` e nada sai ao cliente.
+  Avisos iniciados pela IA usam outro caminho: `send_automatic_message`, com escopo `automate` e autonomia por assunto. Veja [Envios automáticos](mcp-automacao.md#14-autonomia-sem-aprovação-implementada).
 - **Na conversa**, um cartão acima do campo de mensagem (aparece sozinho, por tempo real, só para a pessoa do token) mostra o texto e três ações:
   **Enviar** (aprova: sai pelo caminho normal do app, como a pessoa, com assinatura, regras de fila, citação se houver `reply_to`), **Editar no campo**
   (leva o texto ao campo de mensagem, sem enviar) e **Descartar**. A API: `GET /ai/suggestions`, `POST /ai/suggestions/{id}/send|use|discard`.

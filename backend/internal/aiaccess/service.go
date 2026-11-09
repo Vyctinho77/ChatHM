@@ -28,7 +28,7 @@ const (
 	ScopeRead   = "read"
 	ScopeWrite  = "write"
 	ScopeSend   = "send"
-	// ScopeAutomate: iniciar mensagens automáticas (fila com aprovação do administrador). Só tokens pessoais.
+	// ScopeAutomate: iniciar avisos sob a autonomia do assunto. Exige autorização explícita do usuário.
 	ScopeAutomate    = "automate"
 	maxTokensPerUser = 10
 	defaultTTLDays   = 90
@@ -57,7 +57,7 @@ type Settings struct {
 	// AllowOAuth libera conectar ChatGPT/claude.ai por login. OAuthRedirectHosts: hosts permitidos nos endereços de retorno.
 	AllowOAuth         bool     `json:"allowOauth"`
 	OAuthRedirectHosts []string `json:"oauthRedirectHosts"`
-	// AllowAutomation libera tokens com escopo "automate": a IA enfileira mensagens automáticas (sempre com aprovação do administrador na fase atual).
+	// AllowAutomation libera pedidos com escopo "automate", sob as regras e autonomia de cada assunto.
 	AllowAutomation bool `json:"allowAutomation"`
 }
 
@@ -93,7 +93,7 @@ type Principal struct {
 	// OAuth: token emitido a um aplicativo de IA hospedado por terceiros (ChatGPT, claude.ai): privacidade máxima, sem opção.
 	OAuth      bool
 	ClientName string
-	// Automate: o token tem escopo "automate" E o administrador liberou envios automáticos (nunca para clientes OAuth).
+	// Automate: a conexão recebeu "automate" explicitamente e o administrador liberou envios automáticos.
 	Automate bool
 	// Provider e App identificam a IA (a tela mostra a logo do provedor nas mensagens automáticas).
 	Provider string
@@ -364,7 +364,7 @@ func (s *Service) Authenticate(ctx context.Context, raw string) (Principal, erro
 		if sc == ScopeSend && st.AllowSend && st.AllowWrite {
 			p.Send = true
 		}
-		if sc == ScopeAutomate && st.AllowAutomation && kind == "personal" {
+		if sc == ScopeAutomate && st.AllowAutomation && st.AllowWrite && st.AllowSend {
 			p.Automate = true
 		}
 	}

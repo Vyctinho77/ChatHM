@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterConversations, unreadByTab } from "./conversationFilter";
+import { countsByTab, filterConversations } from "./conversationFilter";
 import type { Conversation } from "./types";
 
 const conversation = (id: string, overrides: Partial<Conversation> = {}): Conversation => ({
@@ -65,7 +65,7 @@ describe("não atribuídos", () => {
 });
 
 describe("números ao lado das abas", () => {
-  it("contam conversas com mensagens novas em cada aba, sem adiadas nem encerradas", () => {
+  it("separam contatos da fila e notificações, incluindo as adiadas", () => {
     const list = [
       conversation("m1", { unreadCount: 3 }),
       conversation("m2", { unreadCount: 1 }),
@@ -78,11 +78,48 @@ describe("números ao lado das abas", () => {
       conversation("c1", { unreadCount: 5, status: "closed" }),
       conversation("o1", { assignee: { id: "ana", name: "Ana" }, unreadCount: 1 }),
     ];
-    expect(unreadByTab(list, "me")).toEqual({ mine: 2, general: 3, groups: 1, all: 6 });
+    expect(countsByTab(list, "me")).toEqual({
+      mine: { contacts: 3, unread: 2 }, general: { contacts: 4, unread: 3 },
+      groups: { contacts: 1, unread: 1 }, all: { contacts: 8, unread: 6 }, snoozed: { contacts: 1, unread: 1 },
+    });
   });
 
-  it("vazio quando não há mensagens novas", () => {
-    expect(unreadByTab([conversation("a")], "me")).toEqual({ mine: 0, general: 0, groups: 0, all: 0 });
+  it("ler ou marcar tudo como lido remove só as notificações", () => {
+    const list = [conversation("a", { unreadCount: 7 }), conversation("b", { unreadCount: 2 }), conversation("s", { unreadCount: 1, snoozedUntil: "2030-01-01T09:00:00Z" })];
+    const before = countsByTab(list, "me");
+    const after = countsByTab(list.map((c) => ({ ...c, unreadCount: 0 })), "me");
+    expect(before.mine).toEqual({ contacts: 2, unread: 2 });
+    expect(after.mine).toEqual({ contacts: 2, unread: 0 });
+    expect(before.snoozed).toEqual({ contacts: 1, unread: 1 });
+    expect(after.snoozed).toEqual({ contacts: 1, unread: 0 });
+  });
+
+  it("encerra Minhas e move Não atribuídos ao assumir, mesmo depois de ler", () => {
+    const mine = conversation("mine");
+    const waiting = conversation("waiting", { assignee: undefined, status: "new" });
+    expect(countsByTab([mine, waiting], "me").general.contacts).toBe(1);
+    const assigned = { ...waiting, assignee: { id: "me", name: "Eu" }, status: "in_progress" as const };
+    expect(countsByTab([mine, assigned], "me").general.contacts).toBe(0);
+    expect(countsByTab([mine, assigned], "me").mine.contacts).toBe(2);
+    expect(countsByTab([{ ...mine, status: "closed" }, assigned], "me").mine.contacts).toBe(1);
+    expect(countsByTab([mine, { ...assigned, assignee: { id: "ana", name: "Ana" } }], "me").general.contacts).toBe(0);
+  });
+
+  it("conta cada contato uma vez, independentemente da quantidade de mensagens", () => {
+    const first = conversation("a", { unreadCount: 20 });
+    const duplicate = conversation("b", { contact: first.contact, unreadCount: 4 });
+    expect(countsByTab([first, duplicate], "me").mine).toEqual({ contacts: 1, unread: 1 });
+  });
+
+  it("acompanha adiamento e retorno confirmado pelo servidor, respeitando a fila selecionada", () => {
+    const active = conversation("a", { segment: "folha" });
+    const snoozed = { ...active, snoozedUntil: "2000-01-01T09:00:00Z", unreadCount: 1 };
+    const other = conversation("b", { segment: "notas" });
+    expect(countsByTab([active, other], "me", "folha").mine.contacts).toBe(1);
+    expect(countsByTab([snoozed, other], "me", "folha").snoozed).toEqual({ contacts: 1, unread: 1 });
+    expect(countsByTab([snoozed, other], "me", "folha").mine.contacts).toBe(0);
+    expect(countsByTab([{ ...snoozed, snoozedUntil: undefined }, other], "me", "folha").snoozed.contacts).toBe(0);
+    expect(countsByTab([], "me").mine).toEqual({ contacts: 0, unread: 0 });
   });
 });
 

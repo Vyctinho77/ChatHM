@@ -13,7 +13,6 @@ describe("MCP settings visibility", () => {
   it("keeps the section visible while loading", () => {
     const { qc, render } = setup();
     const html = render();
-    expect(html).toContain("Integrações de IA (MCP)");
     expect(html).toContain('id="integracoes-ia"');
     expect(html).toContain('aria-label="Carregando integrações MCP"');
     qc.clear();
@@ -23,7 +22,6 @@ describe("MCP settings visibility", () => {
     const { qc, render } = setup();
     await qc.fetchQuery({ queryKey: ["ai", "settings"], queryFn: async () => { throw new Error("API indisponível"); } }).catch(() => undefined);
     const html = render();
-    expect(html).toContain("Integrações de IA (MCP)");
     expect(html).toContain("Não foi possível carregar as integrações.");
     expect(html).toContain("Tentar novamente");
     qc.clear();

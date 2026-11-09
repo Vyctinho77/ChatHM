@@ -18,12 +18,14 @@ import { SearchResults } from "./SearchResults";
 import { useContactOpener, useConversationActions, useConversations, useMessageSearch, useSegmentOptions } from "./store";
 import { Ticks } from "./Ticks";
 import { TransferMenu } from "./TransferMenu";
-import { filterConversations, unreadByTab, type ConversationFilter as Filter } from "./conversationFilter";
+import { countsByTab, filterConversations, type ConversationFilter as Filter } from "./conversationFilter";
 import { reminderColors, useReminders, type Reminder } from "./reminders";
 import { ReminderEditor } from "./ReminderEditor";
 import { useTyping } from "./typing";
 import { TypingIndicator } from "./TypingIndicator";
 import type { ContactRecord, Conversation, MessageHit, SegmentKey, SegmentOption } from "./types";
+
+const contactCountLabel = (count: number) => `${count} ${count === 1 ? "contato" : "contatos"}`;
 
 export function ConversationList({ selectedId, onSelect }: { selectedId?: string; onSelect: (id: string) => void }) {
   const { data, isPending } = useConversations();
@@ -77,7 +79,7 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
 
   // Atendimentos encerrados saem da lista; um novo contato do cliente abre outro.
   const all = useMemo(() => (data ?? []).filter((c) => c.status !== "closed"), [data]);
-  const tabUnread = useMemo(() => unreadByTab(all, actions.me.id), [all, actions.me.id]);
+  const tabCounts = useMemo(() => countsByTab(all, actions.me.id, segment), [all, actions.me.id, segment]);
 
   const visible = useMemo(() => {
     const q = query.trim();
@@ -108,12 +110,12 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
     }
   }
 
-  const chips: { key: Filter; label: string }[] = [
-    { key: "mine", label: "Minhas" },
-    { key: "general", label: "Não atribuídos" },
+  const chips: { key: Filter; label: string; showCount?: boolean }[] = [
+    { key: "mine", label: "Minhas", showCount: true },
+    { key: "general", label: "Não atribuídos", showCount: true },
     { key: "groups", label: "Grupos" },
     { key: "all", label: "Todas" },
-    { key: "snoozed", label: "Adiadas" },
+    { key: "snoozed", label: "Adiadas", showCount: true },
   ];
   const ctxConv = ctx ? all.find((c) => c.id === ctx.id) : undefined;
 
@@ -186,6 +188,7 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
             key={c.key}
             role="tab"
             aria-selected={filter === c.key}
+            aria-label={isPending ? c.label : `${c.label}: ${contactCountLabel(tabCounts[c.key].contacts)}${tabCounts[c.key].unread ? `, ${tabCounts[c.key].unread} com mensagens não lidas` : ""}`}
             onClick={() => setFilter(c.key)}
             className={cn(
               "inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2 text-xs transition-colors",
@@ -193,8 +196,8 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
             )}
           >
             {c.label}
-            {c.key === "mine" && tabUnread.mine > 0 && <span title={`${tabUnread.mine} com mensagens novas`} className="text-[10px] tabular-nums">{tabUnread.mine > 99 ? "99+" : tabUnread.mine}</span>}
-            {c.key === "snoozed" && all.some((x) => x.snoozedUntil) && <span className="text-[10px] tabular-nums">{all.filter((x) => x.snoozedUntil).length}</span>}
+            {!isPending && c.showCount && <span aria-hidden="true" title={contactCountLabel(tabCounts[c.key].contacts)} className="text-[10px] tabular-nums text-muted">{tabCounts[c.key].contacts}</span>}
+            {!isPending && tabCounts[c.key].unread > 0 && <span aria-hidden="true" title={`${contactCountLabel(tabCounts[c.key].unread)} com mensagens novas`} className="size-1.5 shrink-0 rounded-full bg-unread" />}
           </button>
         ))}
       </div>

@@ -43,7 +43,7 @@ export function AutomationPage() {
       <header className="flex flex-wrap items-start justify-between gap-4 border-b border-line px-4 py-4 sm:px-6">
         <div>
           <h1 className="text-xl font-semibold">Envios automáticos</h1>
-          <p className="mt-1 text-sm text-muted">Avisos que a IA propõe aos clientes. Nada sai sem a sua aprovação e a IA nunca responde a ninguém.</p>
+          <p className="mt-1 text-sm text-muted">Avisos da IA, com aprovação ou envio automático por assunto. O servidor aplica as regras e a IA não entra em conversas.</p>
         </div>
         {o && (
           <Button variant={o.paused ? "primary" : "secondary"} loading={pause.isPending} onClick={() => pause.mutate(!o.paused)}>
@@ -53,9 +53,9 @@ export function AutomationPage() {
       </header>
       <div className="mx-auto max-w-4xl px-4 py-5 sm:px-8">
         {DEMO && <p className="text-sm text-muted">Os envios automáticos não estão disponíveis nesta demonstração.</p>}
-        {o && !o.masterOn && <Alert tone="info">Desligado: ative “Permitir envios automáticos” em MCP → Permissões para a IA poder propor envios.</Alert>}
+        {o && !o.masterOn && <Alert tone="info">Desligado: ative “Permitir envios automáticos” em MCP → Permissões para a IA poder enfileirar envios.</Alert>}
         {o?.paused && <div className="mt-3"><Alert>Envios pausados. {o.pausedReason}</Alert></div>}
-        {o && !o.whatsappReady && <div className="mt-3"><Alert tone="info">O WhatsApp está desconectado: os envios aprovados esperam a conexão.</Alert></div>}
+        {o && !o.whatsappReady && <div className="mt-3"><Alert tone="info">O WhatsApp está desconectado: a fila espera a conexão.</Alert></div>}
         {o && (
           <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
             {([["Para aprovar", o.pending], ["Na fila", o.queued], [`Hoje (máx. ${o.dailyCap})`, o.sentToday], ["Falhas", o.failed]] as const).map(([k, v]) => (
@@ -147,7 +147,7 @@ function Categories() {
   return (
     <div className="flex flex-col gap-3">
       {error && <Alert>{error}</Alert>}
-      <p className="text-xs text-muted">Todos os assuntos começam com aprovação sua. Desligado = a IA não consegue enfileirar.</p>
+      <p className="text-xs leading-relaxed text-muted">Escolha como cada assunto pode enviar. No modo automático, o servidor executa a fila mesmo com o app fechado, respeitando horários, ritmo e bloqueios. Novos pedidos dependem do agente de IA em execução.</p>
       {(q.data ?? []).map((c) => <CategoryRow key={c.key + JSON.stringify(c)} c={c} onSave={(n) => save.mutate(n)} busy={save.isPending} />)}
     </div>
   );
@@ -161,6 +161,14 @@ function CategoryRow({ c, onSave, busy }: { c: Category; onSave: (c: Category) =
       <label className="flex cursor-pointer items-center justify-between gap-4">
         <span className="font-medium">{c.label}</span>
         <input type="checkbox" role="switch" aria-label={`Liberar ${c.label}`} checked={d.enabled} onChange={(e) => setD({ ...d, enabled: e.target.checked })} className="size-4 accent-[var(--c-accent)]" />
+      </label>
+      <label className="mt-3 flex flex-col gap-1.5 text-sm">
+        <span className="font-medium">Autonomia</span>
+        <select aria-label={`Autonomia de ${c.label}`} value={d.level} onChange={(e) => setD({ ...d, level: Number(e.target.value) })} className="h-10 rounded-lg border border-line bg-elevated px-3 text-sm outline-none focus:border-accent">
+          <option value={1}>Com aprovação</option>
+          <option value={3}>Automático, sem aprovação</option>
+        </select>
+        <span className="text-xs leading-relaxed text-muted">{d.level === 3 ? "Envia sem pedir aprovação quando todas as regras permitirem. Conteúdo sinalizado ainda exige revisão." : "Cada pedido aguarda aprovação antes de entrar na fila de envio."}</span>
       </label>
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Field label="Das" type="time" value={d.windowStart} onChange={(e) => setD({ ...d, windowStart: e.target.value })} />

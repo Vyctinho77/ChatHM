@@ -255,11 +255,16 @@ func (s *Service) category(ctx context.Context, key string) (Category, error) {
 
 var hhmm = regexp.MustCompile(`^([01]\d|2[0-3]):[0-5]\d$`)
 
-// UpdateCategory (administrador). Nível: nesta fase só existe o 1 (aprovação); os níveis autônomos chegam nas fases 6b e 6c.
+const (
+	LevelApproval  = 1
+	LevelAutomatic = 3
+)
+
+// UpdateCategory: o administrador escolhe aprovação ou envio autônomo sob as regras do servidor.
 func (s *Service) UpdateCategory(ctx context.Context, actorID, ip, key string, in Category) (Category, error) {
 	errs := httpx.FieldErrors{}
-	if in.Level != 1 {
-		errs["level"] = "Por enquanto toda categoria funciona com aprovação (nível 1). Os níveis autônomos chegam nas próximas fases."
+	if in.Level != LevelApproval && in.Level != LevelAutomatic {
+		errs["level"] = "Escolha aprovação (1) ou automático sem aprovação (3)."
 	}
 	if !hhmm.MatchString(in.WindowStart) || !hhmm.MatchString(in.WindowEnd) || in.WindowStart >= in.WindowEnd {
 		errs["windowStart"] = "Informe a janela como HH:MM, com o fim depois do início."
@@ -288,8 +293,8 @@ func (s *Service) UpdateCategory(ctx context.Context, actorID, ip, key string, i
 	}
 	var out Category
 	err := database.InTx(ctx, s.db, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `UPDATE automation_categories SET enabled=$2, level=1, window_start=$3::time, window_end=$4::time, weekdays=$5, min_interval_days=$6, guidelines=$7 WHERE key=$1`,
-			key, in.Enabled, in.WindowStart, in.WindowEnd, wd, in.MinIntervalDays, strings.TrimSpace(in.Guidelines))
+		tag, err := tx.Exec(ctx, `UPDATE automation_categories SET enabled=$2, level=$8, window_start=$3::time, window_end=$4::time, weekdays=$5, min_interval_days=$6, guidelines=$7 WHERE key=$1`,
+			key, in.Enabled, in.WindowStart, in.WindowEnd, wd, in.MinIntervalDays, strings.TrimSpace(in.Guidelines), in.Level)
 		if err != nil {
 			return err
 		}
@@ -297,7 +302,7 @@ func (s *Service) UpdateCategory(ctx context.Context, actorID, ip, key string, i
 			return ErrNotFound
 		}
 		return audit.Record(ctx, tx, audit.Entry{ActorID: actorID, Action: "automation.category.update", TargetType: "automation_category", TargetID: key, IP: ip,
-			Metadata: map[string]any{"enabled": in.Enabled, "window": in.WindowStart + "-" + in.WindowEnd, "weekdays": in.Weekdays, "minIntervalDays": in.MinIntervalDays}})
+			Metadata: map[string]any{"enabled": in.Enabled, "level": in.Level, "window": in.WindowStart + "-" + in.WindowEnd, "weekdays": in.Weekdays, "minIntervalDays": in.MinIntervalDays}})
 	})
 	if err != nil {
 		return out, err
@@ -348,7 +353,7 @@ type EnqueueInput struct {
 // masterOn: IA ligada e envios automáticos liberados pelo administrador.
 func (s *Service) masterOn(ctx context.Context) (bool, error) {
 	var on bool
-	err := s.db.QueryRow(ctx, `SELECT enabled AND allow_automation FROM ai_settings WHERE id`).Scan(&on)
+	err := s.db.QueryRow(ctx, `SELECT enabled AND allow_write AND allow_send AND allow_automation FROM ai_settings WHERE id`).Scan(&on)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
@@ -387,6 +392,13 @@ func (s *Service) guardContact(ctx context.Context, contactID string, st Setting
 	if snoozed {
 		return info, refuse("snoozed", "A conversa deste cliente está adiada por alguém da equipe."), nil
 	}
+	var assigned bool
+	if err := s.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM conversations WHERE contact_id = $1 AND status <> 'closed' AND assignee_id IS NOT NULL)`, contactID).Scan(&assigned); err != nil {
+		return info, nil, err
+	}
+	if assigned {
+		return info, refuse("assigned", "Este cliente está em atendimento pela equipe. A IA não entra em conversas de uma pessoa."), nil
+	}
 	if st.DialogHours > 0 {
 		var last *time.Time
 		if err := s.db.QueryRow(ctx, `
@@ -401,7 +413,7 @@ func (s *Service) guardContact(ctx context.Context, contactID string, st Setting
 	return info, nil, nil
 }
 
-// Enqueue enfileira um envio (nível 1: aguarda aprovação). Não espera nada e nunca envia na hora.
+// Enqueue persiste o pedido e devolve imediatamente. O worker envia sem depender de sessão no navegador.
 func (s *Service) Enqueue(ctx context.Context, a Actor, in EnqueueInput) (Send, error) {
 	on, err := s.masterOn(ctx)
 	if err != nil {
@@ -461,33 +473,43 @@ func (s *Service) Enqueue(ctx context.Context, a Actor, in EnqueueInput) (Send, 
 		}
 		docName = d.Name
 	}
-	// Limites por cliente: no máximo N por dia e um intervalo mínimo por assunto.
-	var today, inInterval int
-	if err := s.db.QueryRow(ctx, `
-		SELECT count(*) FILTER (WHERE created_at > now() - interval '24 hours'),
-		       count(*) FILTER (WHERE category = $2 AND created_at > now() - make_interval(days => $3))
-		  FROM automation_sends WHERE contact_id = $1 AND status IN `+activeStatuses, in.ContactID, cat.Key, cat.MinIntervalDays).Scan(&today, &inInterval); err != nil {
-		return Send{}, err
-	}
-	if today >= st.ClientDaily {
-		return Send{}, refuse("client_daily", "Este cliente já tem %d aviso(s) automático(s) nas últimas 24 horas (limite por cliente).", st.ClientDaily)
-	}
-	if cat.MinIntervalDays > 0 && inInterval > 0 {
-		return Send{}, refuse("min_interval", "Este cliente já recebeu (ou tem na fila) um aviso de %q nos últimos %d dias.", cat.Label, cat.MinIntervalDays)
-	}
-
 	var out Send
 	err = database.InTx(ctx, s.db, func(tx pgx.Tx) error {
+		// Serializa com mudanças de autonomia feitas pelo administrador.
+		var level int
+		var enabled bool
+		if err := tx.QueryRow(ctx, `SELECT level, enabled FROM automation_categories WHERE key=$1 FOR SHARE`, cat.Key).Scan(&level, &enabled); err != nil {
+			return err
+		}
+		if !enabled {
+			return refuse("category_off", "O assunto foi desligado pelo administrador.")
+		}
+		// Serializa pedidos do mesmo cliente antes de conferir os limites.
+		if _, err := tx.Exec(ctx, `SELECT id FROM contacts WHERE id=$1 FOR UPDATE`, in.ContactID); err != nil {
+			return err
+		}
+		if ref, err := s.clientLimits(ctx, tx, in.ContactID, cat, st, ""); err != nil {
+			return err
+		} else if ref != nil {
+			return ref
+		}
+		status := StatusPending
+		var scheduled *time.Time
+		if level == LevelAutomatic && len(flags) == 0 {
+			status = StatusApproved
+			now := s.now()
+			scheduled = &now
+		}
 		var id string
 		if err := tx.QueryRow(ctx, `
-			INSERT INTO automation_sends (token_id, created_by, provider, app_name, category, reason, text, document_id, contact_id, dedupe_key, flags)
-			VALUES (NULLIF($1, '')::uuid, NULLIF($2, '')::uuid, $3, $4, $5, $6, $7, NULLIF($8, '')::uuid, $9, $10, $11) RETURNING id::text`,
-			a.TokenID, a.UserID, a.Provider, a.App, cat.Key, reason, strings.TrimSpace(in.Text), in.DocumentID, in.ContactID, key, nonNil(flags)).Scan(&id); err != nil {
+			INSERT INTO automation_sends (token_id, created_by, provider, app_name, category, reason, text, document_id, contact_id, dedupe_key, flags, status, scheduled_for)
+			VALUES (NULLIF($1, '')::uuid, NULLIF($2, '')::uuid, $3, $4, $5, $6, $7, NULLIF($8, '')::uuid, $9, $10, $11, $12, $13) RETURNING id::text`,
+			a.TokenID, a.UserID, a.Provider, a.App, cat.Key, reason, strings.TrimSpace(in.Text), in.DocumentID, in.ContactID, key, nonNil(flags), status, scheduled).Scan(&id); err != nil {
 			return err
 		}
 		out.ID = id
 		return audit.Record(ctx, tx, audit.Entry{ActorID: a.UserID, Action: "automation.enqueue", TargetType: "automation_send", TargetID: id,
-			Metadata: map[string]any{"category": cat.Key, "contactId": in.ContactID, "provider": a.Provider, "flags": flags, "hasDocument": in.DocumentID != "", "dedupeKey": key}})
+			Metadata: map[string]any{"category": cat.Key, "contactId": in.ContactID, "provider": a.Provider, "flags": flags, "hasDocument": in.DocumentID != "", "dedupeKey": key, "level": level, "status": status}})
 	})
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.ConstraintName == "automation_sends_dedupe" {
@@ -501,6 +523,23 @@ func (s *Service) Enqueue(ctx context.Context, a Actor, in EnqueueInput) (Send, 
 	_ = info
 	_ = docName
 	return s.Get(ctx, out.ID)
+}
+
+func (s *Service) clientLimits(ctx context.Context, db database.DBTX, contactID string, cat Category, st Settings, excludeID string) (*Refusal, error) {
+	var today, inInterval int
+	if err := db.QueryRow(ctx, `SELECT count(*) FILTER (WHERE created_at > now() - interval '24 hours'),
+		count(*) FILTER (WHERE category=$2 AND created_at > now() - make_interval(days => $3))
+		FROM automation_sends WHERE contact_id=$1 AND id::text<>$4 AND status IN `+activeStatuses,
+		contactID, cat.Key, cat.MinIntervalDays, excludeID).Scan(&today, &inInterval); err != nil {
+		return nil, err
+	}
+	if today >= st.ClientDaily {
+		return refuse("client_daily", "Este cliente atingiu o limite de %d aviso(s) em 24 horas.", st.ClientDaily), nil
+	}
+	if cat.MinIntervalDays > 0 && inInterval > 0 {
+		return refuse("min_interval", "Este cliente já tem um aviso de %q nos últimos %d dias.", cat.Label, cat.MinIntervalDays), nil
+	}
+	return nil, nil
 }
 
 func nonNil(s []string) []string {

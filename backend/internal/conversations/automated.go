@@ -95,7 +95,8 @@ func (s *Service) SendAutomated(ctx context.Context, in AutomatedSend) (Message,
 	var before userSet
 	err := database.InTx(ctx, s.db, func(tx pgx.Tx) error {
 		var waID, contactKind string
-		if err := tx.QueryRow(ctx, `SELECT wa_id, kind FROM contacts WHERE id = $1`, in.ContactID).Scan(&waID, &contactKind); err != nil {
+		var optOut *time.Time
+		if err := tx.QueryRow(ctx, `SELECT wa_id, kind, automation_opt_out_at FROM contacts WHERE id = $1 FOR UPDATE`, in.ContactID).Scan(&waID, &contactKind, &optOut); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return ErrNotFound
 			}
@@ -104,11 +105,18 @@ func (s *Service) SendAutomated(ctx context.Context, in AutomatedSend) (Message,
 		if contactKind == "group" {
 			return &ErrAutomatedBlocked{Reason: "grupos não recebem mensagens automáticas"}
 		}
+		if optOut != nil {
+			return &ErrAutomatedBlocked{Reason: "o contato não aceita envios automáticos"}
+		}
 		var snoozed *time.Time
+		var assignee *string
 		err := tx.QueryRow(ctx, `
-			SELECT id, snoozed_until FROM conversations WHERE contact_id = $1 AND status <> 'closed' FOR UPDATE`, in.ContactID).Scan(&convID, &snoozed)
+			SELECT id, snoozed_until, assignee_id::text FROM conversations WHERE contact_id = $1 AND status <> 'closed' FOR UPDATE`, in.ContactID).Scan(&convID, &snoozed, &assignee)
 		switch {
 		case err == nil:
+			if assignee != nil {
+				return &ErrAutomatedBlocked{Reason: "o contato está em atendimento pela equipe"}
+			}
 			if snoozed != nil {
 				return &ErrAutomatedBlocked{Reason: "a conversa está adiada"}
 			}

@@ -1,4 +1,5 @@
 import { useId, useState, type FormEvent } from "react";
+import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronDown, Copy, KeyRound, LogIn, Plus, Settings2, ShieldCheck, Trash2 } from "lucide-react";
 import { Alert, Button, Field, Modal } from "@/components/ui";
@@ -254,9 +255,9 @@ function NewToken({ onClose, allowWrite, allowSend, allowAutomation }: { onClose
             <label className={cn("flex items-start gap-2.5", allowAutomation && allowSend ? "cursor-pointer" : "opacity-60")}>
               <input type="radio" name="scope" checked={level === "automate"} disabled={!allowAutomation || !allowSend} onChange={() => setLevel("automate")} className="mt-1 accent-[var(--c-accent)]" />
               <span>
-                <span className="font-medium">Tudo isso e propor envios automáticos (o administrador aprova)</span>
+                <span className="font-medium">Tudo isso e envios automáticos pelas regras do servidor</span>
                 <span className="block text-xs text-muted">
-                  {allowAutomation && allowSend ? "A IA decide sozinha quando avisar um cliente (DAS, cobrança, prazos), mas só inicia assuntos, nunca responde, e cada mensagem espera a aprovação do administrador." : "Um administrador precisa liberar os envios automáticos (e os pedidos de envio) primeiro."}
+                  {allowAutomation && allowSend ? "A IA pode iniciar avisos aos clientes. Cada assunto define se exige aprovação ou envia automaticamente, sempre sob as regras do servidor." : "Um administrador precisa liberar os envios automáticos (e os pedidos de envio) primeiro."}
                 </span>
               </span>
             </label>
@@ -325,7 +326,6 @@ export function AiAccessCard() {
 
   if (!settings.data) return (
     <section id="integracoes-ia" className="scroll-mt-6 border-t border-line py-6">
-      <h2 className="font-semibold">Integrações de IA (MCP)</h2>
       {settings.isPending ? (
         <div role="status" aria-label="Carregando integrações MCP" aria-busy="true" className="mt-4 space-y-3">
           <Skeleton className="h-4 w-3/4" />
@@ -345,13 +345,12 @@ export function AiAccessCard() {
   return (
     <section id="integracoes-ia" className="scroll-mt-6 divide-y divide-line/60">
       <div id="mcp-access" tabIndex={-1} className="scroll-mt-6 pb-5 outline-none">
-        <h2 className="text-base font-semibold">Integrações de IA (MCP)</h2>
         {admin ? (
           <Toggle checked={s.enabled} disabled={save.isPending} onChange={(v) => change({ enabled: v })} label="Permitir acesso por IA" hint={s.enabled ? "Ativo. Cada assistente usa apenas os acessos de quem o conectou." : "Ative para conectar seus assistentes. Desligado, todos os acessos ficam suspensos."} />
         ) : (
           <p className="py-3 text-sm text-muted">{s.enabled ? "O acesso por IA está ativo neste escritório." : "Peça a um administrador para ativar o acesso por IA."}</p>
         )}
-        <p className="flex items-start gap-2 pt-1 text-xs leading-relaxed text-muted"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-brand-ink" />Você revisa e aprova cada mensagem antes do envio ao cliente.</p>
+        <p className="flex items-start gap-2 pt-1 text-xs leading-relaxed text-muted"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-brand-ink" />Respostas sugeridas exigem aprovação. Avisos automáticos seguem a autonomia e as regras de cada assunto.</p>
       </div>
 
       {error && <div className="mt-3"><Alert>{error}</Alert></div>}
@@ -366,7 +365,8 @@ export function AiAccessCard() {
           <div className="divide-y divide-line/60 border-t border-line/60 pb-4">
             <Toggle checked={s.allowWrite} disabled={save.isPending} onChange={v => change({ allowWrite: v })} label="Permitir alterações" hint="Etiquetas, observações, lembretes, agenda e rascunhos, conforme os acessos da pessoa." />
             <Toggle checked={s.allowSend} disabled={save.isPending || !s.allowWrite} onChange={v => change({ allowSend: v })} label="Permitir pedidos de envio" hint={s.allowWrite ? "O assistente sugere a mensagem e você decide se envia." : "Ative as alterações para liberar pedidos de envio."} />
-            <Toggle checked={!!s.allowAutomation} disabled={save.isPending || !s.allowSend} onChange={v => change({ allowAutomation: v })} label="Permitir envios automáticos" hint={s.allowSend ? "A IA propõe avisos aos clientes (DAS, cobrança, prazos) e você aprova em Envios automáticos. Escolha os assuntos lá." : "Ative os pedidos de envio para liberar os envios automáticos."} />
+            <Toggle checked={!!s.allowAutomation} disabled={save.isPending || !s.allowSend} onChange={v => change({ allowAutomation: v })} label="Permitir envios automáticos" hint={s.allowSend ? "A IA inicia avisos aos clientes. Em Envios automáticos → Assuntos, escolha quais podem enviar sem aprovação." : "Ative os pedidos de envio para liberar os envios automáticos."} />
+            {s.allowAutomation && <Link to="/automacao" className="block py-2 text-xs font-medium text-brand-ink hover:underline">Definir assuntos e autonomia de envio</Link>}
           </div>
         </details>
         <details id="mcp-privacy" className="group/options scroll-mt-6">

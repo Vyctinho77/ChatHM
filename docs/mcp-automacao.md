@@ -1,6 +1,6 @@
 # Plano: envios automáticos pela IA (MCP, etapa 6) — revisão 2
 
-Status: **fase 6a implementada** (nível 1, com aprovação); 6b e 6c continuam só no plano. A revisão 2 troca "modelos fixos" por **autonomia dentro de assuntos permitidos**, como pedido.
+Status: **níveis 1 (aprovação) e 3 (automático sem aprovação) implementados**, incluindo autorização OAuth explícita. O nível 2 (janela de revisão) e os demais refinamentos continuam no plano. A revisão 2 troca "modelos fixos" por **autonomia dentro de assuntos permitidos**.
 Decisões em aberto na seção 12.
 
 ## 1. O que se quer
@@ -70,8 +70,8 @@ Cada categoria tem um **nível**, escolhido pelo administrador:
 | Nível | Como funciona |
 |---|---|
 | **1. Aprovação** | A IA enfileira e uma pessoa aprova na tela (um a um ou em bloco). Ponto de partida de toda categoria |
-| **2. Autônomo com janela de revisão** | Sai sozinho depois de um atraso (padrão 15 min), com contagem regressiva e botão **Cancelar** na tela. É a autonomia que você descreveu, com uma rede de segurança |
-| **3. Autônomo imediato** | Sai na hora. Só para categorias de baixo risco, por escolha explícita |
+| **2. Autônomo com janela de revisão (planejado)** | Sai sozinho depois de um atraso (padrão 15 min), com contagem regressiva e botão **Cancelar** na tela |
+| **3. Automático, sem aprovação** | Entra direto na fila persistente; o servidor envia quando horário, ritmo e bloqueios permitirem. Conteúdo sinalizado ainda exige revisão |
 
 A tela mostra, por categoria, a **taxa de mensagens aprovadas sem edição**: é o dado para decidir subir de nível. Cobrança só sobe se o administrador escolher.
 
@@ -136,7 +136,7 @@ ferramentas em `aiaccess/automation_tools.go`; tela em `apps/web/src/features/au
 **Como liga:** (1) administrador ativa a IA e *Permitir envios automáticos* em MCP → Permissões (exige pedidos de envio ligados);
 (2) cria um token pessoal com a opção de envios automáticos e escolhe o provedor (Claude, ChatGPT, Grok, Gemini, Outra);
 (3) em *Envios automáticos → Assuntos* libera cada categoria (todas começam desligadas e em nível 1).
-OAuth (login) **nunca** recebe o escopo `automate`: só token pessoal.
+OAuth (login) também pode receber `automate`, mas apenas quando os controles do administrador permitem e a pessoa escolhe **Avisos automáticos** no consentimento. Autorizações antigas não são ampliadas: reconecte para conceder a nova permissão.
 
 **Padrões assumidos** (decisões da seção 12 ainda abertas; todos ajustáveis na tela *Controles*):
 assinatura "Assistente do escritório"; intervalo 8 a 25 s entre envios; 30 por hora e 150 por dia; 1 aviso por cliente por dia;
@@ -154,3 +154,28 @@ pausa tudo após 5 falhas seguidas, e um envio que ficou "enviando" por causa de
 
 **Identidade:** a mensagem leva `automated`, `aiProvider` e `aiApp`; a tela mostra a logo simplificada do provedor e o nome do aplicativo no lugar do atendente,
 e a mensagem não assume a conversa nem zera as não lidas. O cliente vê só a assinatura em texto.
+
+## 14. Autonomia sem aprovação (implementada)
+
+1. Em **MCP → Permissões**, libere alterações, pedidos de envio e envios automáticos.
+2. Em **Envios automáticos → Assuntos**, habilite os assuntos desejados e escolha
+   **Automático, sem aprovação** em Autonomia; salve cada alteração.
+3. Use um token pessoal com `automate` ou reconecte o ChatGPT/Claude por login,
+   escolhendo **Avisos automáticos**. Permissões de leitura antigas continuam só de leitura.
+4. A IA chama `send_automatic_message`. `na_fila` significa pedido persistido, não mensagem
+   já entregue; confirme o resultado com `list_automatic_sends`.
+
+O modo 3 mantém os horários, ritmo, limites, bloqueios de conteúdo, documentos do próprio
+destinatário, deduplicação e opt-out. Se um atendimento humano começou, a mensagem não sai.
+Pressão/cobrança sinalizada exige revisão. Se o administrador voltar um assunto para aprovação,
+os pedidos autônomos ainda na fila voltam para revisão; pendências antigas nunca são liberadas
+automaticamente ao subir a autonomia. Categorias começam com aprovação até serem alteradas.
+
+O worker revalida a permissão da conexão antes do envio. Revogar um token, desativar seu dono
+ou desconectar a autorização OAuth bloqueia a fila correspondente. A rotação normal do token
+OAuth não invalida pedidos da mesma concessão ainda autorizada.
+
+**Com o app fechado:** a fila continua na API, sem depender da sessão no navegador. É necessário
+manter o servidor e o WhatsApp conectados. Isto não cria um agendador de execuções do ChatGPT
+ou Claude: novos pedidos ainda dependem de uma execução do assistente pelo MCP. O ChatHM
+processa de forma independente os pedidos já recebidos; não executa um modelo de IA próprio.

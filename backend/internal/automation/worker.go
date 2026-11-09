@@ -127,11 +127,18 @@ func (s *Service) record(ctx context.Context, action, id string, meta map[string
 // process reivindica e envia um item. As regras do servidor rodam DE NOVO aqui: o mundo mudou desde que a IA enfileirou.
 func (s *Service) process(ctx context.Context, id string, st Settings) outcome {
 	var contactID, text, category, docID, provider, app string
+	var tokenID string
+	var manual bool
 	err := s.db.QueryRow(ctx, `
 		UPDATE automation_sends SET status = 'sending', attempts = attempts + 1, updated_at = now() WHERE id = $1 AND status = 'approved'
-		RETURNING contact_id::text, text, category, coalesce(document_id::text, ''), provider, app_name`, id).Scan(&contactID, &text, &category, &docID, &provider, &app)
+		RETURNING contact_id::text, text, category, coalesce(document_id::text, ''), provider, app_name, coalesce(token_id::text, ''), approved_by IS NOT NULL`, id).Scan(&contactID, &text, &category, &docID, &provider, &app, &tokenID, &manual)
 	if err != nil {
 		return outcomeSkipped // outro worker pegou, ou foi cancelado
+	}
+	var result outcome
+	var ready bool
+	if st, result, ready = s.dispatchPolicy(ctx, id, category, text, tokenID, manual); !ready {
+		return result
 	}
 	info, ref, err := s.guardContact(ctx, contactID, st)
 	if err != nil {
@@ -141,6 +148,18 @@ func (s *Service) process(ctx context.Context, id string, st Settings) outcome {
 	if ref != nil {
 		s.mark(ctx, id, StatusSkipped, ref.Message)
 		s.record(ctx, "automation.skipped", id, map[string]any{"code": ref.Code})
+		return outcomeSkipped
+	}
+	cat, err := s.category(ctx, category)
+	if err != nil {
+		s.mark(ctx, id, StatusApproved, "")
+		return outcomeWait
+	}
+	if ref, err := s.clientLimits(ctx, s.db, contactID, cat, st, id); err != nil {
+		s.mark(ctx, id, StatusApproved, "")
+		return outcomeWait
+	} else if ref != nil {
+		s.mark(ctx, id, StatusSkipped, ref.Message)
 		return outcomeSkipped
 	}
 	if _, ref, _ := s.guardTextNow(text, st); ref != nil {
@@ -177,6 +196,10 @@ func (s *Service) process(ctx context.Context, id string, st Settings) outcome {
 		}
 		att = &p
 	}
+	// A leitura/validação do PDF pode levar tempo: revalida pausa, autonomia e permissões antes de sair.
+	if st, result, ready = s.dispatchPolicy(ctx, id, category, text, tokenID, manual); !ready {
+		return result
+	}
 	msgID := uuid.NewString()
 	msg, err := s.convs.SendAutomated(ctx, conversations.AutomatedSend{
 		ID: msgID, ContactID: contactID, Author: Author(st.Signature), Text: Render(text, info.Name, st.OfficeFields),
@@ -206,6 +229,56 @@ func (s *Service) process(ctx context.Context, id string, st Settings) outcome {
 	_, _ = s.db.Exec(ctx, `UPDATE automation_sends SET status = 'sent', sent_at = $2, message_id = $3::uuid, status_detail = '', updated_at = now() WHERE id = $1`, id, s.now(), msgID)
 	s.record(ctx, "automation.sent", id, map[string]any{"contactId": contactID, "category": category, "provider": provider, "hasDocument": docID != ""})
 	return outcomeSent
+}
+
+// dispatchPolicy também vale para pedidos autônomos persistidos antes de um reinício.
+func (s *Service) dispatchPolicy(ctx context.Context, id, category, text, tokenID string, manual bool) (Settings, outcome, bool) {
+	wait := func(st Settings) (Settings, outcome, bool) {
+		s.mark(ctx, id, StatusApproved, "")
+		return st, outcomeWait, false
+	}
+	st, err := s.Settings(ctx)
+	if err != nil {
+		return wait(st)
+	}
+	on, err := s.masterOn(ctx)
+	if err != nil || !on || st.Paused {
+		return wait(st)
+	}
+	cat, err := s.category(ctx, category)
+	if err != nil || !cat.Enabled || !s.inWindow(cat, st, s.now()) {
+		return wait(st)
+	}
+	flags, ref := ValidateText(text, st.AllowedDomains, st.OfficeFields)
+	if ref != nil {
+		s.mark(ctx, id, StatusSkipped, ref.Message)
+		s.record(ctx, "automation.skipped", id, map[string]any{"code": ref.Code})
+		return st, outcomeSkipped, false
+	}
+	if !manual && (cat.Level != LevelAutomatic || len(flags) > 0) {
+		_, _ = s.db.Exec(ctx, `UPDATE automation_sends SET status='pending_approval', scheduled_for=NULL, flags=$2,
+			status_detail='Revisão necessária pelas regras atuais do assunto.', updated_at=now() WHERE id=$1 AND status='sending'`, id, nonNil(flags))
+		s.record(ctx, "automation.review_required", id, map[string]any{"level": cat.Level, "flags": flags})
+		return st, outcomeSkipped, false
+	}
+	if tokenID != "" || !manual {
+		var valid bool
+		err := s.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM api_tokens t JOIN users u ON u.id=t.user_id
+			WHERE t.id::text=$1 AND u.is_active AND 'automate'=ANY(t.scopes) AND (
+			(t.kind='personal' AND t.revoked_at IS NULL AND t.expires_at>now()) OR
+			(t.kind='oauth' AND EXISTS (SELECT 1 FROM ai_settings WHERE id AND allow_oauth)
+			 AND EXISTS (SELECT 1 FROM oauth_grants g WHERE g.id=t.grant_id AND g.revoked_at IS NULL AND 'automate'=ANY(g.scopes))
+			 AND EXISTS (SELECT 1 FROM oauth_refresh_tokens r WHERE r.grant_id=t.grant_id AND r.used_at IS NULL AND r.expires_at>now()))
+			))`, tokenID).Scan(&valid)
+		if err != nil {
+			return wait(st)
+		}
+		if !valid {
+			s.mark(ctx, id, StatusSkipped, "O token de automação foi revogado, expirou ou perdeu permissão.")
+			return st, outcomeSkipped, false
+		}
+	}
+	return st, outcomeSent, true
 }
 
 // guardTextNow: revalida o texto na hora de enviar (as regras do administrador podem ter mudado desde a aprovação).
