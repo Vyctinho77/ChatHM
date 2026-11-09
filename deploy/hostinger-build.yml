@@ -1,0 +1,15 @@
+# Projeto auxiliar do Docker Manager da Hostinger: constrói a imagem chathm:latest na própria VPS
+# a partir do GitHub e termina (imprime BUILD_OK ou BUILD_FAILED nos logs). Depois de rodar, recrie o
+# projeto "chathm" (deploy/docker-compose.hostinger.yml) para usar a imagem nova e apague este projeto.
+# Troque a branch/commit depois do "#" para publicar outra versão (repositório precisa estar público).
+name: chathm-builder
+
+services:
+  build:
+    image: docker:27-cli
+    restart: "no"
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
+    command:
+      - sh
+      - -c
+      - "docker build --progress=plain -t chathm:latest 'https://github.com/Vyctinho77/ChatHM.git#claude/determined-euler-j60et9' && echo BUILD_OK || echo BUILD_FAILED"

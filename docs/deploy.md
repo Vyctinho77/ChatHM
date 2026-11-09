@@ -60,3 +60,13 @@ Cada cliente tem o **próprio servidor, banco e número de WhatsApp**, isolados.
 Envie ao cliente o endereço e o código. Ele abre o endereço, digita o código, escaneia o QR com o WhatsApp do escritório dele e vira o
 administrador. Enquanto o código não for usado, **só ele** libera a instalação (o `SETUP_TOKEN` do servidor deixa de valer). Para uma instância
 nova, suba outro servidor com o mesmo `docker-compose` (outro domínio e outro banco/projeto Supabase) e use o `SETUP_TOKEN` na primeira instalação.
+
+## Hostinger (VPS com Docker Manager)
+
+O Docker Manager não constrói imagens a partir de uma URL do GitHub. O fluxo de atualização é:
+
+1. Crie o projeto `chathm-builder` com `deploy/hostinger-build.yml` (ajuste a branch após o `#`). Ele constrói
+   `chathm:latest` na VPS (~2 min) e termina; confira `BUILD_OK` nos logs.
+2. Recrie o projeto `chathm` com `deploy/docker-compose.hostinger.yml` e as variáveis `DOMAIN`, `DATABASE_URL`,
+   `ENCRYPTION_KEY` e `SETUP_TOKEN` (os valores ficam só no campo de ambiente do projeto, nunca no repositório).
+3. Apague o projeto `chathm-builder` e confira `https://<domínio>/readyz`.
