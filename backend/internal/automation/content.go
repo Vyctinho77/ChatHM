@@ -30,15 +30,16 @@ const (
 )
 
 var (
-	reURL     = regexp.MustCompile(`(?i)(?:\b(?:https?://|www\.)[^\s]+|\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:com|net|org|br|gov|io|app|dev|co|me|link|xyz|info|ly)\b[^\s]*)`)
-	reEmail   = regexp.MustCompile(`(?i)[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}`)
-	reDigits  = regexp.MustCompile(`\d(?:[\s.\-()]?\d){8,}`)
-	reDoc     = regexp.MustCompile(`\b\d{3}\.\d{3}\.\d{3}-\d{2}\b|\b\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}\b`)
-	reUUID    = regexp.MustCompile(`(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b`)
-	reUnder   = regexp.MustCompile(`(^|\s)_[^_\s][^_]*_($|\s|[.,;:!?])`)
-	rePlace   = regexp.MustCompile(`\{([^{}]*)\}`)
-	fieldKey  = regexp.MustCompile(`^[a-z][a-z_]{1,29}$`)
-	dedupeKey = regexp.MustCompile(`^[A-Za-z0-9_.:/ \-]{1,80}$`)
+	reURL        = regexp.MustCompile(`(?i)(?:\b(?:https?://|www\.)[^\s]+|\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:com|net|org|br|gov|io|app|dev|co|me|link|xyz|info|ly)\b[^\s]*)`)
+	reEmail      = regexp.MustCompile(`(?i)[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}`)
+	reDigits     = regexp.MustCompile(`\d(?:[\s.\-()]?\d){8,}`)
+	reDoc        = regexp.MustCompile(`\b\d{3}\.\d{3}\.\d{3}-\d{2}\b|\b\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}\b`)
+	reUUID       = regexp.MustCompile(`(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b`)
+	reUnder      = regexp.MustCompile(`(^|\s)_[^_\s][^_]*_($|\s|[.,;:!?])`)
+	rePlace      = regexp.MustCompile(`\{([^{}]*)\}`)
+	fieldKey     = regexp.MustCompile(`^[a-z][a-z_]{1,29}$`)
+	reMoneyTyped = regexp.MustCompile(`(?i)r\$\s*\d`)
+	dedupeKey    = regexp.MustCompile(`^[A-Za-z0-9_.:/ \-]{1,80}$`)
 )
 
 // Termos de pressão: cobrança não pode expor nem constranger o cliente (CDC art. 42). Marcam o envio com um aviso para quem aprova.
@@ -52,6 +53,11 @@ var pressureTerms = []string{
 // dados de pagamento, contatos ou links soltos: tudo isso só entra por campos fixos do escritório ({pix_escritorio}) ou em PDF.
 // Devolve avisos (não bloqueiam; quem aprova vê) ou a recusa.
 func ValidateText(text string, allowedDomains []string, fields map[string]string) (flags []string, ref *Refusal) {
+	return ValidateTextCharge(text, allowedDomains, fields, false)
+}
+
+// ValidateTextCharge é ValidateText para um envio que carrega uma cobrança (charge_id): só aí valem {link_cobranca}, {valor} e {vencimento}.
+func ValidateTextCharge(text string, allowedDomains []string, fields map[string]string, hasCharge bool) (flags []string, ref *Refusal) {
 	t := strings.TrimSpace(text)
 	n := utf8.RuneCountInString(t)
 	if n == 0 {
@@ -79,6 +85,12 @@ func ValidateText(text string, allowedDomains []string, fields map[string]string
 		if name == "nome" {
 			continue
 		}
+		if isChargeVar(name) {
+			if !hasCharge {
+				return nil, refuse("content", "A variável {%s} só existe junto com uma cobrança: informe o charge_id (list_charges).", name)
+			}
+			continue
+		}
 		if _, ok := fields[name]; !ok {
 			return nil, refuse("content", "A variável {%s} não existe. Use {nome} ou um campo fixo do escritório (%s).", name, fieldList(fields))
 		}
@@ -98,6 +110,9 @@ func ValidateText(text string, allowedDomains []string, fields map[string]string
 	}
 	if reUUID.MatchString(plain) || reDigits.MatchString(plain) {
 		return nil, refuse("content", "Não coloque números longos (telefone, documento, conta ou chave PIX) no texto. Dados de pagamento vão pelos campos fixos do escritório ou em PDF.")
+	}
+	if reMoneyTyped.MatchString(plain) {
+		flags = append(flags, "valor_digitado") // valor escrito pela IA: o certo é {valor}; quem aprova confere
 	}
 	low := strings.ToLower(plain)
 	for _, term := range pressureTerms {
@@ -168,10 +183,28 @@ func firstName(name string) string {
 
 // Render monta o texto final: variáveis substituídas e rodapé de opt-out. O corpo armazenado e enviado é este.
 func Render(text, contactName string, fields map[string]string) string {
+	return RenderCharge(text, contactName, fields, nil, false)
+}
+
+// RenderCharge: como Render, com os valores da cobrança. maskLink troca o link real por um marcador (prévia que volta para a IA).
+func RenderCharge(text, contactName string, fields map[string]string, cv *ChargeVars, maskLink bool) string {
 	out := rePlace.ReplaceAllStringFunc(strings.TrimSpace(text), func(m string) string {
 		name := strings.Trim(m, "{}")
 		if name == "nome" {
 			return firstName(contactName)
+		}
+		if cv != nil && isChargeVar(name) {
+			switch name {
+			case "link_cobranca":
+				if maskLink {
+					return "[link de pagamento da cobrança]"
+				}
+				return cv.Link
+			case "valor":
+				return cv.Amount
+			default:
+				return cv.Due
+			}
 		}
 		return fields[name]
 	})
@@ -196,7 +229,7 @@ func CleanFields(in map[string]string) (map[string]string, error) {
 	for k, v := range in {
 		k = strings.TrimSpace(k)
 		v = strings.TrimSpace(v)
-		if !fieldKey.MatchString(k) || k == "nome" {
+		if !fieldKey.MatchString(k) || k == "nome" || isChargeVar(k) {
 			return nil, fmt.Errorf("nome de campo inválido %q: use letras minúsculas e _ (ex.: pix_escritorio)", k)
 		}
 		if v == "" || utf8.RuneCountInString(v) > 200 || strings.ContainsAny(v, "\n\r*`~") {

@@ -116,6 +116,7 @@ func NewServices(ctx context.Context, cfg config.Config, db *pgxpool.Pool, opt O
 	}
 	s.AI.Attach(convs, hub)
 	s.Automation = automation.NewService(db, convs, store, mediaSvc, opt.Logger)
+	s.Automation.SetBilling(box) // chaves de API dos gateways de cobrança, cifradas com a ENCRYPTION_KEY
 	if cfg.SeedExampleData {
 		if err := s.Segments.EnsureDefaults(ctx); err != nil {
 			return nil, err

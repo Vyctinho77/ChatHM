@@ -20,12 +20,15 @@ func (s *Service) Run(ctx context.Context) {
 	s.recoverStuck(ctx)
 	t := time.NewTicker(5 * time.Second)
 	defer t.Stop()
-	for {
+	for n := 0; ; n++ {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
 			s.Tick(ctx)
+			if n%12 == 0 { // a cada minuto vê se algum gateway está na hora de sincronizar
+				s.SyncDue(ctx)
+			}
 		}
 	}
 }
@@ -126,10 +129,14 @@ func (s *Service) record(ctx context.Context, action, id string, meta map[string
 
 // process reivindica e envia um item. As regras do servidor rodam DE NOVO aqui: o mundo mudou desde que a IA enfileirou.
 func (s *Service) process(ctx context.Context, id string, st Settings) outcome {
-	var contactID, text, category, docID, provider, app string
+	var contactID, text, category, docID, provider, app, chargeID string
+	var snapAmount *int64
+	var snapDue *time.Time
+	var attempts int
 	err := s.db.QueryRow(ctx, `
 		UPDATE automation_sends SET status = 'sending', attempts = attempts + 1, updated_at = now() WHERE id = $1 AND status = 'approved'
-		RETURNING contact_id::text, text, category, coalesce(document_id::text, ''), provider, app_name`, id).Scan(&contactID, &text, &category, &docID, &provider, &app)
+		RETURNING contact_id::text, text, category, coalesce(document_id::text, ''), provider, app_name, coalesce(charge_id::text, ''), charge_amount_cents, charge_due_date, attempts`, id).
+		Scan(&contactID, &text, &category, &docID, &provider, &app, &chargeID, &snapAmount, &snapDue, &attempts)
 	if err != nil {
 		return outcomeSkipped // outro worker pegou, ou foi cancelado
 	}
@@ -143,10 +150,39 @@ func (s *Service) process(ctx context.Context, id string, st Settings) outcome {
 		s.record(ctx, "automation.skipped", id, map[string]any{"code": ref.Code})
 		return outcomeSkipped
 	}
-	if _, ref, _ := s.guardTextNow(text, st); ref != nil {
+	if _, ref, _ := s.guardTextNow(text, st, chargeID != ""); ref != nil {
 		s.mark(ctx, id, StatusSkipped, ref.Message)
 		s.record(ctx, "automation.skipped", id, map[string]any{"code": ref.Code})
 		return outcomeSkipped
+	}
+	// Cobrança: confere de novo, AGORA, no gateway. Quem pagou entre a aprovação e o envio nunca recebe a cobrança.
+	var cv *ChargeVars
+	if chargeID != "" {
+		ch, rerr := s.refreshCharge(ctx, chargeID)
+		if rerr != nil {
+			if attempts >= 6 {
+				s.mark(ctx, id, StatusFailed, "Não foi possível conferir a cobrança no gateway. Tente de novo mais tarde.")
+				s.record(ctx, "automation.failed", id, map[string]any{"contactId": contactID, "why": "gateway"})
+				return outcomeFailed
+			}
+			// Gateway fora do ar: volta para a fila e tenta de novo em 10 minutos, sem travar os demais.
+			_, _ = s.db.Exec(ctx, `UPDATE automation_sends SET status = 'approved', scheduled_for = $2, updated_at = now() WHERE id = $1`, id, s.now().Add(10*time.Minute))
+			return outcomeSkipped
+		}
+		if _, ref, gerr := s.guardCharge(ctx, ch.ID, contactID, st); gerr != nil {
+			s.mark(ctx, id, StatusApproved, "")
+			return outcomeWait
+		} else if ref != nil {
+			s.mark(ctx, id, StatusSkipped, ref.Message)
+			s.record(ctx, "automation.skipped", id, map[string]any{"code": ref.Code})
+			return outcomeSkipped
+		}
+		if snapAmount != nil && snapDue != nil && (ch.AmountCents != *snapAmount || !ch.DueDate.Equal(*snapDue)) {
+			s.mark(ctx, id, StatusSkipped, "O valor ou o vencimento da cobrança mudou depois da aprovação. Peça um novo envio para o administrador aprovar com os dados atuais.")
+			s.record(ctx, "automation.skipped", id, map[string]any{"code": "charge_changed"})
+			return outcomeSkipped
+		}
+		cv = ch.vars()
 	}
 	var att *media.Processed
 	if docID != "" {
@@ -179,7 +215,7 @@ func (s *Service) process(ctx context.Context, id string, st Settings) outcome {
 	}
 	msgID := uuid.NewString()
 	msg, err := s.convs.SendAutomated(ctx, conversations.AutomatedSend{
-		ID: msgID, ContactID: contactID, Author: Author(st.Signature), Text: Render(text, info.Name, st.OfficeFields),
+		ID: msgID, ContactID: contactID, Author: Author(st.Signature), Text: RenderCharge(text, info.Name, st.OfficeFields, cv, false),
 		Att: att, Provider: provider, App: app, SendID: id,
 	})
 	var blocked *conversations.ErrAutomatedBlocked
@@ -204,13 +240,13 @@ func (s *Service) process(ctx context.Context, id string, st Settings) outcome {
 		return outcomeFailed
 	}
 	_, _ = s.db.Exec(ctx, `UPDATE automation_sends SET status = 'sent', sent_at = $2, message_id = $3::uuid, status_detail = '', updated_at = now() WHERE id = $1`, id, s.now(), msgID)
-	s.record(ctx, "automation.sent", id, map[string]any{"contactId": contactID, "category": category, "provider": provider, "hasDocument": docID != ""})
+	s.record(ctx, "automation.sent", id, map[string]any{"contactId": contactID, "category": category, "provider": provider, "hasDocument": docID != "", "chargeId": chargeID})
 	return outcomeSent
 }
 
 // guardTextNow: revalida o texto na hora de enviar (as regras do administrador podem ter mudado desde a aprovação).
-func (s *Service) guardTextNow(text string, st Settings) ([]string, *Refusal, error) {
-	flags, ref := ValidateText(text, st.AllowedDomains, st.OfficeFields)
+func (s *Service) guardTextNow(text string, st Settings, hasCharge bool) ([]string, *Refusal, error) {
+	flags, ref := ValidateTextCharge(text, st.AllowedDomains, st.OfficeFields, hasCharge)
 	return flags, ref, nil
 }
 
