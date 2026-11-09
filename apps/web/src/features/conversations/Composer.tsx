@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type KeyboardEvent } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Check, FileText, Image, LoaderCircle, MapPin, Mic, Paperclip, Pencil, Reply, SendHorizontal, Smile, Sparkles, Trash2, X } from "lucide-react";
 import { Menu, MenuItem } from "@/components/Menu";
@@ -157,6 +157,49 @@ export function Composer({
     }
   }
 
+  /** Arquivos colados (Ctrl+V): imagens da área de transferência e arquivos copiados no computador. */
+  function pastedFiles(data: DataTransfer | null): File[] {
+    if (!data || disabled || mediaDisabledReason || recorder.recording || edit) return [];
+    if (data.getData("text/plain")) return []; // célula do Excel, texto do Word etc.: cola o texto
+    return Array.from(data.files ?? []).map((f, i) =>
+      f.name && f.name !== "image.png" ? f : new File([f], `imagem-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}${i ? `-${i + 1}` : ""}.${f.type.split("/")[1] || "png"}`, { type: f.type }),
+    );
+  }
+
+  function stagePasted(files: File[]): boolean {
+    if (!files.length) return false;
+    if (files.length > 10) setError("Selecione até 10 arquivos por envio.");
+    else if (files.some((file) => file.size > MAX_FILE)) setError("Cada arquivo pode ter até 25 MB.");
+    else if (files.some((file) => file.size === 0)) setError("O arquivo colado está vazio.");
+    else {
+      setError("");
+      setAttachments({ files, kind: "image", hd: false });
+    }
+    return true;
+  }
+
+  function onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
+    if (stagePasted(pastedFiles(e.clipboardData))) e.preventDefault();
+  }
+
+  // Ctrl+V com o foco fora de qualquer campo (por exemplo, depois de clicar na conversa): cola direto no chat.
+  useEffect(() => {
+    function onDocPaste(e: globalThis.ClipboardEvent) {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      if (stagePasted(pastedFiles(e.clipboardData))) return void e.preventDefault();
+      const txt = e.clipboardData?.getData("text/plain");
+      if (txt && ta.current) {
+        e.preventDefault();
+        update(text + txt);
+        ta.current.focus();
+      }
+    }
+    document.addEventListener("paste", onDocPaste);
+    return () => document.removeEventListener("paste", onDocPaste);
+  });
+
   function onFile(kind: "document" | "image", hd = false) {
     return (e: ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(e.target.files ?? []);
@@ -274,6 +317,7 @@ export function Composer({
             value={text}
             onChange={(e) => update(e.target.value)}
             onKeyDown={onKeyDown}
+            onPaste={onPaste}
             placeholder="Digite uma mensagem"
             aria-label="Mensagem"
             className="mx-1 max-h-40 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-[13.5px] leading-5 outline-none placeholder:text-muted focus-visible:outline-none"
