@@ -42,6 +42,7 @@ export function Composer({
   disabled,
   disabledReason,
   mediaDisabledReason,
+  incoming,
   onSend,
   reply,
   onCancelReply,
@@ -61,6 +62,8 @@ export function Composer({
   disabledReason?: string;
   /** Quando definido, anexos e gravação de áudio ficam desativados com esta explicação. */
   mediaDisabledReason?: string;
+  /** Arquivos arrastados do computador para o chat: abrem a prévia de anexos (id muda a cada soltura). */
+  incoming?: { id: number; files: File[] } | null;
   onSend: (d: OutgoingDraft) => void;
 }) {
   const [text, setText] = useState(() => (edit ? edit.text : getDraft(conversationId)));
@@ -140,6 +143,18 @@ export function Composer({
       () => setError("Não foi possível obter a localização (permissão negada?)."),
       { enableHighAccuracy: true, timeout: 10_000 },
     );
+  }
+
+  // Arquivos soltos no chat: mesma checagem e mesma prévia de "Anexar".
+  const [seenIncoming, setSeenIncoming] = useState(0);
+  if (incoming && incoming.id !== seenIncoming) {
+    setSeenIncoming(incoming.id);
+    if (incoming.files.length > 10) setError("Selecione até 10 arquivos por envio.");
+    else if (incoming.files.some((file) => file.size > MAX_FILE)) setError("Cada arquivo pode ter até 25 MB.");
+    else {
+      setError("");
+      setAttachments({ files: incoming.files, kind: "image", hd: false }); // jpeg/png/webp viram foto; o resto vai como documento
+    }
   }
 
   function onFile(kind: "document" | "image", hd = false) {

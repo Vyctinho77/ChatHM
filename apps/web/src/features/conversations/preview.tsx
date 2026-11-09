@@ -1,4 +1,6 @@
-import { Ban, FileText, Image, MapPin, Mic, Sticker } from "lucide-react";
+import { Ban, Image, MapPin, Mic, Sticker } from "lucide-react";
+import { DocBadge } from "./DocBadge";
+import { docKind } from "./docKind";
 import { formatDuration } from "@/lib/format";
 import type { Message } from "./types";
 
@@ -19,7 +21,7 @@ export function MessagePreview({ m }: { m: Message }) {
     case "document":
       return (
         <>
-          <FileText className={icon} /> <span className="truncate">{m.fileName}</span>
+          <DocBadge kind={docKind(m.fileName, m.mimeType)} size="sm" className="rounded-[3px]" /> <span className="truncate">{m.fileName}</span>
         </>
       );
     case "image":

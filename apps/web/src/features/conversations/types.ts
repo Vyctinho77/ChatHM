@@ -16,8 +16,9 @@ const segmentStyles: Record<string, { label: string; className: string }> = {
 const defaultSegmentClass = "bg-teal-500/15 text-teal-700 dark:text-teal-300";
 
 export const segmentClass = (key: SegmentKey) => segmentStyles[key]?.className ?? defaultSegmentClass;
-export const segmentLabel = (c: { segment: SegmentKey; segmentName?: string }) =>
-  c.segment === "geral" ? "Não atribuídos" : c.segmentName ?? segmentStyles[c.segment]?.label ?? c.segment;
+/** Fila geral = nenhuma equipe identificada. Só se chama "Não atribuídos" enquanto ninguém atende; com responsável, é "Fila geral". */
+export const segmentLabel = (c: { segment: SegmentKey; segmentName?: string; assignee?: unknown }) =>
+  c.segment === "geral" ? (c.assignee ? "Fila geral" : "Não atribuídos") : c.segmentName ?? segmentStyles[c.segment]?.label ?? c.segment;
 
 export type ConversationStatus = "new" | "in_progress" | "closed";
 

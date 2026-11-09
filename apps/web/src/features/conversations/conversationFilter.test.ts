@@ -85,3 +85,12 @@ describe("números ao lado das abas", () => {
     expect(unreadByTab([conversation("a")], "me")).toEqual({ mine: 0, general: 0, groups: 0, all: 0 });
   });
 });
+
+describe("rótulo da fila geral", () => {
+  it("só diz Não atribuídos enquanto ninguém atende", async () => {
+    const { segmentLabel } = await import("./types");
+    expect(segmentLabel({ segment: "geral" })).toBe("Não atribuídos");
+    expect(segmentLabel({ segment: "geral", assignee: { id: "ana", name: "Ana" } })).toBe("Fila geral");
+    expect(segmentLabel({ segment: "folha", segmentName: "Folha de pagamento", assignee: { id: "ana" } })).toBe("Folha de pagamento");
+  });
+});

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, FileText, LoaderCircle, Plus, SendHorizontal, Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, LoaderCircle, Plus, SendHorizontal, Trash2, X } from "lucide-react";
+import { DocBadge } from "./DocBadge";
+import { IMAGE_TYPES, docKind } from "./docKind";
 import { Button, IconButton, Modal } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { formatBytes } from "@/lib/format";
@@ -21,7 +23,7 @@ function LocalImage({ file, alt, className }: { file: File; alt: string; classNa
 }
 
 function Thumbnail({ item }: { item: Attachment }) {
-  return item.kind === "image" ? <LocalImage file={item.file} alt="" className="size-full object-cover" /> : <FileText className="size-6 text-brand-ink" />;
+  return item.kind === "image" ? <LocalImage file={item.file} alt="" className="size-full object-cover" /> : <DocBadge kind={docKind(item.file.name, item.file.type)} size="sm" className="size-7 rounded" />;
 }
 
 /** PDF local renderizado em canvas; não incorpora scripts ou links do documento. */
@@ -79,11 +81,11 @@ function PdfPreview({ file }: { file: File }) {
 function FilePreview({ item }: { item: Attachment }) {
   if (item.kind === "image") return <LocalImage file={item.file} alt={`Prévia de ${item.file.name}`} className="max-h-full max-w-full object-contain shadow-md" />;
   if (item.file.type === "application/pdf" || /\.pdf$/i.test(item.file.name)) return <PdfPreview key={item.id} file={item.file} />;
-  return <div className="flex max-w-sm flex-col items-center gap-4 rounded-2xl bg-panel p-8 text-center"><FileText className="size-16 text-brand-ink" /><p className="break-all font-medium">{item.file.name}</p><span className="text-sm text-muted">{formatBytes(item.file.size)}</span></div>;
+  return <div className="flex max-w-sm flex-col items-center gap-4 rounded-2xl bg-panel p-8 text-center"><DocBadge kind={docKind(item.file.name, item.file.type)} size="lg" /><p className="break-all font-medium">{item.file.name}</p><span className="text-sm text-muted">{formatBytes(item.file.size)}</span></div>;
 }
 
 function attachment(file: File, kind: Attachment["kind"], hd: boolean): Attachment {
-  return { id: crypto.randomUUID(), file, kind: kind === "image" && file.type.startsWith("image/") ? "image" : "document", hd, caption: "" };
+  return { id: crypto.randomUUID(), file, kind: kind === "image" && IMAGE_TYPES.includes(file.type) ? "image" : "document", hd, caption: "" };
 }
 
 async function outgoing(item: Attachment): Promise<OutgoingDraft> {
@@ -118,7 +120,7 @@ export function AttachmentPreview({ selection, onClose, onSend }: { selection: A
     if (files.some(f => f.size > MAX_FILE)) return setError("Cada arquivo pode ter até 25 MB.");
     if (items.length + files.length > MAX_FILES) return setError("Selecione até 10 arquivos por envio.");
     setError("");
-    setItems(old => [...old, ...files.map(f => attachment(f, f.type.startsWith("image/") ? "image" : "document", false))]);
+    setItems(old => [...old, ...files.map(f => attachment(f, IMAGE_TYPES.includes(f.type) ? "image" : "document", false))]);
     if (files.length) setActive(items.length);
   }
   async function send() {
@@ -140,7 +142,7 @@ export function AttachmentPreview({ selection, onClose, onSend }: { selection: A
 
   return <div ref={panel} role="region" aria-label="Preparar anexos" tabIndex={-1}
     onKeyDown={e => { if (e.key === "Escape" && !busy) { e.stopPropagation(); setConfirm(true); } }}
-    onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); if (!busy) addFiles(Array.from(e.dataTransfer.files)); }}
+    onDragEnter={e => e.stopPropagation()} onDragLeave={e => e.stopPropagation()} onDragOver={e => { e.preventDefault(); e.stopPropagation(); }} onDrop={e => { e.preventDefault(); e.stopPropagation(); if (!busy) addFiles(Array.from(e.dataTransfer.files)); }}
     className="absolute inset-x-0 bottom-0 top-14 z-30 flex min-h-0 flex-col bg-app outline-none">
     <div className="flex h-14 shrink-0 items-center gap-3 border-b border-line px-3 sm:px-5">
       <IconButton label="Fechar prévia" disabled={busy} onClick={() => setConfirm(true)}><X className="size-5" /></IconButton>

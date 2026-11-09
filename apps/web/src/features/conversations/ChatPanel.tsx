@@ -9,6 +9,9 @@ import { Alert, IconButton } from "@/components/ui";
 import { ChatSkeleton } from "@/components/Skeleton";
 import { errorMessage, isRejection } from "@/lib/api";
 import { canSupervise, useMe } from "@/features/auth/api";
+import { AssigneeChip } from "./AssigneeChip";
+import { DropOverlay } from "./DropOverlay";
+import { useFileDrop } from "./useFileDrop";
 import { cn } from "@/lib/cn";
 import { formatDayDivider, formatTime, sameDay } from "@/lib/format";
 import { Composer } from "./Composer";
@@ -28,7 +31,7 @@ import { statusLabel } from "./receipts";
 import { segmentClass, segmentLabel, type Conversation, type Message, type Quoted } from "./types";
 import { SnoozeDialog, SnoozeNotice } from "./SnoozeDialog";
 import { useTyping } from "./typing";
-import { TypingIndicator } from "./TypingIndicator";
+import { TypingBubble, TypingIndicator } from "./TypingIndicator";
 
 const MESSAGE_PAUSE_MS = 30 * 60 * 1000;
 
@@ -51,6 +54,8 @@ export function ChatPanel({
   const { data: me } = useMe();
   const isAdmin = canSupervise(me?.user.role); // administrador ou gestor
   const [snoozeOpen, setSnoozeOpen] = useState(false);
+  const [incoming, setIncoming] = useState<{ id: number; files: File[] } | null>(null);
+  const [dropProblem, setDropProblem] = useState("");
   const [statusExpanded, setStatusExpanded] = useState(true);
   // Muda ao devolver um texto recusado ao campo de mensagem (remonta o Composer).
   const [composerKey, setComposerKey] = useState(0);
@@ -99,6 +104,11 @@ export function ChatPanel({
       el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     }
   }, [messages]);
+
+  // A bolha de "digitando" aparece no fim: acompanha se a pessoa já está lendo o fim da conversa.
+  useEffect(() => {
+    if (typing && atBottom.current) scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
+  }, [typing]);
 
   function onScroll() {
     const el = scroller.current;
@@ -191,6 +201,25 @@ export function ChatPanel({
 
   const canTransfer = !closed && (mine || isAdmin || !c.assignee);
   const [transferAt, setTransferAt] = useState<{ x: number; y: number } | null>(null);
+  // Por que não dá para enviar arquivos agora (ou null): o mesmo que o campo de mensagem avisa.
+  const dropBlocked = !capabilities.send
+    ? (capabilities.sendUnavailableReason ?? "O envio está indisponível.")
+    : closed
+      ? "Atendimento encerrado."
+      : lockedByOther
+        ? `${c.assignee?.name} está atendendo esta conversa.`
+        : c.snoozedUntil
+          ? "Atendimento adiado. Retome para responder."
+          : !capabilities.media
+            ? (capabilities.mediaUnavailableReason ?? "O envio de arquivos está indisponível.")
+            : null;
+  const { dragging, handlers: dropHandlers } = useFileDrop({
+    blocked: dropBlocked,
+    onFiles: (files, problem) => {
+      setDropProblem(problem ?? "");
+      if (files.length) setIncoming((prev) => ({ id: (prev?.id ?? 0) + 1, files }));
+    },
+  });
   let banner: React.ReactNode;
   if (closed) {
     banner = <>Atendimento encerrado. Uma nova mensagem do cliente abre um novo atendimento.</>;
@@ -249,7 +278,8 @@ export function ChatPanel({
   }
 
   return (
-    <section aria-label={`Conversa com ${c.contact.name}`} className="chat-wallpaper relative flex h-full min-w-0 flex-col">
+    <section aria-label={`Conversa com ${c.contact.name}`} className="chat-wallpaper relative flex h-full min-w-0 flex-col" {...dropHandlers}>
+      {dragging && <DropOverlay blocked={dropBlocked} />}
       <header className="relative flex h-14 shrink-0 items-center gap-1.5 border-b border-line bg-panel px-2.5">
         {onBack && (
           <IconButton label="Voltar para a lista" onClick={onBack}>
@@ -271,9 +301,9 @@ export function ChatPanel({
               <span
                 title={
                   c.classification === "conflict"
-                    ? "Não atribuídos: a mensagem combinou com mais de um segmento, sem uma equipe definida"
+                    ? `${segmentLabel(c)}: a mensagem combinou com mais de um segmento, sem uma equipe definida`
                     : c.segment === "geral"
-                      ? "Não atribuídos: nenhuma equipe identificada para este atendimento"
+                      ? `${segmentLabel(c)}: nenhuma equipe identificada para este atendimento`
                       : undefined
                 }
                 className={cn(
@@ -283,6 +313,7 @@ export function ChatPanel({
               >
                 {segmentLabel(c)}
               </span>
+              {c.assignee && !closed && <AssigneeChip name={c.assignee.name} mine={mine} className="max-w-[9rem]" />}
             </span>
             {typing && <TypingIndicator announce className="text-[11.5px]" />}
           </span>
@@ -484,6 +515,7 @@ export function ChatPanel({
               </Fragment>
             );
           })}
+          {typing && !search && !closed && <TypingBubble />}
         </motion.div>
       </div>
       <AnimatePresence>
@@ -518,6 +550,18 @@ export function ChatPanel({
       </AnimatePresence>
       </div>
 
+      {dropProblem && (
+        <div className="border-t border-line bg-panel px-3 pt-2">
+          <Alert>
+            <span className="flex items-start justify-between gap-3">
+              {dropProblem}
+              <button type="button" className="shrink-0 font-medium underline-offset-2 hover:underline" onClick={() => setDropProblem("")}>
+                Fechar
+              </button>
+            </span>
+          </Alert>
+        </div>
+      )}
       {send.isError && (
         <div className="border-t border-line bg-panel px-3 pt-2">
           <Alert>
@@ -564,6 +608,7 @@ export function ChatPanel({
                 : c.snoozedUntil ? "Atendimento adiado. Retome para responder." : undefined
         }
         mediaDisabledReason={capabilities.media ? undefined : capabilities.mediaUnavailableReason}
+        incoming={incoming}
         onSend={submit}
       />
       {menu && menuMsg && (

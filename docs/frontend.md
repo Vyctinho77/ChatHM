@@ -88,3 +88,18 @@ WhatsApp não as oferece.
 no navegador (`src/lib/demo-api.ts`) e navegação em memória, para mostrar a interface sem backend.
 Contas: `admin@hm.com.br`, `heliton@hm.com.br`, `paula@hm.com.br`, todas com a senha `demo`.
 O build normal não inclui esse código (a condição `import.meta.env.VITE_DEMO` é eliminada pelo bundler).
+
+## Conversas: arquivos, digitando e quem atende
+
+- **Documentos** (`conversations/docKind.ts`, `DocBadge.tsx`): PDF, Word, Excel e PowerPoint têm ícone próprio (cor e letra de cada
+  aplicativo, desenho próprio, sem usar as marcas registradas). Reconhecidos pela extensão (maiúsculas não importam) e, na falta
+  dela, pelo tipo MIME. PDF abre no visualizador do app; Word/Excel/PowerPoint baixam o arquivo com o nome certo, e o navegador
+  oferece abrir no Office instalado no computador (o app não abre `.docx`/`.xlsx` por dentro, para não enviar o arquivo a terceiros).
+- **Arrastar arquivos** (`useFileDrop.tsx`, `DropOverlay.tsx`): arrastar do Explorer/Finder para qualquer ponto do chat mostra
+  “Solte para enviar” e abre a mesma prévia de anexos de “Anexar” (até 10 arquivos de 25 MB; jpeg/png/webp vão como foto, o
+  resto como documento). Se não dá para enviar (outra pessoa atende, encerrado, adiado), o aviso diz o motivo. Soltar fora do
+  chat ou em pasta nunca abre o arquivo no navegador; pasta e arquivo vazio mostram aviso.
+- **Digitando**: além do cabeçalho e da lista, uma bolha com três pontos aparece no fim das mensagens (e a conversa rola até ela
+  se a pessoa já está no fim).
+- **Quem atende**: um selo com o primeiro nome do responsável fica ao lado do nome do cliente na lista e no cabeçalho (“Você” para
+  o próprio usuário). A etiqueta da fila geral só diz “Não atribuídos” enquanto ninguém atende; com responsável, diz “Fila geral”.

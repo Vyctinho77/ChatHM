@@ -4,6 +4,8 @@ import { Ban, Download, FileText, Image as ImageIcon, LoaderCircle, MapPin, Mic,
 import { cn } from "@/lib/cn";
 import { formatBytes, formatTime } from "@/lib/format";
 import { AudioPlayer } from "./AudioPlayer";
+import { DocBadge } from "./DocBadge";
+import { docKind, docKindLabel, officeApp } from "./docKind";
 import { receiptDetails } from "./receipts";
 import { Highlight } from "@/components/Highlight";
 import { RichText } from "@/components/RichText";
@@ -170,43 +172,50 @@ function ImageBody({
   );
 }
 
+/** Baixa o arquivo com o nome certo: o navegador oferece abrir no Word/Excel/PowerPoint instalados no computador. */
+function saveFile(url: string, fileName: string) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 function DocumentCard({ m, onOpen, term }: { m: Extract<Message, { kind: "document" }>; onOpen?: (id: string) => void; term?: string }) {
-  const isPdf = m.mimeType === "application/pdf";
-  const openable = isPdf && !!m.url && !!onOpen;
-  const ext = m.fileName.split(".").pop()?.toUpperCase() ?? "ARQ";
+  const kind = docKind(m.fileName, m.mimeType);
+  const isPdf = kind === "pdf";
+  const app = officeApp[kind];
+  const ext = m.fileName.includes(".") ? m.fileName.split(".").pop()!.toUpperCase() : "ARQ";
+  // PDF abre no visualizador do app; Word/Excel/PowerPoint baixam e abrem no próprio Office do computador.
+  const action = m.url ? (isPdf && onOpen ? () => onOpen(m.id) : app ? () => saveFile(m.url!, m.fileName) : null) : null;
   return (
     <div
       className={cn(
         "flex min-w-60 max-w-80 items-start gap-3 rounded-lg bg-black/10 p-2.5 dark:bg-black/20",
-        openable && "cursor-pointer hover:bg-black/15 dark:hover:bg-black/30",
+        action && "cursor-pointer hover:bg-black/15 dark:hover:bg-black/30",
       )}
-      {...(openable && {
+      {...(action && {
         role: "button",
         tabIndex: 0,
-        title: "Abrir PDF",
-        onClick: () => onOpen(m.id),
+        title: isPdf ? "Abrir PDF" : `Abrir no ${app}`,
+        onClick: action,
         onKeyDown: (e: React.KeyboardEvent) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            onOpen(m.id);
+            action();
           }
         },
       })}
     >
-      <span
-        className={cn(
-          "inline-flex h-11 w-9 shrink-0 items-center justify-center rounded-md text-[10px] font-bold text-white",
-          isPdf ? "bg-red-600" : "bg-slate-500",
-        )}
-      >
-        {isPdf ? "PDF" : <FileText className="size-5" />}
-      </span>
+      <DocBadge kind={kind} />
       <div className="min-w-0 flex-1">
         <p className="break-all text-[13px] font-medium leading-snug">
           <Highlight text={m.fileName} term={term} />
         </p>
         <p className="text-[11px] opacity-70">
-          {isPdf ? "PDF" : ext} • {formatBytes(m.sizeBytes)}
+          {docKindLabel(kind, ext)} • {formatBytes(m.sizeBytes)}
           {!m.url && ` • ${historicalDocLabel(m)}`}
         </p>
       </div>
