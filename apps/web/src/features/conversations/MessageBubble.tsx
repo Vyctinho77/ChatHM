@@ -66,10 +66,21 @@ function MetaOverlay({ m }: { m: Message }) {
   );
 }
 
+/** Situação de um documento sem arquivo: histórico antigo (só metadados), limite de espaço, apagado no WhatsApp, bloqueado ou baixando. */
+function historicalDocLabel(m: Message) {
+  if (m.mediaState === "blocked") return "bloqueado por segurança";
+  if (m.historical && m.mediaState === "failed") return "o WhatsApp não tem mais o arquivo";
+  if (m.historical && m.mediaState === "skipped") return "histórico · não importado (limite de espaço)";
+  if (m.historical) return "arquivo do histórico não importado";
+  return m.mediaState === "failed" ? "download falhou" : "baixando…";
+}
+
 /** Texto do espaço de uma mídia cujo arquivo ainda não chegou ou não pode ser exibido. */
 function mediaStateLabel(m: Message, what: string) {
-  if (m.historical) return `${what} do histórico · arquivo não importado`;
   if (m.mediaState === "blocked") return `${what} bloqueada por segurança`;
+  if (m.historical && m.mediaState === "failed") return `${what} do histórico · o WhatsApp não tem mais o arquivo`;
+  if (m.historical && m.mediaState === "skipped") return `${what} do histórico · não importado (limite de espaço)`;
+  if (m.historical) return `${what} do histórico · arquivo não importado`;
   if (m.mediaState === "failed") return `Não foi possível baixar ${what.toLowerCase() === "imagem" ? "a imagem" : "o arquivo"}`;
   return `${what} recebida · baixando…`;
 }
@@ -196,7 +207,7 @@ function DocumentCard({ m, onOpen, term }: { m: Extract<Message, { kind: "docume
         </p>
         <p className="text-[11px] opacity-70">
           {isPdf ? "PDF" : ext} • {formatBytes(m.sizeBytes)}
-          {!m.url && ` • ${m.historical ? "arquivo do histórico não importado" : m.mediaState === "blocked" ? "bloqueado por segurança" : m.mediaState === "failed" ? "download falhou" : "baixando…"}`}
+          {!m.url && ` • ${historicalDocLabel(m)}`}
         </p>
       </div>
       {m.url && (

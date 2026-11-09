@@ -101,6 +101,7 @@ func NewServices(ctx context.Context, cfg config.Config, db *pgxpool.Pool, opt O
 		mediaSvc.FFprobe = cfg.FFprobeBin
 	}
 	convs.SetMedia(store, mediaSvc)
+	convs.SetHistoryMediaBudget(cfg.HistoryMediaBudget)
 	s := &Services{
 		Auth:          authSvc,
 		Users:         users.NewService(db, opt.Hasher),

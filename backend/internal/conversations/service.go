@@ -93,14 +93,20 @@ type Service struct {
 	store      storage.Store
 	media      *media.Service
 	mediaSlots chan struct{}
+	// PDFs do histórico têm fila própria (poucos de cada vez) para nunca atrasar a mídia das conversas ao vivo.
+	histSlots  chan struct{}
+	histBudget int64 // bytes máximos de anexos antes de parar de baixar PDFs do histórico (<= 0 desliga)
 	db         *pgxpool.Pool
 	pub        Publisher
 	sender     Sender
 }
 
 func NewService(db *pgxpool.Pool, pub Publisher) *Service {
-	return &Service{db: db, pub: pub, mediaSlots: make(chan struct{}, 4)}
+	return &Service{db: db, pub: pub, mediaSlots: make(chan struct{}, 4), histSlots: make(chan struct{}, 2)}
 }
+
+// SetHistoryMediaBudget define o espaço total de anexos (bytes) até o qual PDFs do histórico são baixados; <= 0 desliga.
+func (s *Service) SetHistoryMediaBudget(bytes int64) { s.histBudget = bytes }
 
 // SetSender liga o envio (depois da criação, pois o Manager também depende deste serviço).
 func (s *Service) SetSender(sd Sender) { s.sender = sd }
@@ -229,6 +235,7 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 	}
 
 	var convID, msgID string
+	var retryID, retryConv string // PDF de histórico já importado, mas ainda sem arquivo
 	var before userSet
 	err := database.InTx(ctx, s.db, func(tx pgx.Tx) error {
 		var dup bool
@@ -238,6 +245,18 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 			return err
 		}
 		if dup {
+			// PDF de histórico reentregue (o administrador pediu o histórico de novo) cuja mensagem já existia sem o arquivo:
+			// tenta baixar agora. Nada mais da mensagem muda.
+			if m.Historical && m.Download != nil && m.Kind == whatsapp.KindDocument {
+				err := tx.QueryRow(ctx, `
+					SELECT m.id::text, m.conversation_id::text FROM messages m
+					 WHERE m.chat_jid = $1 AND m.external_id = $2
+					   AND NOT EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id)
+					   AND coalesce(m.payload->>'mediaState', '') <> 'blocked'`, m.ChatJID, m.ExternalID).Scan(&retryID, &retryConv)
+				if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+					return err
+				}
+			}
 			return nil
 		}
 
@@ -369,6 +388,9 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 		}
 		return nil
 	})
+	if err == nil && retryID != "" {
+		s.queueHistoricalPDF(retryID, retryConv, m)
+	}
 	if err != nil || msgID == "" {
 		return false, err
 	}
@@ -383,12 +405,16 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 			s.publishTyping(convID, m.SenderID, false, after)
 		}
 	}
-	if !m.Historical && m.Download != nil && s.store != nil && s.media != nil {
-		go func() {
-			s.mediaSlots <- struct{}{} // no máximo alguns downloads simultâneos
-			defer func() { <-s.mediaSlots }()
-			s.fetchMedia(msgID, convID, m)
-		}()
+	if m.Download != nil && s.store != nil && s.media != nil {
+		if m.Historical {
+			s.queueHistoricalPDF(msgID, convID, m) // o provedor só deixa o download nos PDFs do histórico
+		} else {
+			go func() {
+				s.mediaSlots <- struct{}{} // no máximo alguns downloads simultâneos
+				defer func() { <-s.mediaSlots }()
+				s.fetchMedia(msgID, convID, m)
+			}()
+		}
 	}
 	return true, nil
 }
@@ -1429,6 +1455,26 @@ func (s *Service) Attachment(ctx context.Context, v Viewer, id string) (Attachme
 
 // fetchMedia baixa a mídia recebida, valida, guarda e avisa a interface. Roda em segundo
 // plano: a mensagem já apareceu (sem arquivo) e ganha o anexo quando ele fica pronto.
+// queueHistoricalPDF baixa um PDF do histórico em segundo plano, em fila própria e pequena, respeitando o teto de espaço.
+func (s *Service) queueHistoricalPDF(msgID, convID string, m whatsapp.InboundMessage) {
+	if s.store == nil || s.media == nil || s.histBudget <= 0 {
+		return
+	}
+	go func() {
+		s.histSlots <- struct{}{}
+		defer func() { <-s.histSlots }()
+		var used int64
+		if err := s.db.QueryRow(context.Background(), `SELECT coalesce(sum(size_bytes), 0)::bigint FROM attachments`).Scan(&used); err != nil {
+			return
+		}
+		if size, _ := m.Payload["sizeBytes"].(uint64); used+int64(size) > s.histBudget {
+			_, _ = s.db.Exec(context.Background(), `UPDATE messages SET payload = payload || '{"mediaState":"skipped"}'::jsonb WHERE id = $1`, msgID)
+			return
+		}
+		s.fetchMedia(msgID, convID, m)
+	}()
+}
+
 func (s *Service) fetchMedia(msgID, convID string, m whatsapp.InboundMessage) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()

@@ -41,7 +41,7 @@ type Base = {
   deleted?: boolean; // apagada para todos: o conteúdo some, a marca fica
   historical?: boolean;
   /** Mídia recebida sem arquivo: o download falhou ou foi bloqueado pela verificação de segurança. */
-  mediaState?: "failed" | "blocked";
+  mediaState?: "failed" | "blocked" | "skipped";
 };
 
 // `url` ausente = mídia recebida cujo arquivo ainda não é baixado (download chega na Fase 4).

@@ -56,7 +56,18 @@ func (h *HTTPHandler) Routes(r chi.Router) {
 func (h *HTTPHandler) requestHistory(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	err := h.m.RequestHistory(ctx)
+	// Corpo opcional: {"days": 1-365}. Sem corpo, pede o padrão (30 dias).
+	var in struct {
+		Days int `json:"days"`
+	}
+	if r.ContentLength != 0 && !httpx.Decode(w, r, &in) {
+		return
+	}
+	if in.Days < 0 || in.Days > MaxHistoryDays {
+		httpx.Validation(w, httpx.FieldErrors{"days": "Escolha entre 1 e 365 dias."})
+		return
+	}
+	err := h.m.RequestHistory(ctx, in.Days)
 	switch {
 	case errors.Is(err, ErrNotConnected):
 		httpx.Error(w, 409, "whatsapp_unavailable", "Conecte o WhatsApp antes de solicitar o histórico.")

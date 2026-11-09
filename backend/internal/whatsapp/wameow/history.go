@@ -3,6 +3,7 @@ package wameow
 import (
 	"context"
 	"sort"
+	"strings"
 
 	"github.com/vyctinho77/chathm/backend/internal/whatsapp"
 	"go.mau.fi/whatsmeow"
@@ -66,7 +67,11 @@ func historyMessages(cli *whatsmeow.Client, conv *waHistorySync.Conversation, na
 		}
 		msg.Historical = true
 		msg.Payload["historical"] = true
-		msg.Download = nil // Historical media may have expired; import metadata only.
+		// Mídia antiga é importada só como metadados, para não pesar. A exceção são os PDFs (guias, extratos, notas), que dão contexto
+		// ao atendimento: ficam com o download, feito em segundo plano. O WhatsApp pode já ter apagado o arquivo; nesse caso falha em silêncio.
+		if !historicalPDF(msg) {
+			msg.Download = nil
+		}
 		if msg.IsGroup {
 			msg.GroupName = name
 		} else if msg.PushName == "" {
@@ -159,4 +164,18 @@ func (p *Provider) importHistory(cli *whatsmeow.Client, e *events.HistorySync) {
 		progress.State = "partial"
 	}
 	h.OnHistoryProgress(*progress)
+}
+
+// maxHistoricalPDF: PDFs maiores que isto ficam só como metadados.
+const maxHistoricalPDF = 15 << 20
+
+func historicalPDF(m whatsapp.InboundMessage) bool {
+	if m.Kind != whatsapp.KindDocument || m.Download == nil {
+		return false
+	}
+	mime, _ := m.Payload["mimeType"].(string)
+	name, _ := m.Payload["fileName"].(string)
+	size, _ := m.Payload["sizeBytes"].(uint64)
+	pdf := strings.EqualFold(strings.TrimSpace(mime), "application/pdf") || strings.HasSuffix(strings.ToLower(strings.TrimSpace(name)), ".pdf")
+	return pdf && size > 0 && size <= maxHistoricalPDF
 }

@@ -14,7 +14,7 @@ type historyRequestProvider struct {
 	release  chan struct{}
 }
 
-func (p *historyRequestProvider) RequestHistory(ctx context.Context) error {
+func (p *historyRequestProvider) RequestHistory(ctx context.Context, days int) error {
 	p.requests <- struct{}{}
 	select {
 	case <-p.release:

@@ -88,3 +88,39 @@ func TestHistoryBatchReportsImportedDuplicatesAndFailures(t *testing.T) {
 		t.Fatalf("failed import reported as success: %+v", h.progress)
 	}
 }
+
+func TestHistoryKeepsDownloadOnlyForSmallPDFs(t *testing.T) {
+	own := types.NewJID("5592111111111", types.DefaultUserServer)
+	cli := whatsmeow.NewClient(&store.Device{ID: &own, LID: types.NewJID("99999", types.HiddenUserServer)}, nil)
+	web := func(id string, m *waE2E.Message) *waHistorySync.HistorySyncMsg {
+		return &waHistorySync.HistorySyncMsg{Message: &waWeb.WebMessageInfo{
+			Key: &waCommon.MessageKey{ID: proto.String(id)}, MessageTimestamp: proto.Uint64(100), Message: m,
+		}}
+	}
+	doc := func(name, mime string, size uint64) *waE2E.Message {
+		return &waE2E.Message{DocumentMessage: &waE2E.DocumentMessage{FileName: proto.String(name), Mimetype: proto.String(mime), FileLength: proto.Uint64(size)}}
+	}
+	conv := &waHistorySync.Conversation{ID: proto.String("5592999999999@s.whatsapp.net"), Messages: []*waHistorySync.HistorySyncMsg{
+		web("pdf-ok", doc("guia.pdf", "application/pdf", 200<<10)),
+		web("pdf-sem-mime", doc("Extrato.PDF", "application/octet-stream", 50<<10)),
+		web("pdf-grande", doc("livro.pdf", "application/pdf", maxHistoricalPDF+1)),
+		web("pdf-vazio", doc("vazio.pdf", "application/pdf", 0)),
+		web("planilha", doc("balanco.xlsx", "application/vnd.ms-excel", 10<<10)),
+		web("imagem", &waE2E.Message{ImageMessage: &waE2E.ImageMessage{Mimetype: proto.String("image/jpeg"), FileLength: proto.Uint64(10 << 10)}}),
+		web("audio", &waE2E.Message{AudioMessage: &waE2E.AudioMessage{Mimetype: proto.String("audio/ogg"), FileLength: proto.Uint64(10 << 10)}}),
+	}}
+	want := map[string]bool{"pdf-ok": true, "pdf-sem-mime": true}
+	got := map[string]bool{}
+	for _, m := range historyMessages(cli, conv, nil) {
+		got[m.ExternalID] = m.Download != nil
+		if m.Download != nil != want[m.ExternalID] {
+			t.Errorf("%s: download mantido = %v, esperado %v", m.ExternalID, m.Download != nil, want[m.ExternalID])
+		}
+		if !m.Historical {
+			t.Errorf("%s deveria ser marcada como histórico", m.ExternalID)
+		}
+	}
+	if len(got) != 7 {
+		t.Fatalf("mensagens importadas = %d, esperado 7 (a mensagem sempre entra, só o arquivo é seletivo)", len(got))
+	}
+}

@@ -17,7 +17,7 @@ export const notificationTones = {
 } as const;
 export type NotificationTone = keyof typeof notificationTones;
 export type SoundPreferences = { messages: boolean; notifications: boolean; tone: NotificationTone; volume: number };
-const defaults: SoundPreferences = { messages: true, notifications: true, tone: "default", volume: 0.65 };
+const defaults: SoundPreferences = { messages: true, notifications: true, tone: "default", volume: 0.8 };
 let preferences = defaults;
 let userId: string | null = null;
 let activeConversation: string | null = null;

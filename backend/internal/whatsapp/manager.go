@@ -409,8 +409,19 @@ func (m *Manager) OnHistoryProgress(progress HistoryProgress) {
 	}
 }
 
-func (m *Manager) RequestHistory(ctx context.Context) error {
-	requester, ok := m.p.(interface{ RequestHistory(context.Context) error })
+// Janela do pedido de histórico: o automático pede 30 dias; o administrador pode pedir mais (o WhatsApp entrega o que tiver).
+const (
+	DefaultHistoryDays = 30
+	MaxHistoryDays     = 365
+)
+
+func (m *Manager) RequestHistory(ctx context.Context, days int) error {
+	if days < 1 || days > MaxHistoryDays {
+		days = DefaultHistoryDays
+	}
+	requester, ok := m.p.(interface {
+		RequestHistory(context.Context, int) error
+	})
 	if !ok || !m.Connected() {
 		return ErrNotConnected
 	}
@@ -423,7 +434,7 @@ func (m *Manager) RequestHistory(ctx context.Context) error {
 	m.historyRequest = "requesting"
 	m.mu.Unlock()
 	m.publishHistoryRequest()
-	err := requester.RequestHistory(ctx)
+	err := requester.RequestHistory(ctx, days)
 	m.mu.Lock()
 	if err != nil {
 		m.historyRequest = "failed"
@@ -442,7 +453,9 @@ func (m *Manager) requestInitialHistory(device string) {
 	if device == "" {
 		return
 	}
-	if _, ok := m.p.(interface{ RequestHistory(context.Context) error }); !ok {
+	if _, ok := m.p.(interface {
+		RequestHistory(context.Context, int) error
+	}); !ok {
 		return
 	}
 	m.mu.Lock()
@@ -458,7 +471,7 @@ func (m *Manager) requestInitialHistory(device string) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if err := m.RequestHistory(ctx); err != nil {
+		if err := m.RequestHistory(ctx, DefaultHistoryDays); err != nil {
 			m.log.Warn("solicitação automática de histórico não concluída", "err", err)
 		}
 	}()

@@ -15,7 +15,11 @@ Os arquivos originais estão em `sonoros/`. As cópias usadas no build ficam em
 
 Em **Configurações → Sons e notificações**, é possível ligar ou desligar os sons
 da conversa e de notificação separadamente, escolher o tom, ouvir uma prévia e
-ajustar o volume. As preferências são salvas por conta neste navegador.
+ajustar o volume (padrão 80%). As preferências são salvas por conta neste navegador.
+
+Os áudios de notificação são normalizados (compressor + limitador, pico em −1 dBFS, média ≈ −14 dB para
+os toques de notificação e ≈ −18 a −21 dB para os sons dentro da conversa): antes, alguns tinham média de −32 dB e
+ficavam baixos mesmo com o volume em 100%. Ao trocar ou acrescentar um áudio, normalize-o igual.
 
 O navegador libera o áudio após uma interação com o app. O `AudioContext` é
 reutilizado e os arquivos são baixados e decodificados apenas quando necessários.

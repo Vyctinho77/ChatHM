@@ -18,7 +18,7 @@ import { SearchResults } from "./SearchResults";
 import { useContactOpener, useConversationActions, useConversations, useMessageSearch, useSegmentOptions } from "./store";
 import { Ticks } from "./Ticks";
 import { TransferMenu } from "./TransferMenu";
-import { filterConversations, type ConversationFilter as Filter } from "./conversationFilter";
+import { filterConversations, unreadByTab, type ConversationFilter as Filter } from "./conversationFilter";
 import { reminderColors, useReminders, type Reminder } from "./reminders";
 import { ReminderEditor } from "./ReminderEditor";
 import { useTyping } from "./typing";
@@ -77,6 +77,7 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
 
   // Atendimentos encerrados saem da lista; um novo contato do cliente abre outro.
   const all = useMemo(() => (data ?? []).filter((c) => c.status !== "closed"), [data]);
+  const tabUnread = useMemo(() => unreadByTab(all, actions.me.id), [all, actions.me.id]);
 
   const visible = useMemo(() => {
     const q = query.trim();
@@ -192,6 +193,11 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
             )}
           >
             {c.label}
+            {c.key !== "snoozed" && tabUnread[c.key] > 0 && (
+              <span title={`${tabUnread[c.key]} com mensagens novas`} className="min-w-4 rounded-full bg-unread px-1 text-center text-[10px] font-semibold leading-4 tabular-nums text-accent-fg">
+                {tabUnread[c.key] > 99 ? "99+" : tabUnread[c.key]}
+              </span>
+            )}
             {c.key === "snoozed" && all.some((x) => x.snoozedUntil) && <span className="text-[10px] tabular-nums">{all.filter((x) => x.snoozedUntil).length}</span>}
           </button>
         ))}

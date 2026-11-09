@@ -159,7 +159,7 @@ describe("app sound effects", () => {
     unlock(); await sounds.playSentSound("original", "sent");
     sounds.updateSoundPreferences({ tone: "night", volume: 0.25 });
     cleanup!(); cleanup = sounds.startSoundSession("user-b"); unlock();
-    expect(contexts[0]?.gain.gain.value).toBe(0.65);
+    expect(contexts[0]?.gain.gain.value).toBe(0.8);
     cleanup(); cleanup = sounds.startSoundSession("user-a"); unlock();
     expect(contexts[0]?.gain.gain.value).toBe(0.25);
     await sounds.playSentSound("original", "sent");

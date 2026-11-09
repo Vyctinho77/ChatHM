@@ -42,8 +42,9 @@ function useConnectionMutation(path: string) {
 export const useConnect = () => useConnectionMutation("/whatsapp/connect");
 export const useDisconnect = () => useConnectionMutation("/whatsapp/disconnect");
 
+/** Pede ao celular o histórico dos últimos `days` dias (1 a 365). PDFs antigos são baixados em segundo plano. */
 export function useRequestHistory() {
-  return useMutation({ mutationFn: () => post<{status: string}>("/whatsapp/history") });
+  return useMutation({ mutationFn: (days: number) => post<{ status: string }>("/whatsapp/history", { days }) });
 }
 
 export function useSimulateInbound() {

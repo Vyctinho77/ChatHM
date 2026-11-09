@@ -25,6 +25,7 @@ export function WhatsAppPage() {
   const connect = useConnect();
   const disconnect = useDisconnect();
   const history = useRequestHistory();
+  const [days, setDays] = useState(180);
   const [confirming, setConfirming] = useState(false);
   const secondsLeft = useSecondsLeft(conn?.qr?.expiresAt);
 
@@ -134,10 +135,17 @@ export function WhatsAppPage() {
                         <p className="font-medium">{conn.sync?.state === "syncing" ? "Importando dados do WhatsApp…" : conn.sync?.messages ? "Histórico recebido" : conn.sync?.contacts ? "Contatos sincronizados · aguardando mensagens" : "Aguardando o histórico do WhatsApp…"}</p>
                         {conn.sync && <p className="mt-1 text-muted">{conn.sync.messages} mensagens importadas · {conn.sync.contacts} registros de contato processados</p>}
                         {conn.sync?.state === "partial" && <p className="mt-1 text-danger">Não foi possível importar {conn.sync.failed} registros.</p>}
-                        <p className="mt-2 text-xs text-muted">As conversas individuais aparecem em Conversas conforme o celular envia os dados. O WhatsApp pode fornecer apenas parte do histórico. Mídias antigas são importadas com seus metadados.</p>
+                        <p className="mt-2 text-xs text-muted">As conversas individuais aparecem em Conversas conforme o celular envia os dados. O WhatsApp pode fornecer apenas parte do histórico. Mensagens antigas entram como texto; PDFs antigos (guias, extratos, notas) são baixados em segundo plano para dar contexto aos atendimentos. Imagens, áudios e vídeos antigos entram só como registro, para não pesar.</p>
                         {!conn.simulator && <p className="mt-2 text-xs text-muted">{conn.historyRequest === "requesting" ? "Solicitando histórico automaticamente…" : conn.historyRequest === "failed" ? "Não foi possível solicitar o histórico automaticamente. Tente novamente." : "O histórico é solicitado automaticamente após a conexão. Mantenha o WhatsApp conectado à internet no celular."}</p>}
-                        {!conn.simulator && <Button variant="ghost" className="mt-2" disabled={conn.preparing} loading={history.isPending || conn.historyRequest === "requesting"} onClick={() => history.mutate()}>Tentar sincronizar novamente</Button>}
-                        {history.isSuccess && <p className="mt-2 text-xs text-muted">Solicitação enviada. Mantenha o WhatsApp aberto e conectado à internet no celular. As mensagens aparecerão quando o aparelho enviar os dados dos últimos 30 dias; a disponibilidade depende do WhatsApp.</p>}
+                        {!conn.simulator && (
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <select aria-label="Período do histórico" value={days} onChange={(e) => setDays(Number(e.target.value))} className="h-9 rounded-lg border border-line bg-elevated px-2 text-[13px]">
+                              {[30, 90, 180, 365].map((d) => <option key={d} value={d}>Últimos {d} dias</option>)}
+                            </select>
+                            <Button variant="ghost" disabled={conn.preparing} loading={history.isPending || conn.historyRequest === "requesting"} onClick={() => history.mutate(days)}>Buscar histórico e PDFs antigos</Button>
+                          </div>
+                        )}
+                        {history.isSuccess && <p className="mt-2 text-xs text-muted">Solicitação enviada. Mantenha o WhatsApp aberto e conectado à internet no celular. As mensagens e os PDFs aparecem conforme o aparelho enviar os dados dos últimos {days} dias; o WhatsApp pode entregar menos do que o pedido e arquivos muito antigos podem já ter sido apagados dele.</p>}
                         {history.error && <p className="mt-2 text-xs text-danger">{errorMessage(history.error)}</p>}
                       </div>
                       <dl className="space-y-6 py-3 text-sm">

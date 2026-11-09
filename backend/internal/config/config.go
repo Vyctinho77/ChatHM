@@ -51,7 +51,9 @@ type Config struct {
 	StorageDriver string
 	StorageDir    string
 	MaxAttachment int64 // bytes
-	ClamAVAddr    string
+	// HistoryMediaBudget: espaço total de anexos (bytes) até o qual PDFs do histórico do WhatsApp são baixados; 0 desliga.
+	HistoryMediaBudget int64
+	ClamAVAddr         string
 	// Cadastro por conta própria (padrão desligado). Ligado, a conta nasce INATIVA e só entra após aprovação do admin.
 	AllowSelfRegister bool
 	WebDir            string // WEB_DIR: pasta do frontend compilado (servido pela própria API, mesma origem)
@@ -99,6 +101,14 @@ func Load() (Config, error) {
 			return cfg, errors.New("MAX_ATTACHMENT_MB deve estar entre 1 e 100")
 		}
 		cfg.MaxAttachment = int64(n) << 20
+	}
+	cfg.HistoryMediaBudget = 2048 << 20 // 2 GB
+	if v := os.Getenv("HISTORY_MEDIA_MAX_MB"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 || n > 1<<20 {
+			return cfg, errors.New("HISTORY_MEDIA_MAX_MB deve ser um número de MB (0 desliga o download de PDFs do histórico)")
+		}
+		cfg.HistoryMediaBudget = int64(n) << 20
 	}
 	if cfg.StorageDriver != "fs" && cfg.StorageDriver != "s3" {
 		return cfg, errors.New("STORAGE_DRIVER deve ser fs ou s3")

@@ -47,8 +47,14 @@ falhas pelo evento `whatsapp.sync`. Ao finalizar cada lote, as consultas de
 conversas e mensagens são atualizadas.
 
 O histórico não incrementa não lidas, não classifica filas com base em textos
-antigos e usa os mesmos identificadores para evitar duplicação. Arquivos antigos
-de mídia não são baixados em massa; seus metadados e legendas são preservados.
+antigos e usa os mesmos identificadores para evitar duplicação. Imagens, áudios, vídeos e
+figurinhas antigos não são baixados (só metadados e legendas, para não pesar). **PDFs antigos
+são a exceção**: viram arquivo em segundo plano, numa fila própria de 2 downloads simultâneos
+(a mídia das conversas ao vivo nunca espera por ela), até 15 MB por arquivo e até o teto de espaço
+`HISTORY_MEDIA_MAX_MB` (padrão 2048; `0` desliga). O WhatsApp pode já ter apagado o arquivo:
+a mensagem fica, marcada como “o WhatsApp não tem mais o arquivo” (`mediaState: failed`) ou, se o teto
+foi atingido, “não importado (limite de espaço)” (`skipped`). Quando o histórico é pedido de novo,
+os PDFs que ainda estão sem arquivo são tentados outra vez.
 Status e canais continuam fora do escopo.
 
 A quantidade de histórico depende do que o WhatsApp disponibiliza ao dispositivo
@@ -68,7 +74,8 @@ após iniciar o servidor, uma vez por dispositivo durante essa execução. Event
 repetidos de conexão ou alteração do perfil não repetem a solicitação.
 
 Para tentar recuperar mensagens ausentes sem desvincular a conta, um administrador
-pode usar “Tentar sincronizar novamente” (`POST /api/v1/whatsapp/history`).
+pode usar “Buscar histórico e PDFs antigos” (`POST /api/v1/whatsapp/history`, corpo opcional `{"days": 1-365}`;
+o automático pede 30 dias, a tela oferece 30/90/180/365; o WhatsApp entrega o que tiver).
 O pedido manual é limitado a um por minuto. Um retorno 202
 confirma somente o envio da solicitação, não a entrega das mensagens: o telefone
 ou o WhatsApp podem recusar ou limitar a sincronização. As mensagens recebidas
