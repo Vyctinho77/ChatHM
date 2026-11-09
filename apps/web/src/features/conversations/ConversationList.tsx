@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { AnimatePresence, motion } from "motion/react";
 import { CheckCheck, Clock3, EllipsisVertical, ListFilter, Search, SquarePen, StickyNote } from "lucide-react";
@@ -90,6 +90,8 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
       return matches(`${c.contact.name} ${c.contact.phone} ${c.contact.company ?? ""} ${text}`, q);
     });
   }, [all, filter, segment, query, actions.me.id]);
+
+  const openMenu = useCallback((id: string, x: number, y: number) => setCtx({ id, x, y }), []);
 
   async function openContact(ct: ContactRecord) {
     try {
@@ -218,25 +220,20 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
           <p className="px-4 py-10 text-center text-sm text-muted">Nenhuma conversa encontrada.</p>
         )}
         <ul className="flex flex-col">
-          <AnimatePresence initial={false}>
-            {visible.map((c) => (
-              <ConversationRow
-                key={c.id}
-                c={c}
-                myId={actions.me.id}
-                selected={c.id === selectedId}
-                showReminder={filter === "mine" && c.assignee?.id === actions.me.id}
-                reminder={reminders.data?.[c.id]}
-                reminderReady={reminders.isSuccess}
-                onEditReminder={() => setEditingReminder(c)}
-                onClick={() => onSelect(c.id)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  setCtx({ id: c.id, x: e.clientX, y: e.clientY });
-                }}
-              />
-            ))}
-          </AnimatePresence>
+          {visible.map((c) => (
+            <ConversationRow
+              key={c.id}
+              c={c}
+              myId={actions.me.id}
+              selected={c.id === selectedId}
+              showReminder={filter === "mine" && c.assignee?.id === actions.me.id}
+              reminder={reminders.data?.[c.id]}
+              reminderReady={reminders.isSuccess}
+              onEditReminder={setEditingReminder}
+              onSelect={onSelect}
+              onMenu={openMenu}
+            />
+          ))}
         </ul>
         {debounced.length >= 2 && debounced === query.trim() && (
           <SearchResults
@@ -266,12 +263,12 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
   );
 }
 
-function ConversationRow({
+const ConversationRow = memo(function ConversationRow({
   c,
   myId,
   selected,
-  onClick,
-  onContextMenu,
+  onSelect,
+  onMenu,
   showReminder,
   reminder,
   reminderReady,
@@ -280,43 +277,34 @@ function ConversationRow({
   c: Conversation;
   myId: string;
   selected: boolean;
-  onClick: () => void;
-  onContextMenu: (e: React.MouseEvent) => void;
+  onSelect: (id: string) => void;
+  onMenu: (id: string, x: number, y: number) => void;
   showReminder: boolean;
   reminder?: Reminder;
   reminderReady: boolean;
-  onEditReminder: () => void;
+  onEditReminder: (c: Conversation) => void;
 }) {
   const unread = c.unreadCount > 0;
   const typing = useTyping(c.id);
   const last = c.lastMessage;
   return (
-    <motion.li
-      layout="position"
-      initial={{ opacity: 0, height: 0 }}
-      animate={{ opacity: 1, height: "auto" }}
-      exit={{ opacity: 0, height: 0 }}
-      transition={{ type: "spring", stiffness: 500, damping: 40 }}
-      className="overflow-hidden"
-    >
+    // Sem animação de entrada/saída por linha: trocar de aba monta centenas de linhas e as molas travavam a tela.
+    // content-visibility deixa o navegador pular o layout/pintura das linhas fora da área visível.
+    <li className="[contain-intrinsic-size:auto_60px] [content-visibility:auto]">
       <button
         type="button"
-        onClick={onClick}
-        onContextMenu={onContextMenu}
+        onClick={() => onSelect(c.id)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          onMenu(c.id, e.clientX, e.clientY);
+        }}
         aria-current={selected ? "true" : undefined}
         className={cn(
           "relative flex w-full gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors",
           !selected && "hover:bg-hover",
         )}
       >
-        {selected && (
-          <motion.span
-            layoutId="conversation-selected"
-            className="absolute inset-0 rounded-lg bg-hover"
-            transition={{ type: "spring", stiffness: 500, damping: 40 }}
-            aria-hidden
-          />
-        )}
+        {selected && <span className="absolute inset-0 rounded-lg bg-hover" aria-hidden />}
         <span className="relative">
         <Avatar name={c.contact.name} src={c.contact.avatarUrl} group={c.contact.kind === "group"} size="list" />
         </span>
@@ -376,11 +364,11 @@ function ConversationRow({
         </div>
       </button>
       {showReminder && <div className="-mt-1 pb-2.5 pl-14 pr-2.5">
-        <button type="button" disabled={!reminderReady} onClick={onEditReminder} aria-label={`${reminder ? "Editar" : "Adicionar"} lembrete de ${c.contact.name}`} title={reminder?.text} className={cn("flex w-full items-start gap-1.5 rounded-md px-2 py-1.5 text-left text-xs leading-[17px] transition-colors disabled:opacity-50", reminder ? reminderColors[reminder.color].style : "text-muted hover:bg-hover hover:text-fg")}>
+        <button type="button" disabled={!reminderReady} onClick={() => onEditReminder(c)} aria-label={`${reminder ? "Editar" : "Adicionar"} lembrete de ${c.contact.name}`} title={reminder?.text} className={cn("flex w-full items-start gap-1.5 rounded-md px-2 py-1.5 text-left text-xs leading-[17px] transition-colors disabled:opacity-50", reminder ? reminderColors[reminder.color].style : "text-muted hover:bg-hover hover:text-fg")}>
           <StickyNote className="mt-0.5 size-[13px] shrink-0" />
           <span className="min-w-0 break-words line-clamp-2">{reminder?.text ?? (reminderReady ? "Adicionar lembrete" : "Carregando lembrete…")}</span>
         </button>
       </div>}
-    </motion.li>
+    </li>
   );
-}
+});
