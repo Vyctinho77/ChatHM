@@ -1,4 +1,6 @@
 import { useRef, useState } from "react";
+import { ProviderLogo } from "@/components/ProviderLogo";
+import { providerLabel } from "@/lib/providers";
 import { motion } from "motion/react";
 import { Ban, Download, FileText, Image as ImageIcon, LoaderCircle, MapPin, Mic, Sticker } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -406,6 +408,13 @@ export function MessageBubble({
           </div>
         ) : (
           <>
+        {out && m.automated && (
+          <p className="mb-0.5 flex items-center gap-1.5 text-[12.5px] font-semibold">
+            <ProviderLogo provider={m.aiProvider} title={`Enviado por ${m.aiApp || providerLabel(m.aiProvider)}`} />
+            {m.aiApp || providerLabel(m.aiProvider)}
+            <span className="font-normal opacity-70">· envio automático</span>
+          </p>
+        )}
         {m.kind !== "image" && !out && m.group && showAuthor && m.authorName && (
           <p className="text-[12.5px] font-semibold">{m.authorName}</p>
         )}
@@ -414,7 +423,7 @@ export function MessageBubble({
         {m.kind === "text" && (
           <div className="flex flex-wrap items-end">
             <p className="whitespace-pre-wrap break-words">
-              <RichText text={m.text} term={term} />
+              <RichText text={m.automated ? m.text.replace(/^_(.+)_$/gm, "$1") : m.text} term={term} />
             </p>
             <Meta m={m} />
           </div>

@@ -120,3 +120,10 @@ func TestCleanFieldsAndDomains(t *testing.T) {
 		}
 	}
 }
+
+func TestCleanDomainsEmptyIsNotNil(t *testing.T) {
+	got, err := CleanDomains(nil)
+	if err != nil || got == nil {
+		t.Fatalf("got %v, %v", got, err)
+	}
+}

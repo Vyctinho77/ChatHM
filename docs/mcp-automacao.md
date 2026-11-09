@@ -1,6 +1,6 @@
 # Plano: envios automáticos pela IA (MCP, etapa 6) — revisão 2
 
-Status: **só plano, nada implementado.** A revisão 2 troca "modelos fixos" por **autonomia dentro de assuntos permitidos**, como pedido.
+Status: **fase 6a implementada** (nível 1, com aprovação); 6b e 6c continuam só no plano. A revisão 2 troca "modelos fixos" por **autonomia dentro de assuntos permitidos**, como pedido.
 Decisões em aberto na seção 12.
 
 ## 1. O que se quer
@@ -127,3 +127,30 @@ Testes obrigatórios em cada fase: nunca responde (cliente em diálogo, adiada, 
 6. **Logos**: simplificadas próprias ou oficiais fornecidas por você?
 7. **Assinatura para o cliente** no WhatsApp: "Assistente do [Escritório]"?
 8. **Consentimento**: os clientes já aceitaram receber mensagens automáticas (contrato ou cadastro)?
+
+## 13. Estado da fase 6a (implementada)
+
+**Onde fica:** migração `00026_automation.sql`; pacote `backend/internal/automation` (regras, fila, worker, biblioteca, HTTP); `conversations.SendAutomated`;
+ferramentas em `aiaccess/automation_tools.go`; tela em `apps/web/src/features/automation` (menu *Envios automáticos*, só administrador).
+
+**Como liga:** (1) administrador ativa a IA e *Permitir envios automáticos* em MCP → Permissões (exige pedidos de envio ligados);
+(2) cria um token pessoal com a opção de envios automáticos e escolhe o provedor (Claude, ChatGPT, Grok, Gemini, Outra);
+(3) em *Envios automáticos → Assuntos* libera cada categoria (todas começam desligadas e em nível 1).
+OAuth (login) **nunca** recebe o escopo `automate`: só token pessoal.
+
+**Padrões assumidos** (decisões da seção 12 ainda abertas; todos ajustáveis na tela *Controles*):
+assinatura "Assistente do escritório"; intervalo 8 a 25 s entre envios; 30 por hora e 150 por dia; 1 aviso por cliente por dia;
+sem envio se houve conversa humana nas últimas 12 h; janela seg a sex, 8h às 18h (America/Manaus); intervalo mínimo por assunto
+(DAS 20 dias, cobrança 7, prazos 7, aviso 3); todo assunto com aprovação; rodapé fixo "responda PARAR" em toda mensagem.
+
+**O que o servidor garante** (conferido ao enfileirar, ao aprovar e de novo na hora de enviar): chave mestra e pausa; assunto liberado;
+motivo e `dedupe_key`; texto sem formatação, link fora da lista, e-mail, CPF/CNPJ/número longo nem dados de pagamento (só `{campos_do_escritorio}`);
+termos de pressão viram aviso ao aprovador; contato existente, não grupo, sem opt-out; conversa não adiada e sem diálogo recente;
+limite por cliente e intervalo por assunto; PDF só da biblioteca e do próprio destinatário (ou compartilhável).
+Cliente que responde PARAR (ou variações curtas) é marcado automaticamente; a equipe também marca no painel do contato.
+
+**Ritmo e segurança do envio:** o worker solta um item por vez com intervalo aleatório, respeita tetos por hora e dia e a janela de cada assunto,
+pausa tudo após 5 falhas seguidas, e um envio que ficou "enviando" por causa de um reinício vira falha (nunca reenvia sozinho, para não duplicar).
+
+**Identidade:** a mensagem leva `automated`, `aiProvider` e `aiApp`; a tela mostra a logo simplificada do provedor e o nome do aplicativo no lugar do atendente,
+e a mensagem não assume a conversa nem zera as não lidas. O cliente vê só a assinatura em texto.

@@ -215,3 +215,23 @@ func TestAutomationPacingAndWindow(t *testing.T) {
 		t.Fatalf("saiu pausado: %d", n)
 	}
 }
+
+func TestAutomationManualOptOut(t *testing.T) {
+	w, tok := autoWorld(t)
+	cid := w.autoClient("Cliente Manual", 48)
+	// Agente comum não mexe; o administrador marca e desmarca.
+	expect(t, w.ana.do("PUT", "/api/v1/automation/contacts/"+cid+"/opt-out", map[string]any{"optOut": true}), 403)
+	expect(t, w.admin.do("PUT", "/api/v1/automation/contacts/"+cid+"/opt-out", map[string]any{"optOut": true}), 204)
+	r := w.admin.do("GET", "/api/v1/automation/contacts/"+cid, nil)
+	expect(t, r, 200)
+	if r.body["optOut"] != true {
+		t.Fatalf("estado = %v", r.body)
+	}
+	if out := queue(w, tok, cid, "m1", "Olá, {nome}! Guia do DAS disponível."); out["codigo"] != "opt_out" {
+		t.Fatalf("opt-out ignorado: %v", out)
+	}
+	expect(t, w.admin.do("PUT", "/api/v1/automation/contacts/"+cid+"/opt-out", map[string]any{"optOut": false}), 204)
+	if out := queue(w, tok, cid, "m1", "Olá, {nome}! Guia do DAS disponível."); out["ok"] != true {
+		t.Fatalf("depois de desmarcar: %v", out)
+	}
+}

@@ -36,6 +36,9 @@ type Base = {
   deliveredAt?: string; // recibo de entrega (mensagens enviadas)
   readAt?: string; // recibo de leitura (mensagens enviadas)
   authorName?: string; // atendente que enviou (ou, em grupos, quem escreveu)
+  automated?: boolean; // enviada pela IA (envio automático aprovado)
+  aiProvider?: string; // claude | chatgpt | grok | gemini | other
+  aiApp?: string; // nome do aplicativo de IA
   group?: boolean; // mensagem de grupo: mostra o autor também nas recebidas
   quoted?: Quoted; // esta mensagem responde a outra
   editedAt?: string; // texto editado depois de enviado

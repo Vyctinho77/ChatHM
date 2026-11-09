@@ -6,6 +6,7 @@ import { EditableName } from "@/components/EditableName";
 import { IconButton } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { capabilities, useConversationActions, useTagCatalog } from "./store";
+import { AutomationOptOut } from "./AutomationOptOut";
 import { segmentClass, segmentLabel, type Conversation } from "./types";
 
 const statusLabel = { new: "Aguardando", in_progress: "Em atendimento", closed: "Encerrado" } as const;
@@ -54,6 +55,8 @@ export function ContactPanel({ conversation: c, onClose }: { conversation: Conve
             value={`${c.snoozedUntil ? "Adiado" : statusLabel[c.status]}${c.assignee ? ` · ${c.assignee.name}` : ""}`}
           />
         </dl>
+
+        <AutomationOptOut contactId={c.contact.id} />
 
         <section className="border-b border-line px-5 py-5">
           <div className="flex items-center justify-between">

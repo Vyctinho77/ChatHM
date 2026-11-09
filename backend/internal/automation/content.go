@@ -226,5 +226,5 @@ func CleanDomains(in []string) ([]string, error) {
 		}
 		out = append(out, d)
 	}
-	return dedupe(out), nil
+	return append([]string{}, dedupe(out)...), nil
 }

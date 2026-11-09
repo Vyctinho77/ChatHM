@@ -8,6 +8,7 @@ import { QueuesPage } from "@/features/queues/QueuesPage";
 import { SegmentDetailPage } from "@/features/queues/SegmentDetailPage";
 import { OAuthConsentPage } from "@/features/settings/OAuthConsentPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
+import { AutomationPage } from "@/features/automation/AutomationPage";
 import { McpPage } from "@/features/mcp/McpPage";
 import { TagsPage } from "@/features/tags/TagsPage";
 import { TeamPage } from "@/features/team/TeamPage";
@@ -31,6 +32,7 @@ const routes: RouteObject[] = [
         element: <AdminOnly />,
         children: [
           { path: "whatsapp", element: <WhatsAppPage /> },
+          { path: "automacao", element: <AutomationPage /> },
           { path: "filas/configurar", element: <QueuesConfigPage /> },
           { path: "filas/configurar/:key", element: <SegmentDetailPage /> },
         ],
