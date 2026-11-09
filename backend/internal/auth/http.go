@@ -60,6 +60,9 @@ func (s *Service) LoadSession(next http.Handler) http.Handler {
 		case err != nil:
 			httpx.Internal(w, r, err)
 		default:
+			if sess.Renewed {
+				s.setCookieUntil(w, c.Value, sess.ExpiresAt) // o navegador guarda a nova validade
+			}
 			next.ServeHTTP(w, r.WithContext(WithSession(r.Context(), sess)))
 		}
 	})
@@ -161,12 +164,22 @@ func (s *Service) originAllowed(r *http.Request) bool {
 }
 
 func (s *Service) setCookie(w http.ResponseWriter, token string) {
+	s.emitCookie(w, token, time.Now().Add(s.cfg.SessionTTL), int(s.cfg.SessionTTL.Seconds()))
+}
+
+// setCookieUntil reemite o cookie (renovação da sessão) válido até expires.
+func (s *Service) setCookieUntil(w http.ResponseWriter, token string, expires time.Time) {
+	s.emitCookie(w, token, expires, max(int(time.Until(expires).Seconds()), 1))
+}
+
+// emitCookie: cookie persistente (Max-Age e Expires), que sobrevive a fechar o navegador.
+func (s *Service) emitCookie(w http.ResponseWriter, token string, expires time.Time, maxAge int) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     s.cfg.CookieName,
 		Value:    token,
 		Path:     "/",
-		MaxAge:   int(s.cfg.SessionTTL.Seconds()),
-		Expires:  time.Now().Add(s.cfg.SessionTTL),
+		MaxAge:   maxAge,
+		Expires:  expires,
 		HttpOnly: true,
 		Secure:   s.cfg.CookieSecure,
 		SameSite: http.SameSiteStrictMode,
@@ -194,7 +207,9 @@ type UserView struct {
 	Theme string `json:"theme"`
 	// ChatAppearance: intensidade do papel de parede e cores dos balões escolhidas pela pessoa.
 	ChatAppearance json.RawMessage `json:"chatAppearance"`
-	MFAEnabled     bool            `json:"mfaEnabled"`
+	// SignatureName: nome escolhido para as mensagens (vazio = usa o nome da conta).
+	SignatureName string `json:"signatureName"`
+	MFAEnabled    bool   `json:"mfaEnabled"`
 }
 
 type MeResponse struct {
@@ -215,7 +230,7 @@ func (s *Service) me(sess *Session) MeResponse {
 	return MeResponse{
 		User: UserView{
 			ID: sess.UserID, Email: sess.Email, Name: sess.Name, Role: sess.Role,
-			Theme: sess.Theme, ChatAppearance: appearanceJSON(sess.Appearance), MFAEnabled: sess.MFAEnabled,
+			Theme: sess.Theme, ChatAppearance: appearanceJSON(sess.Appearance), SignatureName: sess.SignatureName, MFAEnabled: sess.MFAEnabled,
 		},
 		CSRFToken:        sess.CSRFToken,
 		MFARequired:      sess.MFAPending(),

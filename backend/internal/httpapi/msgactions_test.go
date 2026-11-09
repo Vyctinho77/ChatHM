@@ -3,6 +3,7 @@ package httpapi
 // Responder (citar), editar, apagar (para mim / para todos) e encaminhar mensagens.
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -36,6 +37,65 @@ func TestSignatureUsesSendingAttendant(t *testing.T) {
 		if got := sent[len(sent)-1].Text; got != "*"+name+":*\nBom dia!" {
 			t.Fatalf("assinatura de %s no WhatsApp: %q", name, got)
 		}
+	}
+}
+
+func TestChosenSignatureNameAppearsOnMessages(t *testing.T) {
+	w := setupWorld(t)
+	prefs := "/api/v1/me/preferences"
+	signature := func(c *client) string {
+		return c.do("GET", "/api/v1/auth/me", nil).body["user"].(map[string]any)["signatureName"].(string)
+	}
+	send := func(c *client, contact, text string) (authorName string, whatsapp string) {
+		w.receive(contact, "oi")
+		cid := mustConv(t, c, contact)["id"].(string)
+		r := c.do("POST", "/api/v1/conversations/"+cid+"/messages", map[string]any{"text": text})
+		expect(t, r, 201)
+		sent := w.e.wa.Sent()
+		name, _ := r.body["authorName"].(string)
+		return name, sent[len(sent)-1].Text
+	}
+
+	// Padrão: sem nome escolhido, usa o nome da conta.
+	if signature(w.ana) != "" {
+		t.Fatalf("padrão deveria ser vazio, veio %q", signature(w.ana))
+	}
+	if name, wa := send(w.ana, "Cliente Assinatura 1", "Bom dia!"); name != "ana" || wa != "*ana:*\nBom dia!" {
+		t.Fatalf("padrão: %q / %q", name, wa)
+	}
+
+	// Escolhe o próprio nome: vale no app e no WhatsApp, sem espaços sobrando; a conta continua com o nome dela.
+	r := w.ana.do("PATCH", prefs, map[string]any{"signatureName": "  Ana   Paula  Júnior "})
+	expect(t, r, 200)
+	if r.body["signatureName"] != "Ana Paula Júnior" || signature(w.ana) != "Ana Paula Júnior" {
+		t.Fatalf("salvo: %v", r.body)
+	}
+	if name, wa := send(w.ana, "Cliente Assinatura 2", "Tudo certo."); name != "Ana Paula Júnior" || wa != "*Ana Paula Júnior:*\nTudo certo." {
+		t.Fatalf("depois de escolher: %q / %q", name, wa)
+	}
+	people := w.ana.do("GET", "/api/v1/people", nil).body["people"].([]any)
+	for _, p := range people {
+		if m := p.(map[string]any); m["id"] == w.users["ana"] && m["name"] != "ana" {
+			t.Fatalf("o nome da conta não deveria mudar nas listas: %v", m)
+		}
+	}
+	// A escolha é só dela.
+	if signature(w.ana2) != "" {
+		t.Fatal("o nome escolhido por uma pessoa vazou para outra")
+	}
+
+	// Recusa o que o WhatsApp interpretaria como formatação, só símbolos, nomes longos demais ou HTML.
+	for _, bad := range []string{"***", "Ana*", "_Ana_", "~Ana~", "`Ana`", "<b>Ana</b>", "...", "A\u0000na", strings.Repeat("a", 41)} {
+		expect(t, w.ana.do("PATCH", prefs, map[string]any{"signatureName": bad}), 422)
+	}
+	if signature(w.ana) != "Ana Paula Júnior" {
+		t.Fatal("uma tentativa recusada não pode alterar o nome salvo")
+	}
+
+	// Vazio volta ao nome da conta.
+	expect(t, w.ana.do("PATCH", prefs, map[string]any{"signatureName": ""}), 200)
+	if name, wa := send(w.ana, "Cliente Assinatura 3", "De volta."); name != "ana" || wa != "*ana:*\nDe volta." {
+		t.Fatalf("depois de limpar: %q / %q", name, wa)
 	}
 }
 

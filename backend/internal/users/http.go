@@ -106,12 +106,13 @@ func (h *Handler) updatePreferences(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Theme          *string     `json:"theme"`
 		ChatAppearance *Appearance `json:"chatAppearance"`
+		SignatureName  *string     `json:"signatureName"`
 	}
 	if !httpx.Decode(w, r, &in) {
 		return
 	}
-	if in.Theme == nil && in.ChatAppearance == nil {
-		httpx.Validation(w, httpx.FieldErrors{"theme": "Informe o tema ou a aparência do chat."})
+	if in.Theme == nil && in.ChatAppearance == nil && in.SignatureName == nil {
+		httpx.Validation(w, httpx.FieldErrors{"theme": "Informe o que deseja alterar (tema, aparência do chat ou nome nas mensagens)."})
 		return
 	}
 	userID := auth.MustFromContext(r.Context()).UserID
@@ -130,6 +131,14 @@ func (h *Handler) updatePreferences(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out["chatAppearance"] = a
+	}
+	if in.SignatureName != nil {
+		name, err := h.svc.SetSignatureName(r.Context(), userID, *in.SignatureName)
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		out["signatureName"] = name
 	}
 	httpx.JSON(w, http.StatusOK, out)
 }

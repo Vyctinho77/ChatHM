@@ -34,7 +34,8 @@ func (r Role) Valid() bool { return r == RoleAdmin || r == RoleManager || r == R
 type Config struct {
 	CookieName      string
 	CookieSecure    bool
-	SessionTTL      time.Duration // validade absoluta
+	SessionTTL      time.Duration // validade de cada renovação
+	MaxLifetime     time.Duration // teto desde o login; <= SessionTTL desliga a renovação
 	IdleTimeout     time.Duration // expira sem atividade
 	RequireAdminMFA bool
 	AllowedOrigins  []string
@@ -50,6 +51,7 @@ const (
 	maxFailuresPerIP    = 30
 	maxMFAFailures      = 5
 	lastSeenResolution  = time.Minute
+	renewStep           = 24 * time.Hour // a validade só é estendida quando ganha mais que isto
 	mfaIssuer           = "ChatHM"
 )
 
@@ -68,17 +70,27 @@ var (
 // para autorização. Papel e status são lidos do banco a cada requisição, então
 // mudanças feitas pelo admin valem imediatamente.
 type Session struct {
-	ID          string
-	UserID      string
-	Email       string
-	Name        string
-	Role        Role
-	Theme       string
-	Appearance  []byte // aparência do chat (JSON validado em users.SetAppearance)
-	MFAEnabled  bool
-	MFAVerified bool
-	CSRFToken   string
-	ExpiresAt   time.Time
+	ID            string
+	UserID        string
+	Email         string
+	Name          string
+	Role          Role
+	Theme         string
+	Appearance    []byte // aparência do chat (JSON validado em users.SetAppearance)
+	SignatureName string // nome nas mensagens; vazio = nome da conta
+	MFAEnabled    bool
+	MFAVerified   bool
+	CSRFToken     string
+	ExpiresAt     time.Time
+	Renewed       bool // a validade foi estendida nesta requisição (o cookie precisa ser reemitido)
+}
+
+// AuthorName é o nome que aparece acima das mensagens da pessoa: o que ela escolheu ou, se não escolheu, o nome da conta.
+func (s *Session) AuthorName() string {
+	if s.SignatureName != "" {
+		return s.SignatureName
+	}
+	return s.Name
 }
 
 func (s *Session) IsAdmin() bool   { return s.Role == RoleAdmin }
@@ -266,10 +278,11 @@ func (s *Service) Authenticate(ctx context.Context, token string) (*Session, err
 		sess     Session
 		role     string
 		lastSeen time.Time
+		created  time.Time
 	)
 	err := s.db.QueryRow(ctx, `
-		SELECT s.id, s.user_id, u.email, u.name, u.role, u.theme, u.chat_appearance, u.mfa_enabled,
-		       s.mfa_verified, s.csrf_token, s.expires_at, s.last_seen_at
+		SELECT s.id, s.user_id, u.email, u.name, u.role, u.theme, u.chat_appearance, u.signature_name, u.mfa_enabled,
+		       s.mfa_verified, s.csrf_token, s.expires_at, s.last_seen_at, s.created_at
 		  FROM sessions s JOIN users u ON u.id = s.user_id
 		 WHERE s.token_hash = $1
 		   AND s.revoked_at IS NULL
@@ -277,8 +290,8 @@ func (s *Service) Authenticate(ctx context.Context, token string) (*Session, err
 		   AND s.last_seen_at > now() - make_interval(secs => $2)
 		   AND u.is_active`,
 		hashToken(token), s.cfg.IdleTimeout.Seconds(),
-	).Scan(&sess.ID, &sess.UserID, &sess.Email, &sess.Name, &role, &sess.Theme, &sess.Appearance, &sess.MFAEnabled,
-		&sess.MFAVerified, &sess.CSRFToken, &sess.ExpiresAt, &lastSeen)
+	).Scan(&sess.ID, &sess.UserID, &sess.Email, &sess.Name, &role, &sess.Theme, &sess.Appearance, &sess.SignatureName, &sess.MFAEnabled,
+		&sess.MFAVerified, &sess.CSRFToken, &sess.ExpiresAt, &lastSeen, &created)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNoSession
 	}
@@ -290,6 +303,19 @@ func (s *Service) Authenticate(ctx context.Context, token string) (*Session, err
 	if time.Since(lastSeen) > lastSeenResolution {
 		if _, err := s.db.Exec(ctx, `UPDATE sessions SET last_seen_at = now() WHERE id = $1`, sess.ID); err != nil {
 			return nil, err
+		}
+	}
+	// Renovação deslizante: quem usa o app continua logado (até o teto desde o login). Estende no máximo uma vez por dia.
+	if s.cfg.MaxLifetime > s.cfg.SessionTTL {
+		target := time.Now().Add(s.cfg.SessionTTL)
+		if capAt := created.Add(s.cfg.MaxLifetime); target.After(capAt) {
+			target = capAt
+		}
+		if target.Sub(sess.ExpiresAt) > renewStep {
+			if _, err := s.db.Exec(ctx, `UPDATE sessions SET expires_at = $2 WHERE id = $1 AND revoked_at IS NULL`, sess.ID, target); err != nil {
+				return nil, err
+			}
+			sess.ExpiresAt, sess.Renewed = target, true
 		}
 	}
 	return &sess, nil

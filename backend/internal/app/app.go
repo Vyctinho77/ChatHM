@@ -64,6 +64,7 @@ func NewServices(ctx context.Context, cfg config.Config, db *pgxpool.Pool, opt O
 		CookieName:        cfg.SessionCookieName,
 		CookieSecure:      cfg.CookieSecure,
 		SessionTTL:        cfg.SessionTTL,
+		MaxLifetime:       cfg.SessionMaxLifetime,
 		IdleTimeout:       cfg.SessionIdle,
 		RequireAdminMFA:   cfg.RequireAdminMFA,
 		AllowedOrigins:    cfg.AllowedOrigins,

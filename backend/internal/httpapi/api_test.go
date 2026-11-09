@@ -49,6 +49,7 @@ type env struct {
 type opts struct {
 	sessionTTL      time.Duration
 	sessionIdle     time.Duration
+	sessionMax      time.Duration // teto da renovação deslizante (0 = sem renovação)
 	requireAdminMFA bool
 	waSession       bool // provedor já com sessão salva (simula reinício)
 	selfRegister    bool // habilita POST /auth/register
@@ -85,6 +86,7 @@ func setup(t *testing.T, o ...opts) *env {
 	if op.sessionIdle > 0 {
 		cfg.SessionIdle = op.sessionIdle
 	}
+	cfg.SessionMaxLifetime = op.sessionMax
 	cfg.RequireAdminMFA = op.requireAdminMFA
 	cfg.AllowSelfRegister = op.selfRegister
 	cfg.SetupToken = op.setupToken
@@ -504,6 +506,69 @@ func TestChatAppearancePreference(t *testing.T) {
 	expect(t, a.do("PATCH", path, map[string]any{"chatAppearance": map[string]any{}}), 200)
 	if len(app(a)) != 0 {
 		t.Fatalf("padrão não voltou: %v", app(a))
+	}
+}
+
+func TestSessionRenewsWhileInUse(t *testing.T) {
+	day := 24 * time.Hour
+	e := setup(t, opts{sessionTTL: 30 * day, sessionIdle: 30 * day, sessionMax: 90 * day})
+	e.createUser("uso@x.com", auth.RoleAgent)
+	c := e.client().mustLogin("uso@x.com")
+	ctx := context.Background()
+	expires := func() time.Time {
+		var at time.Time
+		if err := e.pool.QueryRow(ctx, `SELECT expires_at FROM sessions`).Scan(&at); err != nil {
+			t.Fatal(err)
+		}
+		return at
+	}
+
+	// Recém-entrou: usar o app não mexe na validade (só renova quando ganha mais de um dia).
+	before := expires()
+	expect(t, c.do("GET", "/api/v1/auth/me", nil), 200)
+	if !expires().Equal(before) {
+		t.Fatal("a sessão não deveria ser renovada logo após o login")
+	}
+
+	// 20 dias depois (faltam 10 dias): usar o app estende para 30 dias a partir de agora e reemite o cookie persistente.
+	_, _ = e.pool.Exec(ctx, `UPDATE sessions SET created_at = now() - interval '20 days', expires_at = now() + interval '10 days', last_seen_at = now() - interval '1 day'`)
+	r := c.do("GET", "/api/v1/auth/me", nil)
+	expect(t, r, 200)
+	cookies := (&http.Response{Header: r.header}).Cookies()
+	if len(cookies) != 1 || cookies[0].Expires.Before(time.Now().Add(29*day)) || cookies[0].MaxAge < int((29*day).Seconds()) {
+		t.Fatalf("cookie não foi reemitido com a nova validade: %v", cookies)
+	}
+	if got := time.Until(expires()); got < 29*day || got > 30*day+time.Minute {
+		t.Fatalf("validade renovada = %v, esperado ~30 dias", got)
+	}
+
+	// Teto: 80 dias depois do login só faltam 10 dias até os 90; a renovação não passa disso.
+	_, _ = e.pool.Exec(ctx, `UPDATE sessions SET created_at = now() - interval '80 days', expires_at = now() + interval '2 days', last_seen_at = now() - interval '1 day'`)
+	expect(t, c.do("GET", "/api/v1/auth/me", nil), 200)
+	if got := time.Until(expires()); got < 9*day || got > 10*day+time.Minute {
+		t.Fatalf("validade com teto = %v, esperado ~10 dias", got)
+	}
+
+	// Passou do teto de 90 dias desde o login: acaba, mesmo usando (vence pelo expires_at).
+	_, _ = e.pool.Exec(ctx, `UPDATE sessions SET created_at = now() - interval '91 days', expires_at = now() - interval '1 hour'`)
+	expect(t, c.do("GET", "/api/v1/auth/me", nil), 401)
+
+	// Sessão revogada (sair) nunca é renovada.
+	c2 := e.client().mustLogin("uso@x.com")
+	expect(t, c2.do("POST", "/api/v1/auth/logout", nil), 204)
+	expect(t, c2.do("GET", "/api/v1/auth/me", nil), 401)
+}
+
+func TestSessionDoesNotRenewWhenDisabled(t *testing.T) {
+	day := 24 * time.Hour
+	e := setup(t, opts{sessionTTL: 30 * day, sessionIdle: 30 * day}) // sem teto = comportamento antigo (validade fixa)
+	e.createUser("fixo@x.com", auth.RoleAgent)
+	c := e.client().mustLogin("fixo@x.com")
+	_, _ = e.pool.Exec(context.Background(), `UPDATE sessions SET expires_at = now() + interval '10 days', last_seen_at = now() - interval '1 day'`)
+	r := c.do("GET", "/api/v1/auth/me", nil)
+	expect(t, r, 200)
+	if len((&http.Response{Header: r.header}).Cookies()) != 0 {
+		t.Fatal("sem renovação ativa o cookie não deve ser reemitido")
 	}
 }
 

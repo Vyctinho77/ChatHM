@@ -9,7 +9,7 @@ export type Role = "admin" | "manager" | "agent";
 export const canSupervise = (role: Role | undefined) => role === "admin" || role === "manager";
 
 export type Me = {
-  user: { id: string; email: string; name: string; role: Role; theme: Theme; chatAppearance?: Appearance; mfaEnabled: boolean };
+  user: { id: string; email: string; name: string; role: Role; theme: Theme; chatAppearance?: Appearance; signatureName?: string; mfaEnabled: boolean };
   csrfToken: string;
   mfaRequired: boolean;
   mfaSetupRequired: boolean;

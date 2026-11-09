@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { ChevronsUpDown, LogOut, Palette } from "lucide-react";
+import { ChevronsUpDown, LogOut, Palette, PenLine } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { Menu, MenuItem } from "@/components/Menu";
 import { logout, useSetMe, type Me } from "@/features/auth/api";
 import { ChatAppearanceDialog } from "./ChatAppearanceDialog";
+import { SignatureDialog } from "./SignatureDialog";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 
 const roleLabel = { admin: "Administrador", manager: "Gestor", agent: "Atendente" } as const;
@@ -12,6 +13,7 @@ const roleLabel = { admin: "Administrador", manager: "Gestor", agent: "Atendente
 export function UserMenu({ me }: { me: Me }) {
   const setMe = useSetMe();
   const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [signatureOpen, setSignatureOpen] = useState(false);
   return (
     <>
     <Menu
@@ -47,6 +49,15 @@ export function UserMenu({ me }: { me: Me }) {
             <ThemeSwitcher />
           </div>
           <MenuItem
+            icon={<PenLine />}
+            onClick={() => {
+              close();
+              setSignatureOpen(true);
+            }}
+          >
+            Nome nas mensagens
+          </MenuItem>
+          <MenuItem
             icon={<Palette />}
             onClick={() => {
               close();
@@ -70,6 +81,7 @@ export function UserMenu({ me }: { me: Me }) {
       )}
     </Menu>
     <ChatAppearanceDialog open={appearanceOpen} onClose={() => setAppearanceOpen(false)} />
+    <SignatureDialog open={signatureOpen} onClose={() => setSignatureOpen(false)} />
     </>
   );
 }

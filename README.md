@@ -96,6 +96,9 @@ autenticador. “Sair”, expiração e revogação pelo administrador encerram 
 `SESSION_TTL=720h` e `SESSION_IDLE_TIMEOUT=720h` controlam a duração; ambientes
 com valores antigos no `.env` precisam atualizar essas variáveis e reiniciar a API.
 Sessões já emitidas mantêm a validade anterior até um novo login.
+A sessão **renova com o uso**: quem abre o app ao menos uma vez a cada 30 dias não precisa entrar de novo, até o teto de
+`SESSION_MAX_LIFETIME=2160h` (90 dias) desde o login. Se o navegador estiver configurado para apagar cookies ao fechar, o login
+salvo não sobrevive a isso (é uma configuração do navegador, não do ChatHM).
 
 | Comando | O que faz |
 |---|---|

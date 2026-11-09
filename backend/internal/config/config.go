@@ -22,11 +22,12 @@ type Config struct {
 	AllowedOrigins []string
 
 	// Sessão
-	SessionCookieName string
-	SessionTTL        time.Duration // validade absoluta da sessão
-	SessionIdle       time.Duration // expira após inatividade
-	CookieSecure      bool
-	RequireAdminMFA   bool
+	SessionCookieName  string
+	SessionTTL         time.Duration // validade de cada renovação da sessão (renova com o uso)
+	SessionMaxLifetime time.Duration // teto desde o login (renovação deslizante)
+	SessionIdle        time.Duration // expira após inatividade
+	CookieSecure       bool
+	RequireAdminMFA    bool
 
 	// Confiar em X-Forwarded-For/X-Real-IP (somente atrás de proxy reverso controlado).
 	TrustProxyHeaders bool
@@ -116,6 +117,13 @@ func Load() (Config, error) {
 		errs = append(errs, fmt.Errorf("SESSION_IDLE_TIMEOUT inválido: %w", err))
 	}
 	cfg.SessionIdle = idle
+
+	// Teto da renovação: a sessão se renova enquanto a pessoa usa o app, mas nunca passa deste prazo desde o login.
+	maxLife, err := time.ParseDuration(getenv("SESSION_MAX_LIFETIME", "2160h"))
+	if err != nil {
+		errs = append(errs, fmt.Errorf("SESSION_MAX_LIFETIME inválido: %w", err))
+	}
+	cfg.SessionMaxLifetime = maxLife
 
 	if err := cfg.LogLevel.UnmarshalText([]byte(getenv("LOG_LEVEL", "info"))); err != nil {
 		errs = append(errs, fmt.Errorf("LOG_LEVEL inválido: %w", err))

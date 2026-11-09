@@ -26,7 +26,7 @@ func NewHandler(s *Service) *Handler { return &Handler{svc: s} }
 
 func viewer(r *http.Request) Viewer {
 	sess := auth.MustFromContext(r.Context())
-	return Viewer{ID: sess.UserID, Name: sess.Name, Admin: sess.IsAdmin(), Supervisor: sess.IsManager()}
+	return Viewer{ID: sess.UserID, Name: sess.AuthorName(), Admin: sess.IsAdmin(), Supervisor: sess.IsManager()}
 }
 
 // Routes: usuários autenticados. A visibilidade por equipe é aplicada em cada consulta.

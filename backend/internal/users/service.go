@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
@@ -332,6 +333,24 @@ func (s *Service) SetTheme(ctx context.Context, userID, theme string) error {
 	}
 	_, err := s.db.Exec(ctx, `UPDATE users SET theme = $2 WHERE id = $1`, userID, theme)
 	return err
+}
+
+var signatureRe = regexp.MustCompile(`^[\p{L}\p{N} .'’()/&-]+$`)
+
+// SetSignatureName valida e salva o nome que a própria pessoa quer ver acima das suas mensagens. Vazio volta ao nome da conta.
+// Só letras, números, espaço e . ' ( ) / & - : nada de * _ ~ ` (que o WhatsApp interpretaria como formatação) nem quebras de linha.
+func (s *Service) SetSignatureName(ctx context.Context, userID, name string) (string, error) {
+	name = strings.Join(strings.Fields(name), " ")
+	if name != "" {
+		switch {
+		case utf8.RuneCountInString(name) > 40:
+			return "", httpx.FieldErrors{"signatureName": "Use até 40 caracteres."}
+		case !signatureRe.MatchString(name) || !strings.ContainsFunc(name, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }):
+			return "", httpx.FieldErrors{"signatureName": "Use letras, números e espaços (também . ' ( ) / & -)."}
+		}
+	}
+	_, err := s.db.Exec(ctx, `UPDATE users SET signature_name = $2 WHERE id = $1`, userID, name)
+	return name, err
 }
 
 // Appearance é a aparência do chat de uma pessoa. Campos vazios usam o padrão do tema.

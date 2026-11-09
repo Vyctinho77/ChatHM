@@ -12,7 +12,7 @@ Base: `/api/v1`. Todas as respostas são JSON. Erros seguem o formato:
 - **CSRF**: `login`, `me`, `mfa/verify` e `mfa/enable` devolvem `csrfToken`. Toda requisição `POST/PUT/PATCH/DELETE` autenticada deve enviar o cabeçalho `X-CSRF-Token: <csrfToken>`. Guarde o token em memória e atualize-o a cada resposta que o trouxer (ele muda após o MFA).
 - **Origin**: requisições que alteram estado precisam vir de uma origem em `ALLOWED_ORIGINS`.
 - **Content-Type**: corpos devem ser `application/json` (caso contrário, `415`).
-- **Expiração**: sessão expira após `SESSION_TTL` (padrão 720h = 30 dias) ou `SESSION_IDLE_TIMEOUT` sem uso (padrão 720h). Qualquer `401 unauthenticated` → redirecionar para o login.
+- **Expiração**: o cookie é persistente (sobrevive a fechar o navegador) e vale `SESSION_TTL` (padrão 720h = 30 dias) a partir do último uso: a sessão **renova com o uso** (no máximo uma vez por dia, reemitindo o cookie) até o teto `SESSION_MAX_LIFETIME` desde o login (padrão 2160h = 90 dias; `<= SESSION_TTL` desliga a renovação). Sem uso por `SESSION_IDLE_TIMEOUT` (padrão 720h) ela também expira. Qualquer `401 unauthenticated` → redirecionar para o login.
 
 O cadastro por conta própria (`POST /auth/register`) vem **desligado** (`ALLOW_SELF_REGISTER=false`; responde `404 registration_disabled`).
 Ligado, cria um atendente **inativo**, sem equipe e **sem sessão** (`202 {pending: true}`): a pessoa só consegue entrar
@@ -74,7 +74,7 @@ Segredos do autenticador ficam cifrados (AES-256-GCM); antes de confirmados viaj
 
 ```ts
 type Me = {
-  user: { id: string; email: string; name: string; role: "admin" | "agent"; theme: "light" | "dark" | "system"; mfaEnabled: boolean };
+  user: { id: string; email: string; name: string; role: "admin" | "manager" | "agent"; theme: "light" | "dark" | "system"; chatAppearance: { wallpaper?: number; out?: string; in?: string }; signatureName: string; mfaEnabled: boolean };
   csrfToken: string;
   mfaRequired: boolean;
   mfaSetupRequired: boolean;
@@ -87,7 +87,7 @@ Limites contra força bruta: 5 falhas por e-mail (desde o último sucesso) ou 30
 
 | Método | Rota | Acesso | Corpo | Resposta |
 |---|---|---|---|---|
-| PATCH | `/me/preferences` | completo | `{theme: "light" \| "dark" \| "system"}` | `200 {theme}` |
+| PATCH | `/me/preferences` | completo | um ou mais de `{theme: "light" \| "dark" \| "system", chatAppearance: {wallpaper?: 0-100, out?: "#rrggbb", in?: "#rrggbb"}, signatureName: string}` | `200` com o que foi salvo. `signatureName` é o nome em negrito que o cliente vê acima das mensagens no WhatsApp (até 40 caracteres; letras, números, espaço e `. ' ( ) / & -`; vazio = nome da conta) |
 
 ## Usuários (somente admin)
 
