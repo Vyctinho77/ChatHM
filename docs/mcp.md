@@ -4,6 +4,7 @@ Servidor MCP que deixa assistentes de IA (Claude, ChatGPT, Grok e qualquer clien
 resumir atendimentos, achar clientes, sugerir respostas, organizar filas e etiquetas, consultar a agenda.
 
 Status: **etapas 1 a 5 implementadas** (tokens, chave do administrador, `/mcp` com 11 ferramentas de leitura, 9 de alteração e 2 de rascunho/pedido de envio, 3 prompts prontos, guia de conexão, privacidade em camadas, limites, auditoria e OAuth 2.1).
+**Próximo passo em estudo:** envios automáticos pela IA (cobrança, PDFs), planejados em [mcp-automacao.md](mcp-automacao.md) (nada implementado).
 Ainda não testado com ChatGPT/claude.ai/Grok reais: os redirecionamentos permitidos por padrão vêm de documentação e podem ser ajustados pelo administrador.
 
 ### Privacidade das respostas (todas as etapas)
