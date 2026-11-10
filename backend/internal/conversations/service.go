@@ -356,7 +356,14 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 
 		// Classificação: só mensagens do cliente, só enquanto a conversa não tem fila
 		// e ninguém assumiu — conversa em andamento nunca muda de fila por palavras isoladas.
-		if m.FromMe || m.Historical || m.Body == "" {
+		// Documento sem legenda: o nome do arquivo ("Folha_Outubro.pdf") também diz o assunto.
+		text := m.Body
+		if m.Kind == whatsapp.KindDocument {
+			if fn, _ := m.Payload["fileName"].(string); fn != "" {
+				text = strings.TrimSpace(text + " " + fn)
+			}
+		}
+		if m.FromMe || m.Historical || text == "" {
 			return nil
 		}
 		var curSeg, assignee *string
@@ -372,7 +379,7 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 		if err != nil {
 			return err
 		}
-		res := segments.Classify(m.Body, kws)
+		res := segments.Classify(text, kws)
 		switch res.Reason {
 		case segments.ReasonKeyword:
 			if !created { // a conversa já era visível a todos; avisar quem sai da visão
