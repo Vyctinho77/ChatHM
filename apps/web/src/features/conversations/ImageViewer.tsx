@@ -135,7 +135,7 @@ export function ImageViewer({
         <button type="button" className={iconBtn} onClick={() => zoomBy(0.5)} disabled={zoom >= MAX_ZOOM} aria-label="Ampliar" title="Ampliar (+)">
           <ZoomIn className="size-5" />
         </button>
-        <a href={current.url} download={`imagem-${current.id.slice(0, 8)}`} className={iconBtn} aria-label="Baixar imagem" title="Baixar">
+        <a href={current.url} download="" className={iconBtn} aria-label="Baixar imagem" title="Baixar">
           <Download className="size-5" />
         </a>
         <button type="button" className={iconBtn} onClick={onClose} aria-label="Fechar" title="Fechar (Esc)">

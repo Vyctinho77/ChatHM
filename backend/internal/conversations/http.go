@@ -9,6 +9,7 @@ import (
 	"math"
 	"mime"
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -258,7 +259,7 @@ func (h *Handler) attachment(w http.ResponseWriter, r *http.Request) {
 	if inline {
 		disp = "inline"
 	}
-	hd.Set("Content-Disposition", mime.FormatMediaType(disp, map[string]string{"filename": a.FileName}))
+	hd.Set("Content-Disposition", mime.FormatMediaType(disp, map[string]string{"filename": downloadName(a.FileName, a.MimeType, chi.URLParam(r, "id"))}))
 	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(a.Data))
 }
 
@@ -533,4 +534,41 @@ func (h *Handler) removeParticipant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.NoContent(w)
+}
+
+// downloadName: o nome com que o navegador salva o arquivo. Foto e áudio chegam sem nome; sem extensão o
+// sistema salva um "arquivo genérico" (ícone de bloco de notas), então a extensão vem do tipo do arquivo.
+func downloadName(name, mimeType, id string) string {
+	name = strings.TrimSpace(name)
+	if path.Ext(name) != "" {
+		return name
+	}
+	ext := ""
+	if mt, _, err := mime.ParseMediaType(mimeType); err == nil {
+		ext = map[string]string{
+			"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif",
+			"audio/ogg": ".ogg", "audio/mpeg": ".mp3", "audio/mp4": ".m4a", "audio/aac": ".aac", "audio/amr": ".amr", "audio/webm": ".webm",
+			"application/pdf": ".pdf",
+		}[mt]
+		if ext == "" {
+			if exts, _ := mime.ExtensionsByType(mt); len(exts) > 0 {
+				ext = exts[0]
+			}
+		}
+	}
+	base := name
+	if base == "" {
+		prefix := "arquivo"
+		switch {
+		case strings.HasPrefix(mimeType, "image/"):
+			prefix = "imagem"
+		case strings.HasPrefix(mimeType, "audio/"):
+			prefix = "audio"
+		}
+		if len(id) > 8 {
+			id = id[:8]
+		}
+		base = prefix + "-" + id
+	}
+	return base + ext
 }

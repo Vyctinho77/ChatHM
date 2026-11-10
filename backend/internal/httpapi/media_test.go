@@ -363,3 +363,17 @@ func TestInboundMediaIsDownloadedStoredAndProtected(t *testing.T) {
 		return c != nil && c["lastMessage"].(map[string]any)["mediaState"] == "blocked"
 	})
 }
+
+// Foto baixada precisa sugerir um nome com extensão (.png/.jpg); sem ela o sistema salva um arquivo genérico.
+func TestImageDownloadSuggestsFileNameWithExtension(t *testing.T) {
+	w := setupWorld(t)
+	w.receive("Cliente Foto", "folha de pagamento")
+	id := mustConv(t, w.ana, "Cliente Foto")["id"].(string)
+	r := w.attach(w.ana, id, "image", "", testPNG(40, 30), nil)
+	expect(t, r, 201)
+	st, hd, _ := w.ana.raw(r.body["url"].(string))
+	cd := hd.Get("Content-Disposition")
+	if st != 200 || !strings.Contains(cd, ".png") {
+		t.Fatalf("Content-Disposition = %q (status %d), esperava nome com .png", cd, st)
+	}
+}
