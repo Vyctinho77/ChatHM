@@ -8,6 +8,7 @@ const impl = import.meta.env.VITE_DEMO === "1" ? mock : api;
 export const capabilities = impl.capabilities;
 export const useConversations = impl.useConversations;
 export const useMessages = impl.useMessages;
+export const usePrefetchMessages = impl.usePrefetchMessages;
 export const useConversationActions = impl.useConversationActions;
 export const useSendMessage = impl.useSendMessage;
 export const useMessageSearch = impl.useMessageSearch;

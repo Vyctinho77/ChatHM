@@ -712,9 +712,12 @@ func (s *Service) Messages(ctx context.Context, v Viewer, conversationID string,
 	if limit < 1 || limit > 5000 {
 		limit = 300
 	}
-	if _, err := s.Get(ctx, v, conversationID); err != nil {
-		return nil, err
-	}
+	// A checagem de acesso e a leitura das mensagens vão ao banco ao mesmo tempo (duas viagens de rede em vez de uma depois da outra).
+	access := make(chan error, 1)
+	go func() {
+		_, err := s.Get(ctx, v, conversationID)
+		access <- err
+	}()
 	rows, err := s.db.Query(ctx, `
 		SELECT * FROM (
 		    SELECT `+messageCols+`, m.created_at FROM messages m
@@ -724,6 +727,12 @@ func (s *Service) Messages(ctx context.Context, v Viewer, conversationID string,
 		       AND NOT EXISTS (SELECT 1 FROM message_hidden h WHERE h.message_id = m.id AND h.user_id = $1)
 		     ORDER BY m.sent_at DESC, m.created_at DESC LIMIT $4) x
 		 ORDER BY sent_at, created_at`, v.ID, v.Admin, conversationID, limit)
+	if aerr := <-access; aerr != nil { // sem acesso: nada do que foi lido é devolvido
+		if err == nil {
+			rows.Close()
+		}
+		return nil, aerr
+	}
 	if err != nil {
 		return nil, err
 	}

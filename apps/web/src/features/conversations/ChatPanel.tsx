@@ -35,6 +35,9 @@ import { TypingBubble, TypingIndicator } from "./TypingIndicator";
 
 const MESSAGE_PAUSE_MS = 30 * 60 * 1000;
 
+/** Quantas mensagens recentes aparecem de início (e a cada rolagem para cima). */
+const WINDOW = 40;
+
 export function ChatPanel({
   conversation: c,
   contactOpen,
@@ -60,6 +63,7 @@ export function ChatPanel({
   // Muda ao devolver um texto recusado ao campo de mensagem (remonta o Composer).
   const [composerKey, setComposerKey] = useState(0);
   const scroller = useRef<HTMLDivElement>(null);
+  const startIdxRef = useRef(0);
   const [search, setSearch] = useState<string | null>(null);
   // Posição escolhida na lista de ocorrências; vale só para o termo atual (ao digitar de novo volta para a mais recente).
   const [nav, setNav] = useState<{ term: string; idx: number }>({ term: "", idx: -1 });
@@ -114,6 +118,10 @@ export function ChatPanel({
     const el = scroller.current;
     if (!el) return;
     const near = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (el.scrollTop < 500 && startIdxRef.current > 0 && !anchorHeight.current) {
+      anchorHeight.current = el.scrollHeight;
+      setWindowSize((n) => n + WINDOW);
+    }
     atBottom.current = near;
     setShowJump(!near);
     if (near) setSeenId(messages?.[messages.length - 1]?.id ?? null);
@@ -136,7 +144,25 @@ export function ChatPanel({
 
   // A busca destaca e navega entre as ocorrências, sem esconder o resto da conversa.
   const term = search?.trim() ?? "";
-  const shown = messages ?? [];
+  // Só as mensagens mais recentes entram na tela de início: montar centenas de balões é o que fazia a conversa demorar.
+  // Rolar para cima mostra mais; busca, link para uma mensagem e "ir até a original" mostram tudo.
+  const [windowSize, setWindowSize] = useState(WINDOW);
+  const [expanded, setExpanded] = useState(false);
+  const all = messages ?? [];
+  const renderAll = expanded || term.length > 0 || !!targetMsg;
+  const startIdx = renderAll ? 0 : Math.max(0, all.length - windowSize);
+  const shown = startIdx > 0 ? all.slice(startIdx) : all;
+  const anchorHeight = useRef(0);
+  useLayoutEffect(() => {
+    startIdxRef.current = startIdx;
+  });
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (el && anchorHeight.current) {
+      el.scrollTop += el.scrollHeight - anchorHeight.current; // mantém na tela o que a pessoa estava lendo
+      anchorHeight.current = 0;
+    }
+  }, [windowSize]);
   const matchIds = useMemo(() => {
     if (term.length < 1 || !messages) return [];
     return messages
@@ -250,7 +276,11 @@ export function ChatPanel({
 
   /** Vai até a mensagem original de uma resposta (carrega o histórico se ela estiver além das mais recentes). */
   async function jumpTo(id: string) {
-    if (!document.getElementById(`msg-${id}`)) await actions.loadAllMessages(c.id);
+    if (!document.getElementById(`msg-${id}`)) {
+      setExpanded(true);
+      await actions.loadAllMessages(c.id);
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    }
     scrollToMessage(id);
   }
 

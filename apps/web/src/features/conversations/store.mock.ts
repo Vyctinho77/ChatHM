@@ -48,6 +48,11 @@ export function useConversations() {
   });
 }
 
+/** Demonstração: as mensagens já estão na memória. */
+export function usePrefetchMessages() {
+  return () => {};
+}
+
 export function useMessages(conversationId: string | undefined) {
   const who = useIdentity();
   return useQuery({

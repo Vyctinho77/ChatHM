@@ -27,12 +27,25 @@ export function useConversations() {
   });
 }
 
+const fetchMessages = async (conversationId: string) => (await get<{ messages: Message[] }>(`/conversations/${conversationId}/messages`)).messages;
+
 export function useMessages(conversationId: string | undefined) {
   return useQuery({
     queryKey: conversationKeys.messages(conversationId ?? ""),
     enabled: !!conversationId,
-    queryFn: async () => (await get<{ messages: Message[] }>(`/conversations/${conversationId}/messages`)).messages,
+    gcTime: 30 * 60_000, // conversas já abertas continuam na memória: voltar a elas é instantâneo
+    queryFn: () => fetchMessages(conversationId!),
   });
+}
+
+/** Começa a baixar as mensagens de uma conversa antes do clique (passar o mouse, focar, tocar), para abrir sem espera. */
+export function usePrefetchMessages() {
+  const qc = useQueryClient();
+  return useMemo(
+    () => (conversationId: string) =>
+      void qc.prefetchQuery({ queryKey: conversationKeys.messages(conversationId), queryFn: () => fetchMessages(conversationId), staleTime: 20_000, gcTime: 30 * 60_000 }),
+    [qc],
+  );
 }
 
 /** Busca no servidor: contatos e o conteúdo de todas as mensagens que a pessoa pode ver. */

@@ -186,6 +186,16 @@ function saveFile(url: string, fileName: string) {
   a.remove();
 }
 
+/** Balão: animado só quando a mensagem é nova; as do histórico são um <div> simples (centenas de componentes animados travavam a abertura). */
+function Pop({ animate, children, ...rest }: { animate?: boolean; children: React.ReactNode; style?: React.CSSProperties; className?: string }) {
+  if (!animate) return <div {...rest}>{children}</div>;
+  return (
+    <motion.div initial={{ opacity: 0, y: 14, scale: 0.94 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: "spring", stiffness: 480, damping: 32, mass: 0.8 }} {...rest}>
+      {children}
+    </motion.div>
+  );
+}
+
 function DocumentCard({ m, onOpen, term }: { m: Extract<Message, { kind: "document" }>; onOpen?: (id: string) => void; term?: string }) {
   const fileName = m.fileName || "Documento";
   const kind = docKind(m.fileName, m.mimeType);
@@ -379,11 +389,9 @@ export function MessageBubble({
         onMenu(m, e.clientX, e.clientY);
       } : undefined}
     >
-      <motion.div
-        // Mensagens novas "brotam" do lado de quem enviou; o histórico aparece sem animação individual.
-        initial={animateIn ? { opacity: 0, y: 14, scale: 0.94 } : false}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ type: "spring", stiffness: 480, damping: 32, mass: 0.8 }}
+      <Pop
+        // Mensagens novas "brotam" do lado de quem enviou; o histórico é um <div> comum (sem componente animado por balão).
+        animate={animateIn}
         style={{ transformOrigin: out ? "100% 100%" : "0% 100%" }}
         // A cauda fica dentro dos limites da camada animada, evitando recorte ao escalar.
         className={cn("relative -mx-2 max-w-[min(29rem,calc(75%+1rem))] px-2", !sticker && "drop-shadow-sm")}
@@ -468,7 +476,7 @@ export function MessageBubble({
           </>
         )}
       </div>
-      </motion.div>
+      </Pop>
     </div>
   );
 }

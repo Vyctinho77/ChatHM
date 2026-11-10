@@ -15,7 +15,7 @@ import { useDebounced } from "@/lib/useDebounced";
 import { NewConversationModal } from "./NewConversation";
 import { MessagePreview } from "./preview";
 import { SearchResults } from "./SearchResults";
-import { useContactOpener, useConversationActions, useConversations, useMessageSearch, useSegmentOptions } from "./store";
+import { useContactOpener, useConversationActions, useConversations, useMessageSearch, usePrefetchMessages, useSegmentOptions } from "./store";
 import { Ticks } from "./Ticks";
 import { TransferMenu } from "./TransferMenu";
 import { countsByTab, filterConversations, type ConversationFilter as Filter } from "./conversationFilter";
@@ -29,6 +29,7 @@ const contactCountLabel = (count: number) => `${count} ${count === 1 ? "contato"
 
 export function ConversationList({ selectedId, onSelect }: { selectedId?: string; onSelect: (id: string) => void }) {
   const { data, isPending } = useConversations();
+  const warm = usePrefetchMessages();
   const actions = useConversationActions();
   const { data: meData } = useMe();
   const isAdmin = canSupervise(meData?.user.role); // administrador ou gestor
@@ -92,6 +93,20 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
   }, [all, filter, segment, query, actions.me.id]);
 
   const openMenu = useCallback((id: string, x: number, y: number) => setCtx({ id, x, y }), []);
+
+  // Quando a tela fica parada, adianta as mensagens das primeiras conversas da lista: o clique abre sem esperar.
+  const firstIds = visible.slice(0, 6).map((c) => c.id).join(",");
+  useEffect(() => {
+    if (!firstIds) return;
+    const run = () => firstIds.split(",").forEach(warm);
+    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (h: number) => void };
+    if (w.requestIdleCallback) {
+      const h = w.requestIdleCallback(run, { timeout: 2000 });
+      return () => w.cancelIdleCallback?.(h);
+    }
+    const t = setTimeout(run, 800);
+    return () => clearTimeout(t);
+  }, [firstIds, warm]);
 
   async function openContact(ct: ContactRecord) {
     try {
@@ -230,6 +245,7 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
               reminder={reminders.data?.[c.id]}
               reminderReady={reminders.isSuccess}
               onEditReminder={setEditingReminder}
+              onWarm={warm}
               onSelect={onSelect}
               onMenu={openMenu}
             />
@@ -268,6 +284,7 @@ const ConversationRow = memo(function ConversationRow({
   myId,
   selected,
   onSelect,
+  onWarm,
   onMenu,
   showReminder,
   reminder,
@@ -278,6 +295,7 @@ const ConversationRow = memo(function ConversationRow({
   myId: string;
   selected: boolean;
   onSelect: (id: string) => void;
+  onWarm: (id: string) => void;
   onMenu: (id: string, x: number, y: number) => void;
   showReminder: boolean;
   reminder?: Reminder;
@@ -293,6 +311,9 @@ const ConversationRow = memo(function ConversationRow({
     <li className="[contain-intrinsic-size:auto_60px] [content-visibility:auto]">
       <button
         type="button"
+        onPointerEnter={() => onWarm(c.id)}
+        onPointerDown={() => onWarm(c.id)}
+        onFocus={() => onWarm(c.id)}
         onClick={() => onSelect(c.id)}
         onContextMenu={(e) => {
           e.preventDefault();
