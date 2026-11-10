@@ -315,6 +315,9 @@ func (s *Service) handleLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.clearCookie(w)
+	// Fotos e áudios ficam no cache do navegador enquanto a pessoa está logada; ao sair, o cache deste site é limpo
+	// (computador compartilhado não deixa conversas para o próximo usuário).
+	w.Header().Set("Clear-Site-Data", `"cache"`)
 	httpx.NoContent(w)
 }
 

@@ -889,6 +889,11 @@ func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInpu
 		switch kind {
 		case "image", "sticker":
 			payload["width"], payload["height"], payload["hd"] = in.Att.Width, in.Att.Height, in.HD
+			if kind == "image" {
+				if thumb, ok := media.Thumb(in.Att.Data); ok {
+					payload["thumb"] = thumb
+				}
+			}
 			if kind == "sticker" {
 				payload["animated"] = len(in.Att.Data) > 20 && string(in.Att.Data[12:16]) == "VP8X" && in.Att.Data[20]&2 != 0
 			}
@@ -1454,32 +1459,107 @@ func FormatPhone(e164 string) string {
 type AttachmentFile struct {
 	Data               []byte
 	MimeType, FileName string
+	SHA256             string // validador para o cache do navegador (ETag)
+	Preview            bool   // Data é a versão reduzida
 }
 
-// Attachment devolve o arquivo se o viewer pode ver a conversa da mensagem.
-func (s *Service) Attachment(ctx context.Context, v Viewer, id string) (AttachmentFile, error) {
+type attachmentMeta struct {
+	key, mimeType, name, sha string
+}
+
+// attachmentMeta confere o acesso (a mesma regra de visibilidade da conversa) e devolve os dados do anexo, sem ler o arquivo.
+func (s *Service) attachmentMeta(ctx context.Context, v Viewer, id string) (attachmentMeta, error) {
 	if !httpx.ValidUUID(id) || s.store == nil {
-		return AttachmentFile{}, ErrNotFound
+		return attachmentMeta{}, ErrNotFound
 	}
-	var key, mimeType, name string
+	var m attachmentMeta
 	err := s.db.QueryRow(ctx, `
-		SELECT a.storage_key, a.mime_type, a.file_name
+		SELECT a.storage_key, a.mime_type, a.file_name, a.sha256
 		  FROM attachments a
 		  JOIN messages m ON m.id = a.message_id
 		  JOIN conversations c ON c.id = m.conversation_id
 		  LEFT JOIN segments s ON s.id = c.segment_id
-		 WHERE a.id = $3 AND `+forViewer, v.ID, v.Admin, id).Scan(&key, &mimeType, &name)
+		 WHERE a.id = $3 AND `+forViewer, v.ID, v.Admin, id).Scan(&m.key, &m.mimeType, &m.name, &m.sha)
 	if errors.Is(err, pgx.ErrNoRows) {
+		return attachmentMeta{}, ErrNotFound
+	}
+	return m, err
+}
+
+// Attachment devolve o arquivo se o viewer pode ver a conversa da mensagem.
+func (s *Service) Attachment(ctx context.Context, v Viewer, id string) (AttachmentFile, error) {
+	m, err := s.attachmentMeta(ctx, v, id)
+	if err != nil {
+		return AttachmentFile{}, err
+	}
+	data, err := s.store.Get(ctx, m.key)
+	if errors.Is(err, storage.ErrNotFound) {
+		return AttachmentFile{}, ErrNotFound
+	}
+	return AttachmentFile{Data: data, MimeType: m.mimeType, FileName: m.name, SHA256: m.sha}, err
+}
+
+// AttachmentPreview devolve a versão reduzida de uma foto (a do balão); sem derivado possível (não é foto, já é pequena),
+// devolve o original. O derivado é criado na primeira vez e guardado ao lado do original, então as próximas leituras são leves.
+func (s *Service) AttachmentPreview(ctx context.Context, v Viewer, id string) (AttachmentFile, error) {
+	m, err := s.attachmentMeta(ctx, v, id)
+	if err != nil {
+		return AttachmentFile{}, err
+	}
+	if !strings.HasPrefix(m.mimeType, "image/") || m.mimeType == "image/gif" {
+		return s.Attachment(ctx, v, id)
+	}
+	pkey := m.key + ".preview"
+	if data, err := s.store.Get(ctx, pkey); err == nil {
+		return AttachmentFile{Data: data, MimeType: "image/jpeg", FileName: m.name, SHA256: m.sha + "-p", Preview: true}, nil
+	}
+	orig, err := s.store.Get(ctx, m.key)
+	if errors.Is(err, storage.ErrNotFound) {
 		return AttachmentFile{}, ErrNotFound
 	}
 	if err != nil {
 		return AttachmentFile{}, err
 	}
-	data, err := s.store.Get(ctx, key)
-	if errors.Is(err, storage.ErrNotFound) {
-		return AttachmentFile{}, ErrNotFound
+	prev, ok := media.Preview(orig)
+	if !ok {
+		return AttachmentFile{Data: orig, MimeType: m.mimeType, FileName: m.name, SHA256: m.sha}, nil
 	}
-	return AttachmentFile{Data: data, MimeType: mimeType, FileName: name}, err
+	_ = s.store.Put(ctx, pkey, prev) // se não gravar, só perde o ganho da próxima vez
+	return AttachmentFile{Data: prev, MimeType: "image/jpeg", FileName: m.name, SHA256: m.sha + "-p", Preview: true}, nil
+}
+
+// BackfillThumbs cria a miniatura das fotos que ainda não têm (as recebidas antes deste recurso). Roda uma vez ao iniciar.
+func (s *Service) BackfillThumbs(ctx context.Context) {
+	if s.store == nil {
+		return
+	}
+	for ctx.Err() == nil {
+		rows, err := s.db.Query(ctx, `
+			SELECT m.id::text, a.storage_key FROM messages m JOIN attachments a ON a.message_id = m.id
+			 WHERE m.kind = 'image' AND a.mime_type LIKE 'image/%' AND NOT (m.payload ? 'thumb') LIMIT 100`)
+		if err != nil {
+			return
+		}
+		type item struct{ id, key string }
+		var batch []item
+		for rows.Next() {
+			var it item
+			if rows.Scan(&it.id, &it.key) == nil {
+				batch = append(batch, it)
+			}
+		}
+		rows.Close()
+		if len(batch) == 0 {
+			return
+		}
+		for _, it := range batch {
+			thumb := "" // vazio = sem miniatura (não tenta de novo)
+			if data, err := s.store.Get(ctx, it.key); err == nil {
+				thumb, _ = media.Thumb(data)
+			}
+			_, _ = s.db.Exec(ctx, `UPDATE messages SET payload = payload || jsonb_build_object('thumb', $2::text) WHERE id = $1`, it.id, thumb)
+		}
+	}
 }
 
 // fetchMedia baixa a mídia recebida, valida, guarda e avisa a interface. Roda em segundo
@@ -1541,6 +1621,10 @@ func (s *Service) fetchMedia(msgID, convID string, m whatsapp.InboundMessage) {
 		msgID, key, p.MimeType, len(p.Data), hex.EncodeToString(sum[:]), p.FileName, p.ScanStatus); err != nil {
 		_ = s.store.Delete(ctx, key)
 		return
+	}
+	if m.Kind == whatsapp.KindImage {
+		thumb, _ := media.Thumb(p.Data)
+		_, _ = s.db.Exec(ctx, `UPDATE messages SET payload = payload || jsonb_build_object('thumb', $2::text) WHERE id = $1`, msgID, thumb)
 	}
 	state = ""
 }

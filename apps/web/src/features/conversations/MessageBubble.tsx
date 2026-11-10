@@ -4,6 +4,7 @@ import { providerLabel } from "@/lib/providers";
 import { motion } from "motion/react";
 import { Ban, Download, FileText, Image as ImageIcon, LoaderCircle, MapPin, Mic, Sticker } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { previewUrl } from "@/lib/media";
 import { formatBytes, formatTime } from "@/lib/format";
 import { AudioPlayer } from "./AudioPlayer";
 import { DocBadge } from "./DocBadge";
@@ -112,6 +113,31 @@ function StickerBody({ m }: { m: Extract<Message, { kind: "sticker" }> }) {
   );
 }
 
+/**
+ * Como no WhatsApp: a miniatura minúscula (vem junto com a mensagem) aparece desfocada na hora, a versão média carrega só quando o
+ * balão chega perto da tela e entra suavemente. O original só é baixado ao abrir a foto.
+ */
+function ProgressiveImage({ m }: { m: Extract<Message, { kind: "image" }> }) {
+  const [loaded, setLoaded] = useState(false);
+  const ratio = m.width && m.height ? m.width / m.height : undefined;
+  return (
+    <span className="relative block w-full overflow-hidden bg-black/10 dark:bg-black/25" style={ratio ? { aspectRatio: String(ratio), maxHeight: 320 } : { minHeight: 120, maxHeight: 320 }}>
+      {m.thumb && <img src={m.thumb} alt="" aria-hidden="true" draggable={false} className="absolute inset-0 size-full scale-110 object-cover blur-md" />}
+      <img
+        ref={(el) => { if (el?.complete && el.naturalWidth > 0) setLoaded(true); }}
+        src={previewUrl(m.url)}
+        alt={m.caption ?? "Imagem"}
+        width={m.width}
+        height={m.height}
+        loading="lazy"
+        decoding="async"
+        onLoad={() => setLoaded(true)}
+        className={cn("relative block size-full max-h-80 object-cover transition-opacity duration-200", loaded ? "opacity-100" : "opacity-0")}
+      />
+    </span>
+  );
+}
+
 function ImageBody({
   m,
   showAuthor,
@@ -136,13 +162,7 @@ function ImageBody({
             aria-label="Abrir imagem"
             className="block w-full cursor-zoom-in"
           >
-            <img
-              src={m.url}
-              alt={m.caption ?? "Imagem"}
-              width={m.width}
-              height={m.height}
-              className="block max-h-80 w-full object-cover"
-            />
+            <ProgressiveImage m={m} />
           </button>
         ) : (
           <div

@@ -4,6 +4,7 @@ import { motion } from "motion/react";
 import { ChevronLeft, ChevronRight, Download, X, ZoomIn, ZoomOut } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { cn } from "@/lib/cn";
+import { previewUrl } from "@/lib/media";
 import { formatDayDivider, formatTime } from "@/lib/format";
 import type { Message } from "./types";
 
@@ -39,6 +40,23 @@ export function ImageViewer({
 
   const index = images.findIndex((m) => m.id === id);
   const current = images[index];
+
+  // Abre na hora com a versão média (já está no cache, veio do balão) e troca pelo original assim que ele terminar de baixar.
+  const [fullFor, setFullFor] = useState<string | null>(null);
+  const currentId = current?.id;
+  const currentUrl = current?.url;
+  useEffect(() => {
+    if (!currentId || !currentUrl) return;
+    let alive = true;
+    const img = new Image();
+    img.onload = () => {
+      if (alive) setFullFor(currentId);
+    };
+    img.src = currentUrl;
+    return () => {
+      alive = false;
+    };
+  }, [currentId, currentUrl]);
 
   // A imagem aberta saiu da conversa (ex.: mensagem removida): fecha em vez de mostrar vazio.
   useEffect(() => {
@@ -160,7 +178,7 @@ export function ImageViewer({
         </button>
         <img
           key={current.id}
-          src={current.url}
+          src={fullFor === current.id ? current.url : previewUrl(current.url)}
           alt={current.caption ?? "Imagem"}
           draggable={false}
           onDoubleClick={() => (zoom === 1 ? setZoom(2) : resetView())}
@@ -205,7 +223,7 @@ export function ImageViewer({
                 m.id === id ? "border-emerald-400" : "border-transparent opacity-60 hover:opacity-100",
               )}
             >
-              <img src={m.url} alt="" className="size-full object-cover" draggable={false} />
+              <img src={previewUrl(m.url)} alt="" loading="lazy" decoding="async" className="size-full object-cover" draggable={false} />
             </button>
           ))}
         </div>

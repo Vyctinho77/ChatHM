@@ -240,13 +240,18 @@ func (h *Handler) readUpload(w http.ResponseWriter, r *http.Request) (SendInput,
 // attachment entrega o arquivo de um anexo depois de checar a visibilidade da conversa.
 // Sem URL pública nem assinada: a autorização é refeita a cada requisição (cookie de sessão).
 func (h *Handler) attachment(w http.ResponseWriter, r *http.Request) {
-	a, err := h.svc.Attachment(r.Context(), viewer(r), chi.URLParam(r, "id"))
+	var a AttachmentFile
+	var err error
+	if r.URL.Query().Get("size") == "preview" {
+		a, err = h.svc.AttachmentPreview(r.Context(), viewer(r), chi.URLParam(r, "id"))
+	} else {
+		a, err = h.svc.Attachment(r.Context(), viewer(r), chi.URLParam(r, "id"))
+	}
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
 	hd := w.Header()
-	hd.Set("Cache-Control", "private, no-store")
 	hd.Set("X-Content-Type-Options", "nosniff")
 	hd.Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	ct := a.MimeType
@@ -258,6 +263,16 @@ func (h *Handler) attachment(w http.ResponseWriter, r *http.Request) {
 	disp := "attachment"
 	if inline {
 		disp = "inline"
+		// Foto e áudio não mudam (o endereço é o id do anexo): o navegador guarda por um dia e confere com ETag.
+		// "private" = só no navegador da pessoa, nunca em cache compartilhado; a autorização continua sendo refeita a cada conferência.
+		// Documentos seguem sem cache.
+		hd.Set("Cache-Control", "private, max-age=86400")
+		hd.Set("Vary", "Cookie")
+		if a.SHA256 != "" {
+			hd.Set("ETag", `"`+a.SHA256+`"`)
+		}
+	} else {
+		hd.Set("Cache-Control", "private, no-store")
 	}
 	hd.Set("Content-Disposition", mime.FormatMediaType(disp, map[string]string{"filename": downloadName(a.FileName, a.MimeType, chi.URLParam(r, "id"))}))
 	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(a.Data))
