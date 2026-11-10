@@ -11,6 +11,7 @@ import { docKind, docKindLabel, officeApp } from "./docKind";
 import { receiptDetails } from "./receipts";
 import { Highlight } from "@/components/Highlight";
 import { RichText } from "@/components/RichText";
+import { FormattedText } from "@/components/FormattedText";
 import { Ticks } from "./Ticks";
 import type { Message, Quoted } from "./types";
 
@@ -43,7 +44,7 @@ function QuotedBlock({ q, onJump }: { q: Quoted; onJump?: (id: string) => void }
       <span className="block truncate text-[12px] font-semibold text-brand-ink [.bg-out_&]:text-out-fg">{q.fromMe ? q.author || "Você" : q.author || "Cliente"}</span>
       <span className="flex items-center gap-1 text-[12.5px] opacity-80">
         {kind && q.kind !== "text" && <span className="shrink-0">{kind.icon}</span>}
-        <span className="line-clamp-2 break-words">{q.text || kind?.label || "Mensagem"}</span>
+        <span className="line-clamp-2 break-words"><FormattedText text={q.text || kind?.label || "Mensagem"} /></span>
       </span>
     </>
   );
@@ -423,7 +424,7 @@ export function MessageBubble({
         {m.kind === "text" && (
           <div className="flex flex-wrap items-end">
             <p className="whitespace-pre-wrap break-words">
-              <RichText text={m.automated ? m.text.replace(/^_(.+)_$/gm, "$1") : m.text} term={term} />
+                <RichText text={m.text} term={term} />
             </p>
             <Meta m={m} />
           </div>
