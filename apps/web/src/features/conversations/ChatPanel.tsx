@@ -141,7 +141,7 @@ export function ChatPanel({
     if (term.length < 1 || !messages) return [];
     return messages
       .filter((m) => {
-        const text = m.kind === "text" ? m.text : m.kind === "document" ? m.fileName : m.kind === "image" ? (m.caption ?? "") : m.kind === "unsupported" ? (m.text ?? "") : "";
+        const text = m.kind === "text" ? m.text : m.kind === "document" ? (m.fileName ?? "") : m.kind === "image" ? (m.caption ?? "") : m.kind === "unsupported" ? (m.text ?? "") : "";
         return !!text && (fold(text).includes(fold(term)) || matches(text, term));
       })
       .map((m) => m.id);
@@ -243,7 +243,7 @@ export function ChatPanel({
 
   /** Prévia usada para citar a mensagem numa resposta. */
   function quotedOf(m: Message): Quoted {
-    const text = m.kind === "text" ? m.text : m.kind === "document" ? (m.caption || m.fileName) : m.kind === "image" ? (m.caption ?? "") : m.kind === "sticker" ? "Figurinha" : "";
+    const text = m.kind === "text" ? m.text : m.kind === "document" ? (m.caption || m.fileName || "Documento") : m.kind === "image" ? (m.caption ?? "") : m.kind === "sticker" ? "Figurinha" : "";
     const out = m.direction === "out";
     return { id: m.id, author: out ? (m.authorName ?? actions.me.name) : (m.authorName ?? c.contact.name), fromMe: out, kind: m.kind, text: text.slice(0, 160) };
   }

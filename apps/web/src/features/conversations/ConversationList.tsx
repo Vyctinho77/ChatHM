@@ -86,7 +86,7 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
     return filterConversations(all, filter, actions.me.id, segment).filter((c) => {
       if (!q) return true;
       const last = c.lastMessage;
-      const text = last?.kind === "text" ? last.text : last?.kind === "document" ? last.fileName : "";
+      const text = last?.kind === "text" ? last.text : last?.kind === "document" ? (last.fileName ?? "") : "";
       return matches(`${c.contact.name} ${c.contact.phone} ${c.contact.company ?? ""} ${text}`, q);
     });
   }, [all, filter, segment, query, actions.me.id]);

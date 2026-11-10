@@ -187,12 +187,13 @@ function saveFile(url: string, fileName: string) {
 }
 
 function DocumentCard({ m, onOpen, term }: { m: Extract<Message, { kind: "document" }>; onOpen?: (id: string) => void; term?: string }) {
+  const fileName = m.fileName || "Documento";
   const kind = docKind(m.fileName, m.mimeType);
   const isPdf = kind === "pdf";
   const app = officeApp[kind];
-  const ext = m.fileName.includes(".") ? m.fileName.split(".").pop()!.toUpperCase() : "ARQ";
+  const ext = m.fileName?.includes(".") ? m.fileName.split(".").pop()!.toUpperCase() : "ARQ";
   // PDF abre no visualizador do app; Word/Excel/PowerPoint baixam e abrem no próprio Office do computador.
-  const action = m.url ? (isPdf && onOpen ? () => onOpen(m.id) : app ? () => saveFile(m.url!, m.fileName) : null) : null;
+  const action = m.url ? (isPdf && onOpen ? () => onOpen(m.id) : app ? () => saveFile(m.url!, fileName) : null) : null;
   return (
     <div
       className={cn(
@@ -215,19 +216,19 @@ function DocumentCard({ m, onOpen, term }: { m: Extract<Message, { kind: "docume
       <DocBadge kind={kind} />
       <div className="min-w-0 flex-1">
         <p className="break-all text-[13px] font-medium leading-snug">
-          <Highlight text={m.fileName} term={term} />
+          <Highlight text={fileName} term={term} />
         </p>
         <p className="text-[11px] opacity-70">
-          {docKindLabel(kind, ext)} • {formatBytes(m.sizeBytes)}
+          {docKindLabel(kind, ext)}{m.sizeBytes ? ` • ${formatBytes(m.sizeBytes)}` : ""}
           {!m.url && ` • ${historicalDocLabel(m)}`}
         </p>
       </div>
       {m.url && (
         <a
           href={m.url}
-          download={m.fileName}
+          download={fileName}
           onClick={(e) => e.stopPropagation()}
-          aria-label={`Baixar ${m.fileName}`}
+          aria-label={`Baixar ${fileName}`}
           className="rounded-md p-1 opacity-70 hover:opacity-100"
         >
           <Download className="size-4" />

@@ -92,7 +92,7 @@ export function MessageMenu({ message: m, x, y, onReply, onForward, onEdit, onDe
       {caps.download && "url" in m && item(<Download />, "Baixar", () => {
         const a = document.createElement("a");
         a.href = m.url!;
-        a.download = m.kind === "document" ? m.fileName : "";
+        a.download = m.kind === "document" ? (m.fileName ?? "") : "";
         a.click();
         onClose();
       })}

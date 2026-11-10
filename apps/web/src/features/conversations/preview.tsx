@@ -22,7 +22,7 @@ export function MessagePreview({ m }: { m: Message }) {
     case "document":
       return (
         <>
-          <DocBadge kind={docKind(m.fileName, m.mimeType)} size="sm" className="rounded-[3px]" /> <span className="truncate">{m.fileName}</span>
+          <DocBadge kind={docKind(m.fileName, m.mimeType)} size="sm" className="rounded-[3px]" /> <span className="truncate">{m.fileName || "Documento"}</span>
         </>
       );
     case "image":

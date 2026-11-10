@@ -36,3 +36,10 @@ describe("tipo de documento", () => {
     expect(IMAGE_TYPES).toEqual(["image/jpeg", "image/png", "image/webp"]);
   });
 });
+
+describe("documento sem nome", () => {
+  it("não quebra quando o WhatsApp não envia o nome do arquivo", () => {
+    expect(docKind(undefined, "application/pdf")).toBe("pdf");
+    expect(docKind(undefined)).toBe("other");
+  });
+});
