@@ -1,8 +1,8 @@
-# Projeto auxiliar do Docker Manager da Hostinger: constrói a imagem chathm:latest na própria VPS
-# a partir do GitHub e termina (imprime BUILD_OK ou BUILD_FAILED nos logs). Depois de rodar, recrie o
-# projeto "chathm" (deploy/docker-compose.hostinger.yml) para usar a imagem nova e apague este projeto.
-# Troque a branch/commit depois do "#" para publicar outra versão (repositório precisa estar público).
-name: chathm-builder
+# Hostinger (Docker Manager), passo 1 de 2: constrói a imagem CANDIDATA na própria VPS. Não mexe na produção:
+# a imagem vai para a tag chathm:candidate, nunca para chathm:latest. Termina imprimindo BUILD_OK ou BUILD_FAILED.
+# Troque o que vem depois do "#" pelo COMMIT (ou branch) a publicar. O repositório precisa estar público.
+# Depois de BUILD_OK, crie o projeto com deploy/hostinger-release.yml (passo 2) e apague este.
+name: chathm-release-build
 
 services:
   build:
@@ -12,4 +12,4 @@ services:
     command:
       - sh
       - -c
-      - "docker build --progress=plain -t chathm:latest 'https://github.com/Vyctinho77/ChatHM.git#claude/determined-euler-j60et9' && echo BUILD_OK || echo BUILD_FAILED"
+      - "df -h / | tail -1 && docker build --progress=plain -t chathm:candidate 'https://github.com/Vyctinho77/ChatHM.git#COLE-AQUI-O-COMMIT' && echo BUILD_OK || echo BUILD_FAILED"
