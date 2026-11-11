@@ -28,6 +28,7 @@
   /* Mensagens de voz recebidas (balão claro nos dois temas): verde = ainda não ouvida, azul = já ouvida. */
   --c-audio-new: #1b9a4b;
   --c-audio-heard: #1d6fd1;
+  --c-audio-played-out: #7cc8ff; /* áudio enviado já ouvido pelo cliente, sobre o balão verde-oliva */
   --c-auth-bg: #eceeee;
   --c-input: #e7ebeb;
   --c-danger: #dc2626;
@@ -59,6 +60,7 @@
   --c-read: #53bdeb;
   --c-audio-new: #1b9a4b;
   --c-audio-heard: #1d6fd1;
+  --c-audio-played-out: #7cc8ff;
   --c-auth-bg: #111111;
   --c-input: #242424;
   --c-danger: #f87171;
@@ -91,6 +93,7 @@
   --color-read: var(--c-read);
   --color-audio-new: var(--c-audio-new);
   --color-audio-heard: var(--c-audio-heard);
+  --color-audio-played-out: var(--c-audio-played-out);
   --color-danger: var(--c-danger);
   --color-warning: var(--c-warning);
 }

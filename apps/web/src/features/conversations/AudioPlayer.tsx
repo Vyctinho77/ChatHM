@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Mic, Pause, Play } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { cn } from "@/lib/cn";
-import { formatDuration } from "@/lib/format";
+import { formatDuration, formatTime } from "@/lib/format";
 import { markHeard, useHeard } from "./audioHeard";
 import { decodeWave, shapeWave, speechWave } from "./waveform";
 
@@ -21,6 +21,7 @@ export function AudioPlayer({
   waveform,
   url,
   outgoing,
+  playedAt,
   metadata,
   avatarName,
   avatarSrc,
@@ -32,6 +33,8 @@ export function AudioPlayer({
   waveform?: number[];
   url?: string;
   outgoing?: boolean;
+  /** Enviado: quando o cliente ouviu (recibo "ouvido" do WhatsApp, separado de "lido"). */
+  playedAt?: string;
   metadata?: ReactNode;
   /** Quem enviou: foto (ou iniciais) ao lado do balão. */
   avatarName: string;
@@ -68,9 +71,11 @@ export function AudioPlayer({
   const [playing, setPlaying] = useState(false);
   const [pos, setPos] = useState(0); // segundos
 
-  // Enviado: não há como saber se o cliente ouviu (o recibo do WhatsApp mistura "lido" e "ouvido"), então fica neutro.
+  // Enviado: branco até o cliente ouvir; depois azul claro. Recebido: verde até eu ouvir; depois azul.
   const tone = outgoing
-    ? { text: "text-out-fg", on: "bg-out-fg", off: "bg-out-fg/40", ring: "ring-out" }
+    ? playedAt
+      ? { text: "text-audio-played-out", on: "bg-audio-played-out", off: "bg-audio-played-out/60", ring: "ring-out" }
+      : { text: "text-out-fg", on: "bg-out-fg", off: "bg-out-fg/40", ring: "ring-out" }
     : heard
       ? { text: "text-audio-heard", on: "bg-audio-heard", off: "bg-audio-heard/35", ring: "ring-in" }
       : { text: "text-audio-new", on: "bg-audio-new", off: "bg-audio-new/35", ring: "ring-in" };
@@ -118,14 +123,22 @@ export function AudioPlayer({
 
   const progress = durationSec ? pos / durationSec : 0;
 
+  const status = outgoing
+    ? playedAt
+      ? `Ouvido pelo cliente às ${formatTime(playedAt)}`
+      : "Ainda não ouvido pelo cliente"
+    : heard
+      ? "Áudio já ouvido"
+      : "Áudio ainda não ouvido";
+
   // Foto, play e ondas têm 40 px de altura e começam na mesma linha: o centro de cada um é o meio da foto.
   const avatar = (
-    <span className="relative h-10 shrink-0" title={outgoing ? undefined : heard ? "Áudio já ouvido" : "Áudio ainda não ouvido"}>
+    <span className="relative h-10 shrink-0" title={status}>
       <Avatar name={avatarName} src={avatarSrc} group={group} size="md" />
       <span className={cn("absolute -bottom-0.5 -right-0.5 flex size-[18px] items-center justify-center rounded-full bg-in ring-2", tone.ring)}>
-        <Mic className={cn("size-3", outgoing ? "text-out" : tone.text)} strokeWidth={2.75} aria-hidden />
+        <Mic className={cn("size-3", outgoing ? (playedAt ? "text-audio-heard" : "text-out") : tone.text)} strokeWidth={2.75} aria-hidden />
       </span>
-      {!outgoing && <span className="sr-only">{heard ? "Áudio já ouvido" : "Áudio ainda não ouvido"}</span>}
+      <span className="sr-only">{status}</span>
     </span>
   );
 

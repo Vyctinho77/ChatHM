@@ -443,6 +443,7 @@ export function MessageBubble({
               waveform={m.waveform}
               url={m.url}
               outgoing={out}
+              playedAt={out ? m.playedAt : undefined}
               avatarName={out ? (m.authorName ?? me ?? "Você") : m.group ? (m.authorName ?? contact?.name ?? "?") : (contact?.name ?? m.authorName ?? "?")}
               avatarSrc={!out && !m.group ? contact?.avatarUrl : undefined}
               group={!out && m.group && !m.authorName}

@@ -35,6 +35,7 @@ type Base = {
   status?: DeliveryStatus; // apenas mensagens enviadas
   deliveredAt?: string; // recibo de entrega (mensagens enviadas)
   readAt?: string; // recibo de leitura (mensagens enviadas)
+  playedAt?: string; // o cliente ouviu a mensagem de voz enviada (recibo "ouvido", separado de "lida")
   authorName?: string; // atendente que enviou (ou, em grupos, quem escreveu)
   automated?: boolean; // enviada pela IA (envio automático aprovado)
   aiProvider?: string; // claude | chatgpt | grok | gemini | other

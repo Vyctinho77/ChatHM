@@ -113,9 +113,11 @@ type ReceiptStatus string
 const (
 	ReceiptDelivered ReceiptStatus = "delivered"
 	ReceiptRead      ReceiptStatus = "read"
+	// ReceiptPlayed: o cliente ouviu a mensagem de voz. É um recibo à parte: abrir a conversa gera "lido", só tocar o áudio gera "ouvido".
+	ReceiptPlayed ReceiptStatus = "played"
 )
 
-// Receipt é um recibo de entrega ou leitura de mensagens que o escritório enviou.
+// Receipt é um recibo de entrega, leitura ou reprodução de mensagens que o escritório enviou.
 type Receipt struct {
 	MessageIDs []string
 	Status     ReceiptStatus

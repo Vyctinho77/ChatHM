@@ -115,7 +115,7 @@ func sendByStatus(t *testing.T, w *world, status string) []map[string]any {
 
 func resetPacing(t *testing.T, w *world) {
 	t.Helper()
-	if _, err := w.e.pool.Exec(t.Context(), `UPDATE automation_state SET next_allowed_at = now() - interval '1 hour'`); err != nil {
+	if _, err := w.e.pool.Exec(t.Context(), `UPDATE automation_state SET next_allowed_at = 'epoch'`); err != nil {
 		t.Fatal(err)
 	}
 }

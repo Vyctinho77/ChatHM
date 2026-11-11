@@ -174,6 +174,7 @@ export function buildMock(myId: string, myName: string) {
         deliveredAt:
           m.status === "delivered" || m.status === "read" ? new Date(t + 15_000).toISOString() : undefined,
         readAt: m.status === "read" ? new Date(t + 60_000 * (1 + (t / 60_000) % 4)).toISOString() : undefined,
+        playedAt: m.kind === "audio" && m.status === "read" ? new Date(t + 60_000 * (3 + (t / 60_000) % 5)).toISOString() : undefined,
       };
     }) as Message[];
     messages[c.id] = full;
