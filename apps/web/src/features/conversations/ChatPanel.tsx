@@ -491,6 +491,8 @@ export function ChatPanel({
                 <div id={`msg-${m.id}`} className={cn(startsGroup && "mt-2")}>
                   <MessageBubble
                     m={m}
+                    contact={c.contact}
+                    me={actions.me.name}
                     showAuthor={showAuthor}
                     startsGroup={startsGroup}
                     animateIn={new Date(m.sentAt).getTime() > openedAt}

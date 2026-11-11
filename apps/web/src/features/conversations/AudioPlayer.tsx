@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Pause, Play } from "lucide-react";
+import { Mic, Pause, Play } from "lucide-react";
+import { Avatar } from "@/components/Avatar";
 import { cn } from "@/lib/cn";
 import { formatDuration } from "@/lib/format";
+import { markHeard, useHeard } from "./audioHeard";
 
 const DEMO = import.meta.env.VITE_DEMO === "1";
 
-const BARS = 32;
+const BARS = 40;
 
 /** Barras estáveis quando o provedor não envia a forma de onda. */
 function fallbackWave(seed: number, n = BARS) {
@@ -26,22 +28,41 @@ function resample(wave: number[], n = BARS) {
 }
 
 /**
- * Player de mensagem de voz. Com `url` usa <audio>. Sem arquivo: na demonstração
- * simula a reprodução; no app real o áudio fica indisponível até o download (Fase 4).
+ * Player de mensagem de voz: foto de quem enviou com o ícone de microfone, play e barras finas.
+ * Recebido: verde enquanto não ouvido, azul depois de ouvido (guardado neste navegador).
+ * Com `url` usa <audio>. Sem arquivo: na demonstração simula a reprodução; no app real o áudio
+ * fica indisponível até o download (Fase 4).
  */
 export function AudioPlayer({
+  id,
   durationSec,
   waveform,
   url,
   outgoing,
   metadata,
+  avatarName,
+  avatarSrc,
+  group,
 }: {
+  /** Id da mensagem: é por ele que o ChatHM lembra que o áudio já foi ouvido. */
+  id: string;
   durationSec: number;
   waveform?: number[];
   url?: string;
   outgoing?: boolean;
   metadata?: ReactNode;
+  /** Quem enviou: foto (ou iniciais) ao lado do balão. */
+  avatarName: string;
+  avatarSrc?: string;
+  group?: boolean;
 }) {
+  const heard = useHeard(id);
+  // Enviado: não há como saber se o cliente ouviu (o recibo do WhatsApp mistura "lido" e "ouvido"), então fica neutro.
+  const tone = outgoing
+    ? { text: "text-out-fg", on: "bg-out-fg", off: "bg-out-fg/40", ring: "ring-out" }
+    : heard
+      ? { text: "text-audio-heard", on: "bg-audio-heard", off: "bg-audio-heard/35", ring: "ring-in" }
+      : { text: "text-audio-new", on: "bg-audio-new", off: "bg-audio-new/35", ring: "ring-in" };
   const audio = useRef<HTMLAudioElement>(null);
   const bars = waveform?.length ? resample(waveform) : fallbackWave(durationSec || 1);
   const unavailable = !url && !DEMO;
@@ -68,6 +89,7 @@ export function AudioPlayer({
   }, [playing, url, durationSec]);
 
   function toggle() {
+    if (!outgoing) markHeard(id);
     const el = audio.current;
     if (url && el) {
       if (el.paused) {
@@ -90,14 +112,31 @@ export function AudioPlayer({
 
   const progress = durationSec ? pos / durationSec : 0;
 
+  const avatar = (
+    <span
+      className="relative mt-0.5 shrink-0 self-start"
+      title={outgoing ? undefined : heard ? "Áudio já ouvido" : "Áudio ainda não ouvido"}
+    >
+      <Avatar name={avatarName} src={avatarSrc} group={group} size="md" />
+      <span className={cn("absolute -bottom-0.5 -right-0.5 flex size-[18px] items-center justify-center rounded-full bg-in ring-2", tone.ring)}>
+        <Mic className={cn("size-3", outgoing ? "text-out" : tone.text)} strokeWidth={2.75} aria-hidden />
+      </span>
+      {!outgoing && <span className="sr-only">{heard ? "Áudio já ouvido" : "Áudio ainda não ouvido"}</span>}
+    </span>
+  );
+
   return (
-    <div className="flex w-56 min-w-0 max-w-full items-start gap-2 py-0.5">
+    <div className="flex w-60 min-w-0 max-w-full items-start gap-2 py-0.5">
+      {!outgoing && avatar}
       {url && (
         <audio
           ref={audio}
           src={url}
           preload="metadata"
-          onPlay={() => setPlaying(true)}
+          onPlay={() => {
+            setPlaying(true);
+            if (!outgoing) markHeard(id);
+          }}
           onPause={() => setPlaying(false)}
           onError={() => setPlaying(false)}
           onTimeUpdate={(e) => setPos(e.currentTarget.currentTime)}
@@ -113,9 +152,12 @@ export function AudioPlayer({
         disabled={unavailable}
         aria-label={playing ? "Pausar áudio" : "Reproduzir áudio"}
         title={unavailable ? "Reprodução disponível quando o download de mídias for ativado (Fase 4)" : undefined}
-        className="inline-flex size-8 shrink-0 items-center justify-center rounded-full hover:bg-black/10 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-white/10"
+        className={cn(
+          "mt-1 inline-flex size-7 shrink-0 items-center justify-center rounded-full hover:bg-black/10 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-white/10",
+          tone.text,
+        )}
       >
-        {playing ? <Pause className="size-4 fill-current" /> : <Play className="size-4 fill-current" />}
+        {playing ? <Pause className="size-[18px] fill-current" /> : <Play className="size-[18px] fill-current" />}
       </button>
       <div className="min-w-0 flex-1">
         <div
@@ -125,7 +167,7 @@ export function AudioPlayer({
           aria-valuemin={0}
           aria-valuemax={Math.round(durationSec)}
           aria-valuenow={Math.round(pos)}
-          className="flex h-8 cursor-pointer items-center gap-[2px] overflow-hidden"
+          className="flex h-8 cursor-pointer items-center justify-between overflow-hidden"
           onClick={(e) => {
             const r = e.currentTarget.getBoundingClientRect();
             seek((e.clientX - r.left) / r.width);
@@ -138,15 +180,8 @@ export function AudioPlayer({
           {bars.map((h, i) => (
             <span
               key={i}
-              className={cn(
-                "min-w-0 flex-1 rounded-full",
-                i / bars.length < progress
-                  ? "bg-read"
-                  : outgoing
-                    ? "bg-out-fg/45"
-                    : "bg-in-fg/35",
-              )}
-              style={{ height: `${Math.round(h * 75)}%` }}
+              className={cn("w-[2px] shrink-0 rounded-full", i / bars.length < progress ? tone.on : tone.off)}
+              style={{ height: `${Math.round(18 + h * 70)}%` }}
             />
           ))}
         </div>
@@ -155,6 +190,7 @@ export function AudioPlayer({
           {metadata}
         </div>
       </div>
+      {outgoing && avatar}
     </div>
   );
 }
