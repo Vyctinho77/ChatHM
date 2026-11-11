@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "motion/react";
-import { ChevronLeft, ChevronRight, Download, X, ZoomIn, ZoomOut } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, RotateCcw, RotateCw, X, ZoomIn, ZoomOut } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { cn } from "@/lib/cn";
 import { formatDayDivider, formatTime } from "@/lib/format";
@@ -17,7 +17,8 @@ const stamp = (iso: string) => `${formatDayDivider(iso)} às ${formatTime(iso)}`
 
 /**
  * Visualizador de imagens em tela cheia: navega entre todas as imagens da conversa
- * (setas, miniaturas, teclado), amplia, arrasta e baixa — sem sair do app.
+ * (setas, miniaturas, teclado), amplia, arrasta, gira e baixa — sem sair do app.
+ * Girar só muda como a imagem aparece aqui; o arquivo original não é alterado.
  */
 export function ImageViewer({
   images,
@@ -36,6 +37,11 @@ export function ImageViewer({
   const drag = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
   const [dragging, setDragging] = useState(false);
   const thumbs = useRef<HTMLDivElement>(null);
+  // Giro de cada imagem, em graus acumulados (múltiplos de 90): acumular evita a imagem "desgirar" ao passar de 270° para 0°.
+  const [turns, setTurns] = useState<Record<string, number>>({});
+  const stage = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState({ w: 0, h: 0 }); // área disponível para a imagem
+  const [natural, setNatural] = useState<{ id: string; w: number; h: number } | null>(null);
 
   const index = images.findIndex((m) => m.id === id);
   const current = images[index];
@@ -44,6 +50,32 @@ export function ImageViewer({
   useEffect(() => {
     if (!current) onClose();
   }, [current, onClose]);
+
+  // Mede a área da imagem (muda com a janela) para encaixar a imagem girada de lado.
+  useEffect(() => {
+    const el = stage.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const cs = getComputedStyle(el);
+      setBox({
+        w: el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight),
+        h: el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom),
+      });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [current]);
+
+  const rotate = useCallback(
+    (delta: number) => {
+      if (!id) return;
+      setTurns((t) => ({ ...t, [id]: (t[id] ?? 0) + delta }));
+      setPan({ x: 0, y: 0 });
+    },
+    [id],
+  );
 
   const resetView = () => {
     setZoom(1);
@@ -74,6 +106,8 @@ export function ImageViewer({
       else if (e.key === "ArrowRight") go(1);
       else if (e.key === "+" || e.key === "=") zoomBy(0.5);
       else if (e.key === "-") zoomBy(-0.5);
+      else if (e.key === "r") rotate(90);
+      else if (e.key === "R") rotate(-90);
       else return;
       e.preventDefault();
       e.stopPropagation();
@@ -86,7 +120,7 @@ export function ImageViewer({
       window.removeEventListener("keydown", onKey, true);
       document.body.style.overflow = overflow;
     };
-  }, [go, onClose, zoomBy]);
+  }, [go, onClose, zoomBy, rotate]);
 
   // Mantém a miniatura da imagem atual visível.
   useEffect(() => {
@@ -110,6 +144,14 @@ export function ImageViewer({
     setDragging(false);
   };
   const sender = current.direction === "out" ? "Você" : contactName;
+  const degrees = turns[current.id] ?? 0;
+  const sideways = Math.abs(Math.round(degrees / 90)) % 2 === 1;
+  // De lado, a largura vira altura: encolhe (ou amplia, até o tamanho original) para a imagem girada caber na área.
+  let fit = 1;
+  if (sideways && natural?.id === current.id && box.w > 0 && box.h > 0) {
+    const s0 = Math.min(1, box.w / natural.w, box.h / natural.h); // tamanho em que a imagem aparece sem girar
+    fit = Math.min(box.w / (natural.h * s0), box.h / (natural.w * s0), 1 / s0);
+  }
   const iconBtn =
     "inline-flex size-10 items-center justify-center rounded-full text-white/85 transition-colors hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-30";
 
@@ -135,6 +177,12 @@ export function ImageViewer({
         <button type="button" className={iconBtn} onClick={() => zoomBy(0.5)} disabled={zoom >= MAX_ZOOM} aria-label="Ampliar" title="Ampliar (+)">
           <ZoomIn className="size-5" />
         </button>
+        <button type="button" className={iconBtn} onClick={() => rotate(-90)} aria-label="Girar para a esquerda" title="Girar para a esquerda (Shift+R)">
+          <RotateCcw className="size-5" />
+        </button>
+        <button type="button" className={iconBtn} onClick={() => rotate(90)} aria-label="Girar para a direita" title="Girar para a direita (R)">
+          <RotateCw className="size-5" />
+        </button>
         <a href={current.url} download={`imagem-${current.id.slice(0, 8)}`} className={iconBtn} aria-label="Baixar imagem" title="Baixar">
           <Download className="size-5" />
         </a>
@@ -145,6 +193,7 @@ export function ImageViewer({
 
       {/* Clicar no fundo fecha; clicar na imagem não. */}
       <div
+        ref={stage}
         className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden px-16"
         onClick={(e) => e.target === e.currentTarget && onClose()}
         onWheel={(e) => zoomBy(e.deltaY < 0 ? 0.25 : -0.25)}
@@ -163,12 +212,13 @@ export function ImageViewer({
           src={current.url}
           alt={current.caption ?? "Imagem"}
           draggable={false}
+          onLoad={(e) => setNatural({ id: current.id, w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
           onDoubleClick={() => (zoom === 1 ? setZoom(2) : resetView())}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
-          style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+          style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom * fit}) rotate(${degrees}deg)` }}
           className={cn(
             "max-h-full max-w-full select-none object-contain transition-transform duration-150",
             dragging && "!transition-none",
@@ -205,7 +255,7 @@ export function ImageViewer({
                 m.id === id ? "border-emerald-400" : "border-transparent opacity-60 hover:opacity-100",
               )}
             >
-              <img src={m.url} alt="" className="size-full object-cover" draggable={false} />
+              <img src={m.url} alt="" className="size-full object-cover" style={turns[m.id] ? { transform: `rotate(${turns[m.id]}deg)` } : undefined} draggable={false} />
             </button>
           ))}
         </div>
