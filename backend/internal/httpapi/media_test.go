@@ -363,3 +363,81 @@ func TestInboundMediaIsDownloadedStoredAndProtected(t *testing.T) {
 		return c != nil && c["lastMessage"].(map[string]any)["mediaState"] == "blocked"
 	})
 }
+
+// Foto baixada precisa sugerir um nome com extensão (.png/.jpg); sem ela o sistema salva um arquivo genérico.
+func TestImageDownloadSuggestsFileNameWithExtension(t *testing.T) {
+	w := setupWorld(t)
+	w.receive("Cliente Foto", "folha de pagamento")
+	id := mustConv(t, w.ana, "Cliente Foto")["id"].(string)
+	r := w.attach(w.ana, id, "image", "", testPNG(40, 30), nil)
+	expect(t, r, 201)
+	st, hd, _ := w.ana.raw(r.body["url"].(string))
+	cd := hd.Get("Content-Disposition")
+	if st != 200 || !strings.Contains(cd, ".png") {
+		t.Fatalf("Content-Disposition = %q (status %d), esperava nome com .png", cd, st)
+	}
+}
+
+// Estilo WhatsApp: a mensagem leva uma miniatura minúscula, o balão baixa uma versão média e o original só vem ao abrir a foto.
+func TestImagePreviewThumbAndCaching(t *testing.T) {
+	w := setupWorld(t)
+	w.receive("Cliente Preview", "folha de pagamento")
+	id := mustConv(t, w.ana, "Cliente Preview")["id"].(string)
+	// 1400x1000 com ruído: o preview (640 px) precisa ser bem menor que o original.
+	r := w.attach(w.ana, id, "image", "foto.png", testPNG(1400, 1000), map[string]string{"hd": "true"})
+	expect(t, r, 201)
+	thumb, _ := r.body["thumb"].(string)
+	if !strings.HasPrefix(thumb, "data:image/jpeg;base64,") || len(thumb) > 3000 {
+		t.Fatalf("a mensagem deveria trazer a miniatura embutida: %.40q (%d)", thumb, len(thumb))
+	}
+	url := r.body["url"].(string)
+	stFull, hdFull, full := w.ana.raw(url)
+	stPrev, hdPrev, prev := w.ana.raw(url + "?size=preview")
+	if stFull != 200 || stPrev != 200 || len(prev) >= len(full) {
+		t.Fatalf("preview (%d bytes) deveria ser menor que o original (%d bytes); status %d/%d", len(prev), len(full), stFull, stPrev)
+	}
+	if hdPrev.Get("Content-Type") != "image/jpeg" || !strings.Contains(hdPrev.Get("Cache-Control"), "max-age=") || strings.Contains(hdPrev.Get("Cache-Control"), "no-store") || hdPrev.Get("ETag") == "" {
+		t.Fatalf("cabeçalhos do preview: %v", hdPrev)
+	}
+	if hdFull.Get("ETag") == "" || hdFull.Get("ETag") == hdPrev.Get("ETag") {
+		t.Fatalf("original e preview precisam de ETags diferentes: %q %q", hdFull.Get("ETag"), hdPrev.Get("ETag"))
+	}
+	// Conferência condicional: 304 sem corpo (mas só para quem tem acesso).
+	req, _ := http.NewRequest("GET", w.ana.base+url+"?size=preview", nil)
+	req.Header.Set("If-None-Match", hdPrev.Get("ETag"))
+	if res := w.ana.exec(req); res.status != 304 {
+		t.Fatalf("If-None-Match deveria dar 304, deu %d", res.status)
+	}
+	// Segunda leitura vem do derivado guardado (mesmo conteúdo).
+	if _, _, again := w.ana.raw(url + "?size=preview"); !bytes.Equal(again, prev) {
+		t.Fatal("o preview guardado deve ser idêntico")
+	}
+	// Autorização igual à do original.
+	if st, _, _ := w.bia.raw(url + "?size=preview"); st != 404 {
+		t.Fatalf("outra equipe não vê o preview: %d", st)
+	}
+	if st, _, _ := w.e.client().raw(url + "?size=preview"); st != 401 {
+		t.Fatalf("anônimo: %d", st)
+	}
+}
+
+// Fotos recebidas antes do recurso ganham a miniatura na inicialização.
+func TestBackfillThumbsForOldPhotos(t *testing.T) {
+	w := setupWorld(t)
+	w.receive("Cliente Antigo", "folha de pagamento")
+	id := mustConv(t, w.ana, "Cliente Antigo")["id"].(string)
+	r := w.attach(w.ana, id, "image", "foto.png", testPNG(900, 700), nil)
+	expect(t, r, 201)
+	msgID := r.body["id"].(string)
+	if _, err := w.e.pool.Exec(t.Context(), `UPDATE messages SET payload = payload - 'thumb' WHERE id = $1`, msgID); err != nil {
+		t.Fatal(err)
+	}
+	w.e.svcs.Conversations.BackfillThumbs(t.Context())
+	var thumb string
+	if err := w.e.pool.QueryRow(t.Context(), `SELECT coalesce(payload->>'thumb', 'AUSENTE') FROM messages WHERE id = $1`, msgID).Scan(&thumb); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(thumb, "data:image/jpeg;base64,") {
+		t.Fatalf("a miniatura deveria ter sido criada: %.30q", thumb)
+	}
+}

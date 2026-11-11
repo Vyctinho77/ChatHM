@@ -106,6 +106,12 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sess := auth.MustFromContext(r.Context())
+	for _, sc := range in.Scopes {
+		if sc == ScopeAttend && sess.Role != auth.RoleAdmin {
+			httpx.Error(w, http.StatusForbidden, "forbidden", "Só administradores criam tokens de atendente autônomo.")
+			return
+		}
+	}
 	raw, t, err := h.svc.Create(r.Context(), sess.UserID, clientIP(r), in.Name, in.ExpiresInDays, in.Scopes, in.Provider)
 	if err != nil {
 		h.fail(w, r, err)

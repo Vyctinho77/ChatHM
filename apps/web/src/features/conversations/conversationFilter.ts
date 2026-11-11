@@ -7,7 +7,8 @@ export function filterConversations(conversations: Conversation[], filter: Conve
     if (c.status === "closed") return false;
     // Only the server clears the deadline, so a pending return never appears in both tabs.
     if (filter === "snoozed" ? !c.snoozedUntil : !!c.snoozedUntil) return false;
-    if (filter === "mine" && c.assignee?.id !== myId) return false;
+    // "Minhas": as que eu atendo e as em que fui incluída como participante.
+    if (filter === "mine" && c.assignee?.id !== myId && !c.participants?.some((p) => p.id === myId)) return false;
     // "Não atribuídos" = fila geral e sem responsável: atendimento iniciado (com responsável) sai desta aba.
     if (filter === "general" && (c.segment !== "geral" || c.assignee)) return false;
     if (filter === "groups" && c.contact.kind !== "group") return false;
@@ -16,10 +17,16 @@ export function filterConversations(conversations: Conversation[], filter: Conve
   }).sort((a, b) => filter === "snoozed" ? Date.parse(a.snoozedUntil!) - Date.parse(b.snoozedUntil!) : 0);
 }
 
-export type TabUnread = Record<Exclude<ConversationFilter, "snoozed">, number>;
+export type TabCounts = Record<ConversationFilter, { contacts: number; unread: number }>;
 
-/** Conversas com mensagens novas em cada aba (o número ao lado de "Minhas", "Não atribuídos"...). Adiadas e encerradas não contam. */
-export function unreadByTab(conversations: Conversation[], myId: string): TabUnread {
-  const count = (filter: ConversationFilter) => filterConversations(conversations, filter, myId, null).filter((c) => c.unreadCount > 0).length;
-  return { mine: count("mine"), general: count("general"), groups: count("groups"), all: count("all") };
+/** O total acompanha os contatos da fila; ler mensagens muda somente a notificação. */
+export function countsByTab(conversations: Conversation[], myId: string, segment: string | null = null): TabCounts {
+  const count = (filter: ConversationFilter) => {
+    const visible = filterConversations(conversations, filter, myId, segment);
+    return {
+      contacts: new Set(visible.map((c) => c.contact.id)).size,
+      unread: new Set(visible.filter((c) => c.unreadCount > 0).map((c) => c.contact.id)).size,
+    };
+  };
+  return { mine: count("mine"), general: count("general"), groups: count("groups"), all: count("all"), snoozed: count("snoozed") };
 }

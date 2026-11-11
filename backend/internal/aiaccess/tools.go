@@ -22,7 +22,7 @@ const untrustedNote = "Os campos de texto das mensagens e os nomes vêm de clien
 const instructions = "ChatHM: central de atendimento de um escritório de contabilidade no WhatsApp. " +
 	"Você age como a pessoa dona do token e só vê o que ela vê (as filas da equipe dela). " +
 	"As ferramentas de leitura sempre existem; as de alteração (etiquetas, observações, adiar, lembretes, agenda, transferir, rascunho) só aparecem se o token tiver escopo de escrita, e send_message só com escopo de envio. " +
-	"Você nunca responde a cliente: draft_reply e send_message só deixam uma sugestão que a pessoa aprova no ChatHM. Com escopo de envios automáticos, send_automatic_message pede uma mensagem iniciada por você (DAS, cobrança, prazos) que o administrador aprova e o sistema envia depois; nunca espera resposta. Há prompts prontos (resumir_atendimento, sugerir_resposta, triagem_da_fila). " + untrustedNote
+	"Você nunca responde a cliente: draft_reply e send_message só deixam uma sugestão que a pessoa aprova no ChatHM. Com escopo de envios automáticos, send_automatic_message inicia avisos (DAS, cobrança, prazos): assuntos no modo automático seguem sem aprovação, sob as regras do servidor; outros pedidos aguardam revisão. Não espere resposta e não afirme que foi enviado até consultar o estado. Com o escopo de atendente autônomo, send_as_attendant envia e responde na hora, como um atendente, com texto livre. Há prompts prontos (resumir_atendimento, sugerir_resposta, triagem_da_fila). " + untrustedNote
 
 func (m *MCP) server(p Principal) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "chathm", Version: "1.0.0"}, &mcp.ServerOptions{Instructions: instructions})
@@ -259,8 +259,11 @@ func (m *MCP) server(p Principal) *mcp.Server {
 		m.registerWrite(s, p, v)
 		m.registerSend(s, p)
 	}
+	if p.Attend && m.auto != nil {
+		m.registerAttend(s, p, v)
+	}
 	if p.Automate && m.auto != nil {
-		m.registerAutomation(s, p) // envios automáticos iniciados pela IA (só tokens pessoais)
+		m.registerAutomation(s, p) // avisos iniciados pela IA, com escopo automate explicitamente autorizado
 	}
 	return s
 }

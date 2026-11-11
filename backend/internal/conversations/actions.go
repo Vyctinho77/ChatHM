@@ -165,6 +165,7 @@ func (s *Service) ingestChange(ctx context.Context, m whatsapp.InboundMessage) e
 		for _, k := range keys {
 			if s.store != nil {
 				_ = s.store.Delete(context.WithoutCancel(ctx), k)
+				_ = s.store.Delete(context.WithoutCancel(ctx), k+".preview")
 			}
 		}
 	}

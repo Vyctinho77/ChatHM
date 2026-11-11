@@ -350,3 +350,47 @@ func TestBillingImport(t *testing.T) {
 }
 
 func toJSON(v any) string { b, _ := json.Marshal(v); return string(b) }
+
+// No nível automático ninguém aprova: o valor e o vencimento do pedido valem, e quem pagou antes de sair não recebe.
+func TestBillingAutomaticLevel(t *testing.T) {
+	fake := &fakeGateway{charges: map[string]automation.GatewayCharge{
+		"pay_a": newCharge("pay_a", "Ana", "92991110001", 10000),
+		"pay_b": newCharge("pay_b", "Beto", "92991110002", 20000),
+	}}
+	w, tok := billingWorld(t, fake)
+	expect(t, w.admin.do("PUT", "/api/v1/automation/categories/cobranca", map[string]any{
+		"label": "Cobrança de honorários", "enabled": true, "level": automation.LevelAutomatic, "windowStart": "08:00", "windowEnd": "18:00",
+		"weekdays": []int{1, 2, 3, 4, 5}, "minIntervalDays": 7, "guidelines": "Sem pressão.",
+	}), 200)
+	ana := w.clientWithPhone("Cliente Ana", "5592991110001")
+	beto := w.clientWithPhone("Cliente Beto", "5592991110002")
+	expect(t, w.admin.do("PUT", "/api/v1/automation/gateways/asaas", map[string]any{"apiKey": "chave-boa", "enabled": true}), 204)
+	expect(t, w.admin.do("POST", "/api/v1/automation/gateways/asaas/sync", nil), 200)
+	ids := chargeIDs(t, w, "")
+	byName := func(n string) string { return ids["Honorários 10/2026|"+n] }
+
+	qa := queueCharge(w, tok, ana, byName("Ana"), "h-ana")
+	qb := queueCharge(w, tok, beto, byName("Beto"), "h-beto")
+	if qa["status"] != "na_fila" || qb["status"] != "na_fila" {
+		t.Fatalf("no nível automático deveria ir direto para a fila: %v %v", qa["status"], qb["status"])
+	}
+	// O valor do pedido já fica registrado (ninguém aprova depois).
+	var cents *int64
+	if err := w.e.pool.QueryRow(t.Context(), `SELECT charge_amount_cents FROM automation_sends WHERE id = $1`, qa["id"]).Scan(&cents); err != nil || cents == nil || *cents != 10000 {
+		t.Fatalf("valor registrado = %v, %v", cents, err)
+	}
+	// Ana paga antes de sair; o valor do Beto muda.
+	fake.set("pay_a", func(c *automation.GatewayCharge) { c.Status = automation.ChargePaid })
+	fake.set("pay_b", func(c *automation.GatewayCharge) { c.AmountCents = 25000 })
+	before := len(w.e.wa.Sent())
+	for i := 0; i < 3; i++ {
+		resetPacing(t, w)
+		w.e.svcs.Automation.Tick(t.Context())
+	}
+	if n := len(w.e.wa.Sent()) - before; n != 0 {
+		t.Fatalf("saíram %d mensagens de cobrança que não deviam sair", n)
+	}
+	if n := len(sendByStatus(t, w, "skipped")); n != 2 {
+		t.Fatalf("puladas = %d", n)
+	}
+}

@@ -4,19 +4,21 @@ import { Bot, EyeOff, ShieldCheck } from "lucide-react";
 import { Alert, Button, Spinner } from "@/components/ui";
 import { errorMessage, get, post } from "@/lib/api";
 
-type Preview = { client: { id: string; name: string }; redirectHost: string; levels: ("read" | "write" | "send")[] };
+type Level = "read" | "write" | "send" | "automate";
+type Preview = { client: { id: string; name: string }; redirectHost: string; levels: Level[] };
 
 const LEVELS: Record<string, { title: string; text: string }> = {
   read: { title: "Só ler (recomendado)", text: "Consultar conversas, mensagens, contatos, filas, etiquetas e agenda que você já enxerga." },
   write: { title: "Ler, alterar e deixar rascunhos", text: "Também etiquetar, acrescentar observações, adiar, lembretes, agenda, transferir e deixar rascunhos de resposta para você revisar." },
   send: { title: "Tudo isso e pedir envios (você aprova)", text: "Pode pedir o envio de mensagens a clientes; elas só saem quando você clicar em Enviar na conversa." },
+  automate: { title: "Tudo isso e avisos automáticos", text: "Pode iniciar avisos sem aprovação nos assuntos autorizados pelo administrador. O servidor aplica os bloqueios, horários e ritmo, mesmo com o app fechado. Não autoriza respostas automáticas às conversas." },
 };
 
 /** Tela aberta pelo ChatGPT / claude.ai (via /oauth/authorize): a pessoa vê o que o aplicativo recebe e autoriza ou nega. */
 export function OAuthConsentPage() {
   const query = new URLSearchParams(window.location.search);
   const raw = query.toString();
-  const [level, setLevel] = useState<"read" | "write" | "send">("read");
+  const [level, setLevel] = useState<Level>("read");
   const [error, setError] = useState("");
 
   const preview = useQuery({
@@ -51,7 +53,7 @@ export function OAuthConsentPage() {
         {preview.data && (
           <>
             <p className="text-sm">
-              <strong>{preview.data.client.name}</strong> quer acessar o ChatHM <strong>em seu nome</strong>. Ele só vê e faz o que você já pode ver e fazer, e nunca envia mensagens sozinho.
+              <strong>{preview.data.client.name}</strong> quer acessar o ChatHM <strong>em seu nome</strong>. Escolha as permissões abaixo. Avisos só podem sair sem aprovação se você autorizar a automação e o assunto estiver liberado pelo servidor.
             </p>
 
             <fieldset className="flex flex-col gap-2.5 text-sm">

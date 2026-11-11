@@ -2,6 +2,7 @@ import { Ban, Image, MapPin, Mic, Sticker } from "lucide-react";
 import { DocBadge } from "./DocBadge";
 import { docKind } from "./docKind";
 import { formatDuration } from "@/lib/format";
+import { FormattedText } from "@/components/FormattedText";
 import type { Message } from "./types";
 
 /** Resumo de uma mensagem para a lista de conversas. */
@@ -11,7 +12,7 @@ export function MessagePreview({ m }: { m: Message }) {
     case "sticker":
       return <><Sticker className={icon} /> <span className="truncate">Figurinha</span></>;
     case "text":
-      return <span className="truncate">{m.text}</span>;
+      return <span className="truncate"><FormattedText text={m.text} /></span>;
     case "audio":
       return (
         <>
@@ -21,13 +22,13 @@ export function MessagePreview({ m }: { m: Message }) {
     case "document":
       return (
         <>
-          <DocBadge kind={docKind(m.fileName, m.mimeType)} size="sm" className="rounded-[3px]" /> <span className="truncate">{m.fileName}</span>
+          <DocBadge kind={docKind(m.fileName, m.mimeType)} size="sm" className="rounded-[3px]" /> <span className="truncate">{m.fileName || "Documento"}</span>
         </>
       );
     case "image":
       return (
         <>
-          <Image className={icon} /> <span className="truncate">{m.caption || "Foto"}</span>
+          <Image className={icon} /> <span className="truncate"><FormattedText text={m.caption || "Foto"} /></span>
         </>
       );
     case "unsupported":

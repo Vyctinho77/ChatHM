@@ -48,6 +48,11 @@ export function useConversations() {
   });
 }
 
+/** Demonstração: as mensagens já estão na memória. */
+export function usePrefetchMessages() {
+  return () => {};
+}
+
 export function useMessages(conversationId: string | undefined) {
   const who = useIdentity();
   return useQuery({
@@ -160,6 +165,13 @@ export function useConversationActions() {
     },
     transfer(id: string, person: { id: string; name: string }) {
       patchConversation(id, (x) => ({ ...x, status: "in_progress", assignee: { id: person.id, name: person.name } }));
+      refresh();
+    },
+    toggleParticipant(id: string, person: { id: string; name: string }) {
+      patchConversation(id, (x) => {
+        const included = !!x.participants?.some((p) => p.id === person.id);
+        return { ...x, participants: included ? (x.participants ?? []).filter((p) => p.id !== person.id) : [...(x.participants ?? []), person] };
+      });
       refresh();
     },
     setTags(id: string, tags: string[]) {

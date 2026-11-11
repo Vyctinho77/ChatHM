@@ -8,10 +8,11 @@ const EXT: Record<string, DocKind> = {
   ppt: "powerpoint", pptx: "powerpoint", pptm: "powerpoint", pps: "powerpoint", ppsx: "powerpoint", odp: "powerpoint",
 };
 
-export function docKind(fileName: string, mimeType = ""): DocKind {
+export function docKind(fileName: string | undefined, mimeType = ""): DocKind {
+  fileName ??= ""; // documentos sem nome também chegam do WhatsApp
   const ext = fileName.includes(".") ? fileName.split(".").pop()!.toLowerCase() : "";
   if (EXT[ext]) return EXT[ext];
-  const mime = mimeType.toLowerCase();
+  const mime = (mimeType ?? "").toLowerCase();
   if (mime === "application/pdf") return "pdf";
   if (mime.includes("wordprocessingml") || mime === "application/msword") return "word";
   if (mime.includes("spreadsheetml") || mime === "application/vnd.ms-excel" || mime === "text/csv") return "excel";

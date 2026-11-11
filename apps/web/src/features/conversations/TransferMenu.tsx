@@ -18,6 +18,7 @@ export function TransferMenu({
   canTransfer,
   onPick,
   onClose,
+  variant = "transfer",
 }: {
   conversation: Conversation;
   x: number;
@@ -26,7 +27,10 @@ export function TransferMenu({
   canTransfer: boolean;
   onPick: (p: Person) => void;
   onClose: () => void;
+  /** participants: incluir/tirar pessoas do mesmo atendimento, sem trocar o responsável. */
+  variant?: "transfer" | "participants";
 }) {
+  const participants = variant === "participants";
   const { data: people, isPending } = usePeople();
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y });
@@ -60,29 +64,34 @@ export function TransferMenu({
     <div
       ref={ref}
       role="menu"
-      aria-label={`Transferir conversa de ${c.contact.name}`}
+      aria-label={participants ? `Participantes do atendimento de ${c.contact.name}` : `Transferir conversa de ${c.contact.name}`}
       style={pos}
       className="fixed z-50 max-h-[70vh] w-64 overflow-y-auto rounded-xl border border-line bg-panel py-1 shadow-xl"
     >
-      <p className="px-3 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wide text-muted">Transferir para</p>
+      <p className="px-3 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wide text-muted">{participants ? "Pessoas neste atendimento" : "Transferir para"}</p>
+      {participants && canTransfer && <p className="px-3 pb-1.5 text-[12px] text-muted">Quem for incluída vê a conversa e responde, sem tirar {c.assignee ? c.assignee.name : "o responsável"}. Clique de novo para tirar.</p>}
       {!canTransfer && (
         <p className="px-3 pb-2 text-[12px] text-muted">
           {c.status === "closed"
             ? "Atendimento encerrado."
-            : `${c.assignee?.name ?? "Outra pessoa"} está atendendo; só ela (ou um gestor/administrador) pode transferir.`}
+            : participants
+              ? `Só ${c.assignee?.name ?? "o responsável"}, quem já participa ou um gestor/administrador pode mudar os participantes.`
+              : `${c.assignee?.name ?? "Outra pessoa"} está atendendo; só ela (ou um gestor/administrador) pode transferir.`}
         </p>
       )}
       {isPending && <Spinner className="mx-auto my-3" />}
       {people?.map((p) => {
-        const current = c.assignee?.id === p.id;
+        const isOwner = c.assignee?.id === p.id;
+        const included = !!c.participants?.some((x) => x.id === p.id);
+        const current = participants ? included : isOwner;
         return (
           <button
             key={p.id}
             type="button"
             role="menuitem"
-            disabled={!canTransfer}
+            disabled={!canTransfer || (participants && isOwner)}
             onClick={() => {
-              if (!current) onPick(p);
+              if (participants || !current) onPick(p);
               onClose();
             }}
             className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50"
@@ -95,7 +104,8 @@ export function TransferMenu({
               </span>
               {p.teams.length > 0 && <span className="block truncate text-[11px] text-muted">{p.teams.join(", ")}</span>}
             </span>
-            {current && <Check className="size-4 text-brand-ink" aria-label="Atendendo agora" />}
+            {participants && isOwner && <span className="text-[11px] text-muted">Responsável</span>}
+            {current && <Check className="size-4 text-brand-ink" aria-label={participants ? "Participa do atendimento" : "Atendendo agora"} />}
           </button>
         );
       })}

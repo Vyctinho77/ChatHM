@@ -1,6 +1,6 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowDown, ArrowLeft, CheckCheck, ChevronDown, ChevronUp, CircleCheck, Clock3, EllipsisVertical, Search, UserRoundPlus, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, CheckCheck, ChevronDown, ChevronUp, CircleCheck, Clock3, EllipsisVertical, Search, UserRoundPlus, UsersRound, X } from "lucide-react";
 import { useSearchParams } from "react-router";
 import { fold, matches } from "@/lib/search";
 import { ViewableAvatar } from "@/components/AvatarViewer";
@@ -35,6 +35,9 @@ import { TypingBubble, TypingIndicator } from "./TypingIndicator";
 
 const MESSAGE_PAUSE_MS = 30 * 60 * 1000;
 
+/** Quantas mensagens recentes aparecem de início (e a cada rolagem para cima). */
+const WINDOW = 40;
+
 export function ChatPanel({
   conversation: c,
   contactOpen,
@@ -60,6 +63,7 @@ export function ChatPanel({
   // Muda ao devolver um texto recusado ao campo de mensagem (remonta o Composer).
   const [composerKey, setComposerKey] = useState(0);
   const scroller = useRef<HTMLDivElement>(null);
+  const startIdxRef = useRef(0);
   const [search, setSearch] = useState<string | null>(null);
   // Posição escolhida na lista de ocorrências; vale só para o termo atual (ao digitar de novo volta para a mais recente).
   const [nav, setNav] = useState<{ term: string; idx: number }>({ term: "", idx: -1 });
@@ -114,6 +118,10 @@ export function ChatPanel({
     const el = scroller.current;
     if (!el) return;
     const near = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (el.scrollTop < 500 && startIdxRef.current > 0 && !anchorHeight.current) {
+      anchorHeight.current = el.scrollHeight;
+      setWindowSize((n) => n + WINDOW);
+    }
     atBottom.current = near;
     setShowJump(!near);
     if (near) setSeenId(messages?.[messages.length - 1]?.id ?? null);
@@ -136,12 +144,30 @@ export function ChatPanel({
 
   // A busca destaca e navega entre as ocorrências, sem esconder o resto da conversa.
   const term = search?.trim() ?? "";
-  const shown = messages ?? [];
+  // Só as mensagens mais recentes entram na tela de início: montar centenas de balões é o que fazia a conversa demorar.
+  // Rolar para cima mostra mais; busca, link para uma mensagem e "ir até a original" mostram tudo.
+  const [windowSize, setWindowSize] = useState(WINDOW);
+  const [expanded, setExpanded] = useState(false);
+  const all = messages ?? [];
+  const renderAll = expanded || term.length > 0 || !!targetMsg;
+  const startIdx = renderAll ? 0 : Math.max(0, all.length - windowSize);
+  const shown = startIdx > 0 ? all.slice(startIdx) : all;
+  const anchorHeight = useRef(0);
+  useLayoutEffect(() => {
+    startIdxRef.current = startIdx;
+  });
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (el && anchorHeight.current) {
+      el.scrollTop += el.scrollHeight - anchorHeight.current; // mantém na tela o que a pessoa estava lendo
+      anchorHeight.current = 0;
+    }
+  }, [windowSize]);
   const matchIds = useMemo(() => {
     if (term.length < 1 || !messages) return [];
     return messages
       .filter((m) => {
-        const text = m.kind === "text" ? m.text : m.kind === "document" ? m.fileName : m.kind === "image" ? (m.caption ?? "") : m.kind === "unsupported" ? (m.text ?? "") : "";
+        const text = m.kind === "text" ? m.text : m.kind === "document" ? (m.fileName ?? "") : m.kind === "image" ? (m.caption ?? "") : m.kind === "unsupported" ? (m.text ?? "") : "";
         return !!text && (fold(text).includes(fold(term)) || matches(text, term));
       })
       .map((m) => m.id);
@@ -194,13 +220,16 @@ export function ChatPanel({
   const mine = c.assignee?.id === actions.me.id;
   const closed = c.status === "closed";
   // Outra pessoa já assumiu: só ela responde (o servidor também garante isso).
-  const lockedByOther = !!c.assignee && !mine && !closed;
+  const participating = !!c.participants?.some((p) => p.id === actions.me.id); // incluída no atendimento: responde sem assumir
+  const lockedByOther = !!c.assignee && !mine && !participating && !closed;
   // O responsável encerra; administradores e gestores também encerram qualquer atendimento que enxergam.
   const canClose = capabilities.close && !closed && (mine || isAdmin);
   const showAttendanceStatus = !lockedByOther && !closed && !c.snoozedUntil;
 
   const canTransfer = !closed && (mine || isAdmin || !c.assignee);
   const [transferAt, setTransferAt] = useState<{ x: number; y: number } | null>(null);
+  const [participantsAt, setParticipantsAt] = useState<{ x: number; y: number } | null>(null);
+  const canManageParticipants = !closed && (mine || participating || isAdmin);
   // Por que não dá para enviar arquivos agora (ou null): o mesmo que o campo de mensagem avisa.
   const dropBlocked = !capabilities.send
     ? (capabilities.sendUnavailableReason ?? "O envio está indisponível.")
@@ -240,14 +269,18 @@ export function ChatPanel({
 
   /** Prévia usada para citar a mensagem numa resposta. */
   function quotedOf(m: Message): Quoted {
-    const text = m.kind === "text" ? m.text : m.kind === "document" ? (m.caption || m.fileName) : m.kind === "image" ? (m.caption ?? "") : m.kind === "sticker" ? "Figurinha" : "";
+    const text = m.kind === "text" ? m.text : m.kind === "document" ? (m.caption || m.fileName || "Documento") : m.kind === "image" ? (m.caption ?? "") : m.kind === "sticker" ? "Figurinha" : "";
     const out = m.direction === "out";
     return { id: m.id, author: out ? (m.authorName ?? actions.me.name) : (m.authorName ?? c.contact.name), fromMe: out, kind: m.kind, text: text.slice(0, 160) };
   }
 
   /** Vai até a mensagem original de uma resposta (carrega o histórico se ela estiver além das mais recentes). */
   async function jumpTo(id: string) {
-    if (!document.getElementById(`msg-${id}`)) await actions.loadAllMessages(c.id);
+    if (!document.getElementById(`msg-${id}`)) {
+      setExpanded(true);
+      await actions.loadAllMessages(c.id);
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    }
     scrollToMessage(id);
   }
 
@@ -314,6 +347,11 @@ export function ChatPanel({
                 {segmentLabel(c)}
               </span>
               {c.assignee && !closed && <AssigneeChip name={c.assignee.name} mine={mine} className="max-w-[9rem]" />}
+              {!!c.participants?.length && !closed && (
+                <span title={`Também no atendimento: ${c.participants.map((p) => p.name).join(", ")}`} className="max-w-[10rem] shrink-0 truncate text-[11px] text-muted">
+                  + {c.participants.map((p) => (p.id === actions.me.id ? "você" : p.name.trim().split(/\s+/)[0])).join(", ")}
+                </span>
+              )}
             </span>
             {typing && <TypingIndicator announce className="text-[11.5px]" />}
           </span>
@@ -334,6 +372,18 @@ export function ChatPanel({
               }}
             >
               <UserRoundPlus className="size-5" />
+            </IconButton>
+          )}
+          {!closed && (
+            <IconButton
+              label="Participantes do atendimento"
+              active={!!c.participants?.length}
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                setParticipantsAt({ x: r.right - 256, y: r.bottom + 4 });
+              }}
+            >
+              <UsersRound className="size-5" />
             </IconButton>
           )}
           {canClose && (
@@ -375,6 +425,16 @@ export function ChatPanel({
                   }}
                 >
                   Transferir…
+                </MenuItem>
+                <MenuItem
+                  icon={<UsersRound />}
+                  disabled={closed}
+                  onClick={() => {
+                    close();
+                    setParticipantsAt({ x: window.innerWidth - 280, y: 56 });
+                  }}
+                >
+                  Incluir pessoa no atendimento…
                 </MenuItem>
                 <MenuItem
                   icon={<CircleCheck />}
@@ -632,6 +692,18 @@ export function ChatPanel({
         <Suspense fallback={null}>
           <PdfViewer pdf={openPdf} onClose={closePdf} />
         </Suspense>
+      )}
+      {participantsAt && (
+        <TransferMenu
+          variant="participants"
+          conversation={c}
+          x={participantsAt.x}
+          y={participantsAt.y}
+          myId={actions.me.id}
+          canTransfer={canManageParticipants}
+          onPick={(p) => actions.toggleParticipant(c.id, p)}
+          onClose={() => setParticipantsAt(null)}
+        />
       )}
       {transferAt && (
         <TransferMenu

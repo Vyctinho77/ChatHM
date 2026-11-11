@@ -203,10 +203,10 @@ export function PdfViewer({ pdf, onClose }: { pdf: ViewablePdf; onClose: () => v
       <header className="flex shrink-0 items-center gap-3 border-b border-white/10 px-4 py-3">
         <span className="inline-flex h-9 w-8 shrink-0 items-center justify-center rounded-md bg-red-600 text-[10px] font-bold">PDF</span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold">{pdf.fileName}</p>
+          <p className="truncate text-sm font-semibold">{pdf.fileName || "Documento"}</p>
           <p className="text-xs text-white/60">
             {pages > 0 && `Página ${pageNo} de ${pages} • `}
-            {formatBytes(pdf.sizeBytes)}
+            {pdf.sizeBytes ? formatBytes(pdf.sizeBytes) : ""}
           </p>
         </div>
         <button type="button" className={iconBtn} onClick={() => zoomBy(-1)} disabled={zoomIdx <= 0} aria-label="Reduzir" title="Reduzir (−)">

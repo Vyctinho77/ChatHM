@@ -1,4 +1,5 @@
 import { useId, useState, type FormEvent } from "react";
+import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronDown, Copy, KeyRound, LogIn, Plus, Settings2, ShieldCheck, Trash2 } from "lucide-react";
 import { Alert, Button, Field, Modal } from "@/components/ui";
@@ -8,7 +9,7 @@ import { Skeleton } from "@/components/Skeleton";
 import { useMe } from "@/features/auth/api";
 import { DomainInput } from "./DomainInput";
 
-type AiSettings = { enabled: boolean; maskDocuments: boolean; maskPhones: boolean; allowWrite: boolean; allowSend: boolean; allowAutomation?: boolean; maskEmails: boolean; strictPrivacy: boolean; allowOauth: boolean; oauthRedirectHosts: string[] };
+type AiSettings = { enabled: boolean; maskDocuments: boolean; maskPhones: boolean; allowWrite: boolean; allowSend: boolean; allowAutomation?: boolean; allowAttend?: boolean; maskEmails: boolean; strictPrivacy: boolean; allowOauth: boolean; oauthRedirectHosts: string[] };
 type Grant = { id: string; client: string; level: "read" | "write" | "send"; createdAt: string; lastUsedAt?: string; owner?: string };
 type AiToken = {
   id: string;
@@ -174,17 +175,17 @@ function ConnectGuide({ token }: { token?: string }) {
   );
 }
 
-function NewToken({ onClose, allowWrite, allowSend, allowAutomation }: { onClose: () => void; allowWrite: boolean; allowSend: boolean; allowAutomation: boolean }) {
+function NewToken({ onClose, allowWrite, allowSend, allowAutomation, allowAttend, admin }: { onClose: () => void; allowWrite: boolean; allowSend: boolean; allowAutomation: boolean; allowAttend: boolean; admin: boolean }) {
   const qc = useQueryClient();
   const [name, setName] = useState("");
   const [days, setDays] = useState(90);
-  const [level, setLevel] = useState<"read" | "write" | "send" | "automate">("read");
+  const [level, setLevel] = useState<"read" | "write" | "send" | "automate" | "attend">("read");
   const [provider, setProvider] = useState("claude");
   const [error, setError] = useState("");
   const [nameError, setNameError] = useState("");
   const [created, setCreated] = useState<Created | null>(null);
   const create = useMutation({
-    mutationFn: () => post<Created>("/ai/tokens", { name, expiresInDays: days, scopes: level === "automate" ? ["read", "write", "send", "automate"] : level === "send" ? ["read", "write", "send"] : level === "write" ? ["read", "write"] : ["read"], provider: level === "automate" ? provider : undefined }),
+    mutationFn: () => post<Created>("/ai/tokens", { name, expiresInDays: days, scopes: level === "attend" ? ["read", "write", "send", "attend"] : level === "automate" ? ["read", "write", "send", "automate"] : level === "send" ? ["read", "write", "send"] : level === "write" ? ["read", "write"] : ["read"], provider: level === "automate" || level === "attend" ? provider : undefined }),
     onSuccess: (c) => {
       setCreated(c);
       void qc.invalidateQueries({ queryKey: ["ai", "tokens"] });
@@ -254,13 +255,24 @@ function NewToken({ onClose, allowWrite, allowSend, allowAutomation }: { onClose
             <label className={cn("flex items-start gap-2.5", allowAutomation && allowSend ? "cursor-pointer" : "opacity-60")}>
               <input type="radio" name="scope" checked={level === "automate"} disabled={!allowAutomation || !allowSend} onChange={() => setLevel("automate")} className="mt-1 accent-[var(--c-accent)]" />
               <span>
-                <span className="font-medium">Tudo isso e propor envios automáticos (o administrador aprova)</span>
+                <span className="font-medium">Tudo isso e envios automáticos pelas regras do servidor</span>
                 <span className="block text-xs text-muted">
-                  {allowAutomation && allowSend ? "A IA decide sozinha quando avisar um cliente (DAS, cobrança, prazos), mas só inicia assuntos, nunca responde, e cada mensagem espera a aprovação do administrador." : "Um administrador precisa liberar os envios automáticos (e os pedidos de envio) primeiro."}
+                  {allowAutomation && allowSend ? "A IA pode iniciar avisos aos clientes. Cada assunto define se exige aprovação ou envia automaticamente, sempre sob as regras do servidor." : "Um administrador precisa liberar os envios automáticos (e os pedidos de envio) primeiro."}
                 </span>
               </span>
             </label>
-            {level === "automate" && (
+            {admin && (
+              <label className={cn("flex items-start gap-2.5", allowAttend ? "cursor-pointer" : "opacity-60")}>
+                <input type="radio" name="scope" checked={level === "attend"} disabled={!allowAttend} onChange={() => setLevel("attend")} className="mt-1 accent-[var(--c-accent)]" />
+                <span>
+                  <span className="font-medium">Atendente autônomo (a IA envia e responde sozinha)</span>
+                  <span className="block text-xs text-muted">
+                    {allowAttend ? "A IA conversa e envia como um atendente, na hora, com texto livre e sem aprovação. Só o essencial é bloqueado: quem pediu PARAR, grupos, pausa geral e excesso de velocidade." : "Ative o atendente autônomo em Permissões primeiro."}
+                  </span>
+                </span>
+              </label>
+            )}
+            {(level === "automate" || level === "attend") && (
               <label className="ml-6 flex flex-col gap-1.5 text-sm">
                 <span className="font-medium">Qual IA vai usar este token?</span>
                 <select value={provider} onChange={(e) => setProvider(e.target.value)} className="h-10 rounded-lg border border-line bg-elevated px-3 text-sm outline-none focus:border-accent">
@@ -325,7 +337,6 @@ export function AiAccessCard() {
 
   if (!settings.data) return (
     <section id="integracoes-ia" className="scroll-mt-6 border-t border-line py-6">
-      <h2 className="font-semibold">Integrações de IA (MCP)</h2>
       {settings.isPending ? (
         <div role="status" aria-label="Carregando integrações MCP" aria-busy="true" className="mt-4 space-y-3">
           <Skeleton className="h-4 w-3/4" />
@@ -345,13 +356,12 @@ export function AiAccessCard() {
   return (
     <section id="integracoes-ia" className="scroll-mt-6 divide-y divide-line/60">
       <div id="mcp-access" tabIndex={-1} className="scroll-mt-6 pb-5 outline-none">
-        <h2 className="text-base font-semibold">Integrações de IA (MCP)</h2>
         {admin ? (
           <Toggle checked={s.enabled} disabled={save.isPending} onChange={(v) => change({ enabled: v })} label="Permitir acesso por IA" hint={s.enabled ? "Ativo. Cada assistente usa apenas os acessos de quem o conectou." : "Ative para conectar seus assistentes. Desligado, todos os acessos ficam suspensos."} />
         ) : (
           <p className="py-3 text-sm text-muted">{s.enabled ? "O acesso por IA está ativo neste escritório." : "Peça a um administrador para ativar o acesso por IA."}</p>
         )}
-        <p className="flex items-start gap-2 pt-1 text-xs leading-relaxed text-muted"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-brand-ink" />Você revisa e aprova cada mensagem antes do envio ao cliente.</p>
+        <p className="flex items-start gap-2 pt-1 text-xs leading-relaxed text-muted"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-brand-ink" />Respostas sugeridas exigem aprovação. Avisos automáticos seguem a autonomia e as regras de cada assunto.</p>
       </div>
 
       {error && <div className="mt-3"><Alert>{error}</Alert></div>}
@@ -360,13 +370,15 @@ export function AiAccessCard() {
         <details id="mcp-permissions" className="group/options scroll-mt-6">
           <summary className="flex cursor-pointer list-none items-center gap-3 py-5 [&::-webkit-details-marker]:hidden">
             <Settings2 className="size-4 shrink-0 text-muted" />
-            <span className="flex-1"><span className="block text-sm font-medium">Permissões</span><span className="mt-0.5 block text-xs text-muted">{s.allowWrite ? "Alterações permitidas" : "Somente leitura"}{s.allowSend ? " · Pedidos de envio liberados" : ""}{s.allowAutomation ? " · Envios automáticos liberados" : ""}</span></span>
+            <span className="flex-1"><span className="block text-sm font-medium">Permissões</span><span className="mt-0.5 block text-xs text-muted">{s.allowWrite ? "Alterações permitidas" : "Somente leitura"}{s.allowSend ? " · Pedidos de envio liberados" : ""}{s.allowAutomation ? " · Envios automáticos liberados" : ""}{s.allowAttend ? " · Atendente autônomo liberado" : ""}</span></span>
             <ChevronDown className="size-4 text-muted transition-transform group-open/options:rotate-180 motion-reduce:transition-none" />
           </summary>
           <div className="divide-y divide-line/60 border-t border-line/60 pb-4">
             <Toggle checked={s.allowWrite} disabled={save.isPending} onChange={v => change({ allowWrite: v })} label="Permitir alterações" hint="Etiquetas, observações, lembretes, agenda e rascunhos, conforme os acessos da pessoa." />
             <Toggle checked={s.allowSend} disabled={save.isPending || !s.allowWrite} onChange={v => change({ allowSend: v })} label="Permitir pedidos de envio" hint={s.allowWrite ? "O assistente sugere a mensagem e você decide se envia." : "Ative as alterações para liberar pedidos de envio."} />
-            <Toggle checked={!!s.allowAutomation} disabled={save.isPending || !s.allowSend} onChange={v => change({ allowAutomation: v })} label="Permitir envios automáticos" hint={s.allowSend ? "A IA propõe avisos aos clientes (DAS, cobrança, prazos) e você aprova em Envios automáticos. Escolha os assuntos lá." : "Ative os pedidos de envio para liberar os envios automáticos."} />
+            <Toggle checked={!!s.allowAutomation} disabled={save.isPending || !s.allowSend} onChange={v => change({ allowAutomation: v })} label="Permitir envios automáticos" hint={s.allowSend ? "A IA inicia avisos aos clientes. Em Envios automáticos → Assuntos, escolha quais podem enviar sem aprovação." : "Ative os pedidos de envio para liberar os envios automáticos."} />
+            <Toggle checked={!!s.allowAttend} disabled={save.isPending || !s.allowSend} onChange={v => change({ allowAttend: v })} label="Permitir atendente autônomo" hint={s.allowSend ? "A IA pode responder e enviar mensagens a clientes na hora, como um atendente, sem aprovação. Só administradores criam esses tokens. Não vale para quem respondeu PARAR nem para grupos, e há limite de velocidade." : "Ative os pedidos de envio para liberar o atendente autônomo."} />
+            {s.allowAutomation && <Link to="/automacao" className="block py-2 text-xs font-medium text-brand-ink hover:underline">Definir assuntos e autonomia de envio</Link>}
           </div>
         </details>
         <details id="mcp-privacy" className="group/options scroll-mt-6">
@@ -425,7 +437,7 @@ export function AiAccessCard() {
                   <div className={cn("min-w-0 flex-1", inactive && "opacity-60")}>
                     <p className="truncate text-sm font-medium">{t.name}{t.owner && <span className="font-normal text-muted"> · {t.owner}</span>}</p>
                     <p className="text-xs text-muted">
-                      <code>{t.prefix}…</code> · {t.scopes.includes("automate") ? "leitura, escrita, pedidos de envio e envios automáticos" : t.scopes.includes("send") ? "leitura, escrita e pedidos de envio" : t.scopes.includes("write") ? "leitura e escrita" : "só leitura"} · {t.revoked ? "revogado" : t.expired ? "expirado" : `vale até ${date(t.expiresAt)}`} · {t.lastUsedAt ? `usado em ${date(t.lastUsedAt)}` : "nunca usado"}
+                      <code>{t.prefix}…</code> · {t.scopes.includes("attend") ? "atendente autônomo (envia e responde sozinho)" : t.scopes.includes("automate") ? "leitura, escrita, pedidos de envio e envios automáticos" : t.scopes.includes("send") ? "leitura, escrita e pedidos de envio" : t.scopes.includes("write") ? "leitura e escrita" : "só leitura"} · {t.revoked ? "revogado" : t.expired ? "expirado" : `vale até ${date(t.expiresAt)}`} · {t.lastUsedAt ? `usado em ${date(t.lastUsedAt)}` : "nunca usado"}
                     </p>
                   </div>
                   {!inactive && (
@@ -463,7 +475,7 @@ export function AiAccessCard() {
           </ul>
         </div>
       )}
-      {creating && <NewToken allowWrite={s.allowWrite} allowSend={s.allowSend} allowAutomation={!!s.allowAutomation} onClose={() => setCreating(false)} />}
+      {creating && <NewToken allowWrite={s.allowWrite} allowSend={s.allowSend} allowAutomation={!!s.allowAutomation} allowAttend={!!s.allowAttend} admin={admin} onClose={() => setCreating(false)} />}
     </section>
   );
 }

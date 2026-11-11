@@ -127,6 +127,7 @@ const (
 func visibleExpr(user, admin string) string {
 	return fmt.Sprintf(`(%[2]s
 		OR c.assignee_id = %[1]s
+		OR EXISTS (SELECT 1 FROM conversation_participants cp WHERE cp.conversation_id = c.id AND cp.user_id = %[1]s)
 		OR (s.team_id IS NULL AND c.assignee_id IS NULL)
 		OR (s.team_id IS NOT NULL AND EXISTS (
 		      SELECT 1 FROM team_members tm WHERE tm.team_id = s.team_id AND tm.user_id = %[1]s)))`, user, admin)
@@ -355,7 +356,14 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 
 		// Classificação: só mensagens do cliente, só enquanto a conversa não tem fila
 		// e ninguém assumiu — conversa em andamento nunca muda de fila por palavras isoladas.
-		if m.FromMe || m.Historical || m.Body == "" {
+		// Documento sem legenda: o nome do arquivo ("Folha_Outubro.pdf") também diz o assunto.
+		text := m.Body
+		if m.Kind == whatsapp.KindDocument {
+			if fn, _ := m.Payload["fileName"].(string); fn != "" {
+				text = strings.TrimSpace(text + " " + fn)
+			}
+		}
+		if m.FromMe || m.Historical || text == "" {
 			return nil
 		}
 		var curSeg, assignee *string
@@ -371,7 +379,7 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 		if err != nil {
 			return err
 		}
-		res := segments.Classify(m.Body, kws)
+		res := segments.Classify(text, kws)
 		switch res.Reason {
 		case segments.ReasonKeyword:
 			if !created { // a conversa já era visível a todos; avisar quem sai da visão
@@ -495,6 +503,7 @@ type Conversation struct {
 	Status         string     `json:"status"`
 	SnoozedUntil   *time.Time `json:"snoozedUntil,omitempty"`
 	Assignee       *Ref       `json:"assignee,omitempty"`
+	Participants   []Ref      `json:"participants"` // outras pessoas incluídas no atendimento
 	UnreadCount    int        `json:"unreadCount"`
 	Tags           []string   `json:"tags"`
 	LastMessage    Message    `json:"lastMessage,omitempty"`
@@ -590,7 +599,9 @@ const listQuery = `
 	       coalesce((SELECT array_agg(t.name::text ORDER BY t.name) FROM conversation_tags cg
 	                  JOIN tags t ON t.id = cg.tag_id WHERE cg.conversation_id = c.id), '{}'),
 	       lm.id, lm.conversation_id, lm.direction, lm.kind, lm.body, lm.payload, lm.status,
-	       lm.sent_at, lm.sender_name, lm.delivered_at, lm.read_at, lm.edited_at, lm.deleted_at
+	       lm.sent_at, lm.sender_name, lm.delivered_at, lm.read_at, lm.edited_at, lm.deleted_at,
+	       coalesce((SELECT json_agg(json_build_object('id', pu.id, 'name', pu.name) ORDER BY cp.created_at)
+	                  FROM conversation_participants cp JOIN users pu ON pu.id = cp.user_id WHERE cp.conversation_id = c.id), '[]'::json)
 	  FROM conversations c
 	  JOIN contacts ct ON ct.id = c.contact_id
 	  LEFT JOIN segments s ON s.id = c.segment_id
@@ -607,6 +618,7 @@ func scanConversation(row pgx.Row) (Conversation, error) {
 		avatarVer         int64
 		uID, uName        *string
 		segKey, segName   *string
+		parts             []byte
 		lm                struct {
 			id, convID, dir, kind, body, sender *string
 			payload                             []byte
@@ -618,10 +630,12 @@ func scanConversation(row pgx.Row) (Conversation, error) {
 	err := row.Scan(&c.ID, &c.Status, &c.UnreadCount, &c.UpdatedAt, &c.Classification, &c.SnoozedUntil,
 		&c.Contact.ID, &name, &phone, &waID, &c.Contact.Company, &c.Contact.Note, &kind, &avatarVer, &c.Contact.Saved,
 		&uID, &uName, &segKey, &segName, &c.Tags,
-		&lm.id, &lm.convID, &lm.dir, &lm.kind, &lm.body, &lm.payload, &lm.status, &lm.sentAt, &lm.sender, &lm.deliveredAt, &lm.readAt, &lm.editedAt, &lm.deletedAt)
+		&lm.id, &lm.convID, &lm.dir, &lm.kind, &lm.body, &lm.payload, &lm.status, &lm.sentAt, &lm.sender, &lm.deliveredAt, &lm.readAt, &lm.editedAt, &lm.deletedAt, &parts)
 	if err != nil {
 		return c, err
 	}
+	c.Participants = []Ref{}
+	_ = json.Unmarshal(parts, &c.Participants)
 	c.Contact.finish(name, phone, waID, kind, avatarVer)
 	if c.Contact.Phone == "" {
 		c.Contact.Phone = waID
@@ -701,9 +715,12 @@ func (s *Service) Messages(ctx context.Context, v Viewer, conversationID string,
 	if limit < 1 || limit > 5000 {
 		limit = 300
 	}
-	if _, err := s.Get(ctx, v, conversationID); err != nil {
-		return nil, err
-	}
+	// A checagem de acesso e a leitura das mensagens vão ao banco ao mesmo tempo (duas viagens de rede em vez de uma depois da outra).
+	access := make(chan error, 1)
+	go func() {
+		_, err := s.Get(ctx, v, conversationID)
+		access <- err
+	}()
 	rows, err := s.db.Query(ctx, `
 		SELECT * FROM (
 		    SELECT `+messageCols+`, m.created_at FROM messages m
@@ -713,6 +730,12 @@ func (s *Service) Messages(ctx context.Context, v Viewer, conversationID string,
 		       AND NOT EXISTS (SELECT 1 FROM message_hidden h WHERE h.message_id = m.id AND h.user_id = $1)
 		     ORDER BY m.sent_at DESC, m.created_at DESC LIMIT $4) x
 		 ORDER BY sent_at, created_at`, v.ID, v.Admin, conversationID, limit)
+	if aerr := <-access; aerr != nil { // sem acesso: nada do que foi lido é devolvido
+		if err == nil {
+			rows.Close()
+		}
+		return nil, aerr
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -869,6 +892,11 @@ func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInpu
 		switch kind {
 		case "image", "sticker":
 			payload["width"], payload["height"], payload["hd"] = in.Att.Width, in.Att.Height, in.HD
+			if kind == "image" {
+				if thumb, ok := media.Thumb(in.Att.Data); ok {
+					payload["thumb"] = thumb
+				}
+			}
 			if kind == "sticker" {
 				payload["animated"] = len(in.Att.Data) > 20 && string(in.Att.Data[12:16]) == "VP8X" && in.Att.Data[20]&2 != 0
 			}
@@ -934,6 +962,7 @@ func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInpu
 			segID, teamID        *string
 			lastJID, contactWAID string
 			snoozedUntil         *time.Time
+			isParticipant        bool // incluída no atendimento: responde sem assumir
 		)
 		// Uma ida ao banco só: o chat_jid da última mensagem vem junto (cada consulta
 		// custa uma viagem de rede inteira até o Postgres).
@@ -941,12 +970,13 @@ func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInpu
 			SELECT c.status, c.assignee_id, coalesce(u.name, ''), c.segment_id, s.team_id,
 			       coalesce((SELECT m.chat_jid FROM messages m WHERE m.conversation_id = c.id
 			                  ORDER BY m.sent_at DESC, m.created_at DESC LIMIT 1), ''),
-			       (SELECT ct.wa_id FROM contacts ct WHERE ct.id = c.contact_id), c.snoozed_until
+			       (SELECT ct.wa_id FROM contacts ct WHERE ct.id = c.contact_id), c.snoozed_until,
+			       EXISTS (SELECT 1 FROM conversation_participants cp WHERE cp.conversation_id = c.id AND cp.user_id = $1)
 			  FROM conversations c
 			  LEFT JOIN segments s ON s.id = c.segment_id
 			  LEFT JOIN users u ON u.id = c.assignee_id
 			 WHERE c.id = $3 AND `+forViewer+`
-			 FOR UPDATE OF c`, v.ID, v.Admin, convID).Scan(&status, &assignee, &assigneeName, &segID, &teamID, &lastJID, &contactWAID, &snoozedUntil)
+			 FOR UPDATE OF c`, v.ID, v.Admin, convID).Scan(&status, &assignee, &assigneeName, &segID, &teamID, &lastJID, &contactWAID, &snoozedUntil, &isParticipant)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -973,7 +1003,7 @@ func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInpu
 			if ex.status == nil || *ex.status != "failed" {
 				return nil // já enviada (ou em envio): devolve como está
 			}
-			if assignee == nil || *assignee != v.ID {
+			if assignee == nil || (*assignee != v.ID && !isParticipant) {
 				return &TakenError{Assignee: assigneeName}
 			}
 			if !s.sender.Connected() {
@@ -998,7 +1028,7 @@ func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInpu
 			if status == "closed" {
 				return ErrClosed
 			}
-			if assignee != nil && *assignee != v.ID {
+			if assignee != nil && *assignee != v.ID && !isParticipant {
 				return &TakenError{Assignee: assigneeName}
 			}
 			// Sem WhatsApp conectado a resposta falharia: não assume nem grava nada.
@@ -1448,32 +1478,107 @@ func FormatPhone(e164 string) string {
 type AttachmentFile struct {
 	Data               []byte
 	MimeType, FileName string
+	SHA256             string // validador para o cache do navegador (ETag)
+	Preview            bool   // Data é a versão reduzida
 }
 
-// Attachment devolve o arquivo se o viewer pode ver a conversa da mensagem.
-func (s *Service) Attachment(ctx context.Context, v Viewer, id string) (AttachmentFile, error) {
+type attachmentMeta struct {
+	key, mimeType, name, sha string
+}
+
+// attachmentMeta confere o acesso (a mesma regra de visibilidade da conversa) e devolve os dados do anexo, sem ler o arquivo.
+func (s *Service) attachmentMeta(ctx context.Context, v Viewer, id string) (attachmentMeta, error) {
 	if !httpx.ValidUUID(id) || s.store == nil {
-		return AttachmentFile{}, ErrNotFound
+		return attachmentMeta{}, ErrNotFound
 	}
-	var key, mimeType, name string
+	var m attachmentMeta
 	err := s.db.QueryRow(ctx, `
-		SELECT a.storage_key, a.mime_type, a.file_name
+		SELECT a.storage_key, a.mime_type, a.file_name, a.sha256
 		  FROM attachments a
 		  JOIN messages m ON m.id = a.message_id
 		  JOIN conversations c ON c.id = m.conversation_id
 		  LEFT JOIN segments s ON s.id = c.segment_id
-		 WHERE a.id = $3 AND `+forViewer, v.ID, v.Admin, id).Scan(&key, &mimeType, &name)
+		 WHERE a.id = $3 AND `+forViewer, v.ID, v.Admin, id).Scan(&m.key, &m.mimeType, &m.name, &m.sha)
 	if errors.Is(err, pgx.ErrNoRows) {
+		return attachmentMeta{}, ErrNotFound
+	}
+	return m, err
+}
+
+// Attachment devolve o arquivo se o viewer pode ver a conversa da mensagem.
+func (s *Service) Attachment(ctx context.Context, v Viewer, id string) (AttachmentFile, error) {
+	m, err := s.attachmentMeta(ctx, v, id)
+	if err != nil {
+		return AttachmentFile{}, err
+	}
+	data, err := s.store.Get(ctx, m.key)
+	if errors.Is(err, storage.ErrNotFound) {
+		return AttachmentFile{}, ErrNotFound
+	}
+	return AttachmentFile{Data: data, MimeType: m.mimeType, FileName: m.name, SHA256: m.sha}, err
+}
+
+// AttachmentPreview devolve a versão reduzida de uma foto (a do balão); sem derivado possível (não é foto, já é pequena),
+// devolve o original. O derivado é criado na primeira vez e guardado ao lado do original, então as próximas leituras são leves.
+func (s *Service) AttachmentPreview(ctx context.Context, v Viewer, id string) (AttachmentFile, error) {
+	m, err := s.attachmentMeta(ctx, v, id)
+	if err != nil {
+		return AttachmentFile{}, err
+	}
+	if !strings.HasPrefix(m.mimeType, "image/") || m.mimeType == "image/gif" {
+		return s.Attachment(ctx, v, id)
+	}
+	pkey := m.key + ".preview"
+	if data, err := s.store.Get(ctx, pkey); err == nil {
+		return AttachmentFile{Data: data, MimeType: "image/jpeg", FileName: m.name, SHA256: m.sha + "-p", Preview: true}, nil
+	}
+	orig, err := s.store.Get(ctx, m.key)
+	if errors.Is(err, storage.ErrNotFound) {
 		return AttachmentFile{}, ErrNotFound
 	}
 	if err != nil {
 		return AttachmentFile{}, err
 	}
-	data, err := s.store.Get(ctx, key)
-	if errors.Is(err, storage.ErrNotFound) {
-		return AttachmentFile{}, ErrNotFound
+	prev, ok := media.Preview(orig)
+	if !ok {
+		return AttachmentFile{Data: orig, MimeType: m.mimeType, FileName: m.name, SHA256: m.sha}, nil
 	}
-	return AttachmentFile{Data: data, MimeType: mimeType, FileName: name}, err
+	_ = s.store.Put(ctx, pkey, prev) // se não gravar, só perde o ganho da próxima vez
+	return AttachmentFile{Data: prev, MimeType: "image/jpeg", FileName: m.name, SHA256: m.sha + "-p", Preview: true}, nil
+}
+
+// BackfillThumbs cria a miniatura das fotos que ainda não têm (as recebidas antes deste recurso). Roda uma vez ao iniciar.
+func (s *Service) BackfillThumbs(ctx context.Context) {
+	if s.store == nil {
+		return
+	}
+	for ctx.Err() == nil {
+		rows, err := s.db.Query(ctx, `
+			SELECT m.id::text, a.storage_key FROM messages m JOIN attachments a ON a.message_id = m.id
+			 WHERE m.kind = 'image' AND a.mime_type LIKE 'image/%' AND NOT (m.payload ? 'thumb') LIMIT 100`)
+		if err != nil {
+			return
+		}
+		type item struct{ id, key string }
+		var batch []item
+		for rows.Next() {
+			var it item
+			if rows.Scan(&it.id, &it.key) == nil {
+				batch = append(batch, it)
+			}
+		}
+		rows.Close()
+		if len(batch) == 0 {
+			return
+		}
+		for _, it := range batch {
+			thumb := "" // vazio = sem miniatura (não tenta de novo)
+			if data, err := s.store.Get(ctx, it.key); err == nil {
+				thumb, _ = media.Thumb(data)
+			}
+			_, _ = s.db.Exec(ctx, `UPDATE messages SET payload = payload || jsonb_build_object('thumb', $2::text) WHERE id = $1`, it.id, thumb)
+		}
+	}
 }
 
 // fetchMedia baixa a mídia recebida, valida, guarda e avisa a interface. Roda em segundo
@@ -1536,5 +1641,118 @@ func (s *Service) fetchMedia(msgID, convID string, m whatsapp.InboundMessage) {
 		_ = s.store.Delete(ctx, key)
 		return
 	}
+	if m.Kind == whatsapp.KindImage {
+		thumb, _ := media.Thumb(p.Data)
+		_, _ = s.db.Exec(ctx, `UPDATE messages SET payload = payload || jsonb_build_object('thumb', $2::text) WHERE id = $1`, msgID, thumb)
+	}
 	state = ""
+}
+
+// AddParticipant inclui uma pessoa (de outra equipe, ou um administrador) no atendimento: ela passa a ver a conversa e a responder,
+// sem tirar o responsável. Quem inclui: o responsável, quem já participa, ou administrador/gestor.
+func (s *Service) AddParticipant(ctx context.Context, v Viewer, convID, userID string) error {
+	if !httpx.ValidUUID(convID) {
+		return ErrNotFound
+	}
+	if !httpx.ValidUUID(userID) {
+		return httpx.FieldErrors{"userId": "Escolha uma pessoa."}
+	}
+	var before userSet
+	var changed bool
+	err := database.InTx(ctx, s.db, func(tx pgx.Tx) error {
+		var status string
+		var assignee *string
+		var isPart bool
+		err := tx.QueryRow(ctx, `
+			SELECT c.status, c.assignee_id::text, EXISTS (SELECT 1 FROM conversation_participants cp WHERE cp.conversation_id = c.id AND cp.user_id = $1)
+			  FROM conversations c LEFT JOIN segments s ON s.id = c.segment_id
+			 WHERE c.id = $3 AND `+forViewer+` FOR UPDATE OF c`, v.ID, v.Admin, convID).Scan(&status, &assignee, &isPart)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if status == "closed" {
+			return ErrClosed
+		}
+		if !(v.CanSupervise() || isPart || (assignee != nil && *assignee == v.ID)) {
+			return &TakenError{Assignee: ""}
+		}
+		var active bool
+		err = tx.QueryRow(ctx, `SELECT is_active FROM users WHERE id = $1`, userID).Scan(&active)
+		if errors.Is(err, pgx.ErrNoRows) || (err == nil && !active) {
+			return httpx.FieldErrors{"userId": "Pessoa não encontrada ou desativada."}
+		}
+		if err != nil {
+			return err
+		}
+		if assignee != nil && *assignee == userID {
+			return httpx.FieldErrors{"userId": "Esta pessoa já é a responsável pelo atendimento."}
+		}
+		if before, err = s.visibleUsers(ctx, tx, convID); err != nil {
+			return err
+		}
+		tag, err := tx.Exec(ctx, `INSERT INTO conversation_participants (conversation_id, user_id, added_by) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, convID, userID, v.ID)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return nil
+		}
+		changed = true
+		return audit.Record(ctx, tx, audit.Entry{ActorID: v.ID, Action: "conversation.participant_add", TargetType: "conversation", TargetID: convID, Metadata: map[string]any{"userId": userID}})
+	})
+	if err != nil {
+		return err
+	}
+	if changed {
+		s.publishState(ctx, convID, before)
+	}
+	return nil
+}
+
+// RemoveParticipant tira uma pessoa do atendimento (quem participa também pode sair). Quem perde o acesso pela equipe deixa de ver a conversa.
+func (s *Service) RemoveParticipant(ctx context.Context, v Viewer, convID, userID string) error {
+	if !httpx.ValidUUID(convID) || !httpx.ValidUUID(userID) {
+		return ErrNotFound
+	}
+	var before userSet
+	var changed bool
+	err := database.InTx(ctx, s.db, func(tx pgx.Tx) error {
+		var assignee *string
+		var isPart bool
+		err := tx.QueryRow(ctx, `
+			SELECT c.assignee_id::text, EXISTS (SELECT 1 FROM conversation_participants cp WHERE cp.conversation_id = c.id AND cp.user_id = $1)
+			  FROM conversations c LEFT JOIN segments s ON s.id = c.segment_id
+			 WHERE c.id = $3 AND `+forViewer+` FOR UPDATE OF c`, v.ID, v.Admin, convID).Scan(&assignee, &isPart)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if !(v.CanSupervise() || isPart || userID == v.ID || (assignee != nil && *assignee == v.ID)) {
+			return &TakenError{Assignee: ""}
+		}
+		if before, err = s.visibleUsers(ctx, tx, convID); err != nil {
+			return err
+		}
+		tag, err := tx.Exec(ctx, `DELETE FROM conversation_participants WHERE conversation_id = $1 AND user_id = $2`, convID, userID)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return nil
+		}
+		changed = true
+		return audit.Record(ctx, tx, audit.Entry{ActorID: v.ID, Action: "conversation.participant_remove", TargetType: "conversation", TargetID: convID, Metadata: map[string]any{"userId": userID}})
+	})
+	if err != nil {
+		return err
+	}
+	if changed {
+		s.publishState(ctx, convID, before)
+	}
+	return nil
 }

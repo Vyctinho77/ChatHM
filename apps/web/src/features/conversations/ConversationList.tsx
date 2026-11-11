@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { AnimatePresence, motion } from "motion/react";
 import { CheckCheck, Clock3, EllipsisVertical, ListFilter, Search, SquarePen, StickyNote } from "lucide-react";
@@ -15,18 +15,21 @@ import { useDebounced } from "@/lib/useDebounced";
 import { NewConversationModal } from "./NewConversation";
 import { MessagePreview } from "./preview";
 import { SearchResults } from "./SearchResults";
-import { useContactOpener, useConversationActions, useConversations, useMessageSearch, useSegmentOptions } from "./store";
+import { useContactOpener, useConversationActions, useConversations, useMessageSearch, usePrefetchMessages, useSegmentOptions } from "./store";
 import { Ticks } from "./Ticks";
 import { TransferMenu } from "./TransferMenu";
-import { filterConversations, unreadByTab, type ConversationFilter as Filter } from "./conversationFilter";
+import { countsByTab, filterConversations, type ConversationFilter as Filter } from "./conversationFilter";
 import { reminderColors, useReminders, type Reminder } from "./reminders";
 import { ReminderEditor } from "./ReminderEditor";
 import { useTyping } from "./typing";
 import { TypingIndicator } from "./TypingIndicator";
 import type { ContactRecord, Conversation, MessageHit, SegmentKey, SegmentOption } from "./types";
 
+const contactCountLabel = (count: number) => `${count} ${count === 1 ? "contato" : "contatos"}`;
+
 export function ConversationList({ selectedId, onSelect }: { selectedId?: string; onSelect: (id: string) => void }) {
   const { data, isPending } = useConversations();
+  const warm = usePrefetchMessages();
   const actions = useConversationActions();
   const { data: meData } = useMe();
   const isAdmin = canSupervise(meData?.user.role); // administrador ou gestor
@@ -77,17 +80,33 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
 
   // Atendimentos encerrados saem da lista; um novo contato do cliente abre outro.
   const all = useMemo(() => (data ?? []).filter((c) => c.status !== "closed"), [data]);
-  const tabUnread = useMemo(() => unreadByTab(all, actions.me.id), [all, actions.me.id]);
+  const tabCounts = useMemo(() => countsByTab(all, actions.me.id, segment), [all, actions.me.id, segment]);
 
   const visible = useMemo(() => {
     const q = query.trim();
     return filterConversations(all, filter, actions.me.id, segment).filter((c) => {
       if (!q) return true;
       const last = c.lastMessage;
-      const text = last?.kind === "text" ? last.text : last?.kind === "document" ? last.fileName : "";
+      const text = last?.kind === "text" ? last.text : last?.kind === "document" ? (last.fileName ?? "") : "";
       return matches(`${c.contact.name} ${c.contact.phone} ${c.contact.company ?? ""} ${text}`, q);
     });
   }, [all, filter, segment, query, actions.me.id]);
+
+  const openMenu = useCallback((id: string, x: number, y: number) => setCtx({ id, x, y }), []);
+
+  // Quando a tela fica parada, adianta as mensagens das primeiras conversas da lista: o clique abre sem esperar.
+  const firstIds = visible.slice(0, 6).map((c) => c.id).join(",");
+  useEffect(() => {
+    if (!firstIds) return;
+    const run = () => firstIds.split(",").forEach(warm);
+    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (h: number) => void };
+    if (w.requestIdleCallback) {
+      const h = w.requestIdleCallback(run, { timeout: 2000 });
+      return () => w.cancelIdleCallback?.(h);
+    }
+    const t = setTimeout(run, 800);
+    return () => clearTimeout(t);
+  }, [firstIds, warm]);
 
   async function openContact(ct: ContactRecord) {
     try {
@@ -108,12 +127,12 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
     }
   }
 
-  const chips: { key: Filter; label: string }[] = [
-    { key: "mine", label: "Minhas" },
-    { key: "general", label: "Não atribuídos" },
+  const chips: { key: Filter; label: string; showCount?: boolean }[] = [
+    { key: "mine", label: "Minhas", showCount: true },
+    { key: "general", label: "Não atribuídos", showCount: true },
     { key: "groups", label: "Grupos" },
     { key: "all", label: "Todas" },
-    { key: "snoozed", label: "Adiadas" },
+    { key: "snoozed", label: "Adiadas", showCount: true },
   ];
   const ctxConv = ctx ? all.find((c) => c.id === ctx.id) : undefined;
 
@@ -186,6 +205,7 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
             key={c.key}
             role="tab"
             aria-selected={filter === c.key}
+            aria-label={isPending ? c.label : `${c.label}: ${contactCountLabel(tabCounts[c.key].contacts)}${tabCounts[c.key].unread ? `, ${tabCounts[c.key].unread} com mensagens não lidas` : ""}`}
             onClick={() => setFilter(c.key)}
             className={cn(
               "inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2 text-xs transition-colors",
@@ -193,8 +213,8 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
             )}
           >
             {c.label}
-            {c.key === "mine" && tabUnread.mine > 0 && <span title={`${tabUnread.mine} com mensagens novas`} className="text-[10px] tabular-nums">{tabUnread.mine > 99 ? "99+" : tabUnread.mine}</span>}
-            {c.key === "snoozed" && all.some((x) => x.snoozedUntil) && <span className="text-[10px] tabular-nums">{all.filter((x) => x.snoozedUntil).length}</span>}
+            {!isPending && c.showCount && <span aria-hidden="true" title={contactCountLabel(tabCounts[c.key].contacts)} className="text-[10px] tabular-nums text-muted">{tabCounts[c.key].contacts}</span>}
+            {!isPending && tabCounts[c.key].unread > 0 && <span aria-hidden="true" title={`${contactCountLabel(tabCounts[c.key].unread)} com mensagens novas`} className="size-1.5 shrink-0 rounded-full bg-unread" />}
           </button>
         ))}
       </div>
@@ -215,25 +235,21 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
           <p className="px-4 py-10 text-center text-sm text-muted">Nenhuma conversa encontrada.</p>
         )}
         <ul className="flex flex-col">
-          <AnimatePresence initial={false}>
-            {visible.map((c) => (
-              <ConversationRow
-                key={c.id}
-                c={c}
-                myId={actions.me.id}
-                selected={c.id === selectedId}
-                showReminder={filter === "mine" && c.assignee?.id === actions.me.id}
-                reminder={reminders.data?.[c.id]}
-                reminderReady={reminders.isSuccess}
-                onEditReminder={() => setEditingReminder(c)}
-                onClick={() => onSelect(c.id)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  setCtx({ id: c.id, x: e.clientX, y: e.clientY });
-                }}
-              />
-            ))}
-          </AnimatePresence>
+          {visible.map((c) => (
+            <ConversationRow
+              key={c.id}
+              c={c}
+              myId={actions.me.id}
+              selected={c.id === selectedId}
+              showReminder={filter === "mine" && c.assignee?.id === actions.me.id}
+              reminder={reminders.data?.[c.id]}
+              reminderReady={reminders.isSuccess}
+              onEditReminder={setEditingReminder}
+              onWarm={warm}
+              onSelect={onSelect}
+              onMenu={openMenu}
+            />
+          ))}
         </ul>
         {debounced.length >= 2 && debounced === query.trim() && (
           <SearchResults
@@ -263,12 +279,13 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
   );
 }
 
-function ConversationRow({
+const ConversationRow = memo(function ConversationRow({
   c,
   myId,
   selected,
-  onClick,
-  onContextMenu,
+  onSelect,
+  onWarm,
+  onMenu,
   showReminder,
   reminder,
   reminderReady,
@@ -277,43 +294,38 @@ function ConversationRow({
   c: Conversation;
   myId: string;
   selected: boolean;
-  onClick: () => void;
-  onContextMenu: (e: React.MouseEvent) => void;
+  onSelect: (id: string) => void;
+  onWarm: (id: string) => void;
+  onMenu: (id: string, x: number, y: number) => void;
   showReminder: boolean;
   reminder?: Reminder;
   reminderReady: boolean;
-  onEditReminder: () => void;
+  onEditReminder: (c: Conversation) => void;
 }) {
   const unread = c.unreadCount > 0;
   const typing = useTyping(c.id);
   const last = c.lastMessage;
   return (
-    <motion.li
-      layout="position"
-      initial={{ opacity: 0, height: 0 }}
-      animate={{ opacity: 1, height: "auto" }}
-      exit={{ opacity: 0, height: 0 }}
-      transition={{ type: "spring", stiffness: 500, damping: 40 }}
-      className="overflow-hidden"
-    >
+    // Sem animação de entrada/saída por linha: trocar de aba monta centenas de linhas e as molas travavam a tela.
+    // content-visibility deixa o navegador pular o layout/pintura das linhas fora da área visível.
+    <li className="[contain-intrinsic-size:auto_60px] [content-visibility:auto]">
       <button
         type="button"
-        onClick={onClick}
-        onContextMenu={onContextMenu}
+        onPointerEnter={() => onWarm(c.id)}
+        onPointerDown={() => onWarm(c.id)}
+        onFocus={() => onWarm(c.id)}
+        onClick={() => onSelect(c.id)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          onMenu(c.id, e.clientX, e.clientY);
+        }}
         aria-current={selected ? "true" : undefined}
         className={cn(
           "relative flex w-full gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors",
           !selected && "hover:bg-hover",
         )}
       >
-        {selected && (
-          <motion.span
-            layoutId="conversation-selected"
-            className="absolute inset-0 rounded-lg bg-hover"
-            transition={{ type: "spring", stiffness: 500, damping: 40 }}
-            aria-hidden
-          />
-        )}
+        {selected && <span className="absolute inset-0 rounded-lg bg-hover" aria-hidden />}
         <span className="relative">
         <Avatar name={c.contact.name} src={c.contact.avatarUrl} group={c.contact.kind === "group"} size="list" />
         </span>
@@ -342,7 +354,7 @@ function ConversationRow({
                 title={c.assignee.id === myId ? "Você está atendendo" : `Atendendo: ${c.assignee.name}`}
               >
                 <span className="sr-only">Atendendo: </span>
-                {c.assignee.id === myId ? "Você" : c.assignee.name.trim().split(/\s+/)[0]}
+                {c.assignee.id === myId ? "Você" : c.participants?.some((p) => p.id === myId) ? `${c.assignee.name.trim().split(/\s+/)[0]} + você` : c.assignee.name.trim().split(/\s+/)[0]}
               </span>
             )}
             <AnimatePresence initial={false}>
@@ -373,11 +385,11 @@ function ConversationRow({
         </div>
       </button>
       {showReminder && <div className="-mt-1 pb-2.5 pl-14 pr-2.5">
-        <button type="button" disabled={!reminderReady} onClick={onEditReminder} aria-label={`${reminder ? "Editar" : "Adicionar"} lembrete de ${c.contact.name}`} title={reminder?.text} className={cn("flex w-full items-start gap-1.5 rounded-md px-2 py-1.5 text-left text-xs leading-[17px] transition-colors disabled:opacity-50", reminder ? reminderColors[reminder.color].style : "text-muted hover:bg-hover hover:text-fg")}>
+        <button type="button" disabled={!reminderReady} onClick={() => onEditReminder(c)} aria-label={`${reminder ? "Editar" : "Adicionar"} lembrete de ${c.contact.name}`} title={reminder?.text} className={cn("flex w-full items-start gap-1.5 rounded-md px-2 py-1.5 text-left text-xs leading-[17px] transition-colors disabled:opacity-50", reminder ? reminderColors[reminder.color].style : "text-muted hover:bg-hover hover:text-fg")}>
           <StickyNote className="mt-0.5 size-[13px] shrink-0" />
           <span className="min-w-0 break-words line-clamp-2">{reminder?.text ?? (reminderReady ? "Adicionar lembrete" : "Carregando lembrete…")}</span>
         </button>
       </div>}
-    </motion.li>
+    </li>
   );
-}
+});

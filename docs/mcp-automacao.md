@@ -1,6 +1,6 @@
 # Plano: envios automáticos pela IA (MCP, etapa 6) — revisão 2
 
-Status: **fase 6a implementada** (nível 1, com aprovação) e **cobranças com link de pagamento** (seção 14); 6b e 6c continuam só no plano. A revisão 2 troca "modelos fixos" por **autonomia dentro de assuntos permitidos**, como pedido.
+Status: **níveis 1 (aprovação) e 3 (automático sem aprovação) implementados**, incluindo autorização OAuth explícita. O nível 2 (janela de revisão) e os demais refinamentos continuam no plano. A revisão 2 troca "modelos fixos" por **autonomia dentro de assuntos permitidos**. Também implementadas: **cobranças com link de pagamento** (seção 15).
 Decisões em aberto na seção 12.
 
 ## 1. O que se quer
@@ -70,8 +70,8 @@ Cada categoria tem um **nível**, escolhido pelo administrador:
 | Nível | Como funciona |
 |---|---|
 | **1. Aprovação** | A IA enfileira e uma pessoa aprova na tela (um a um ou em bloco). Ponto de partida de toda categoria |
-| **2. Autônomo com janela de revisão** | Sai sozinho depois de um atraso (padrão 15 min), com contagem regressiva e botão **Cancelar** na tela. É a autonomia que você descreveu, com uma rede de segurança |
-| **3. Autônomo imediato** | Sai na hora. Só para categorias de baixo risco, por escolha explícita |
+| **2. Autônomo com janela de revisão (planejado)** | Sai sozinho depois de um atraso (padrão 15 min), com contagem regressiva e botão **Cancelar** na tela |
+| **3. Automático, sem aprovação** | Entra direto na fila persistente; o servidor envia quando horário, ritmo e bloqueios permitirem. Conteúdo sinalizado ainda exige revisão |
 
 A tela mostra, por categoria, a **taxa de mensagens aprovadas sem edição**: é o dado para decidir subir de nível. Cobrança só sobe se o administrador escolher.
 
@@ -136,7 +136,7 @@ ferramentas em `aiaccess/automation_tools.go`; tela em `apps/web/src/features/au
 **Como liga:** (1) administrador ativa a IA e *Permitir envios automáticos* em MCP → Permissões (exige pedidos de envio ligados);
 (2) cria um token pessoal com a opção de envios automáticos e escolhe o provedor (Claude, ChatGPT, Grok, Gemini, Outra);
 (3) em *Envios automáticos → Assuntos* libera cada categoria (todas começam desligadas e em nível 1).
-OAuth (login) **nunca** recebe o escopo `automate`: só token pessoal.
+OAuth (login) também pode receber `automate`, mas apenas quando os controles do administrador permitem e a pessoa escolhe **Avisos automáticos** no consentimento. Autorizações antigas não são ampliadas: reconecte para conceder a nova permissão.
 
 **Padrões assumidos** (decisões da seção 12 ainda abertas; todos ajustáveis na tela *Controles*):
 assinatura "Assistente do escritório"; intervalo 8 a 25 s entre envios; 30 por hora e 150 por dia; 1 aviso por cliente por dia;
@@ -155,7 +155,53 @@ pausa tudo após 5 falhas seguidas, e um envio que ficou "enviando" por causa de
 **Identidade:** a mensagem leva `automated`, `aiProvider` e `aiApp`; a tela mostra a logo simplificada do provedor e o nome do aplicativo no lugar do atendente,
 e a mensagem não assume a conversa nem zera as não lidas. O cliente vê só a assinatura em texto.
 
-## 14. Cobranças com link de pagamento (implementada)
+## 14. Autonomia sem aprovação (implementada)
+
+1. Em **MCP → Permissões**, libere alterações, pedidos de envio e envios automáticos.
+2. Em **Envios automáticos → Assuntos**, habilite os assuntos desejados e escolha
+   **Automático, sem aprovação** em Autonomia; salve cada alteração.
+3. Use um token pessoal com `automate` ou reconecte o ChatGPT/Claude por login,
+   escolhendo **Avisos automáticos**. Permissões de leitura antigas continuam só de leitura.
+4. A IA chama `send_automatic_message`. `na_fila` significa pedido persistido, não mensagem
+   já entregue; confirme o resultado com `list_automatic_sends`.
+
+O modo 3 mantém os horários, ritmo, limites, bloqueios de conteúdo, documentos do próprio
+destinatário, deduplicação e opt-out. Se um atendimento humano começou, a mensagem não sai.
+Pressão/cobrança sinalizada exige revisão. Se o administrador voltar um assunto para aprovação,
+os pedidos autônomos ainda na fila voltam para revisão; pendências antigas nunca são liberadas
+automaticamente ao subir a autonomia. Categorias começam com aprovação até serem alteradas.
+
+O worker revalida a permissão da conexão antes do envio. Revogar um token, desativar seu dono
+ou desconectar a autorização OAuth bloqueia a fila correspondente. A rotação normal do token
+OAuth não invalida pedidos da mesma concessão ainda autorizada.
+
+**Com o app fechado:** a fila continua na API, sem depender da sessão no navegador. É necessário
+manter o servidor e o WhatsApp conectados. Isto não cria um agendador de execuções do ChatGPT
+ou Claude: novos pedidos ainda dependem de uma execução do assistente pelo MCP. O ChatHM
+processa de forma independente os pedidos já recebidos; não executa um modelo de IA próprio.
+
+## 14. Atendente autônomo (escopo `attend`)
+
+Pedido do escritório: a IA agir **como um atendente comum**, sem categorias, sem aprovação e sem texto pronto. É um modo separado dos envios automáticos.
+
+**Como liga:** (1) administrador ativa *Permitir atendente autônomo* em MCP → Permissões (desligado por padrão; exige pedidos de envio ligados);
+(2) só **administrador** cria o token, escolhendo "Atendente autônomo" e o provedor da IA (a logo aparece na mensagem). Só token pessoal, nunca OAuth.
+
+**O que a IA faz:** a ferramenta `send_as_attendant` envia **na hora** (texto livre de até 1500 caracteres, PDF opcional da biblioteca), respondendo a uma conversa
+(`conversation_id`) ou escrevendo a um contato (`contact_id`, abre o atendimento sozinho). Pode responder a quem acabou de escrever, entrar em conversa
+com responsável ou adiada, usar links, números e formatação. A IA só alcança contatos que a pessoa dona do token enxerga.
+
+**O que continua bloqueado, de propósito:** cliente que respondeu PARAR (ou foi marcado); grupos; a chave mestra e o *Pausar tudo*;
+teto de velocidade (40 mensagens em 10 minutos e 600 por dia) para o número não ser bloqueado pelo WhatsApp;
+dados sigilosos (senhas, códigos, chave PIX, cartão) já nunca chegam à IA pelo mascaramento do MCP.
+
+**Rastro:** a mensagem leva `automated`, `aiMode=attend`, `aiProvider` e `aiApp` (a tela mostra a logo e "atendimento por IA"), a assinatura "Assistente do escritório" vai em
+negrito no WhatsApp, e cada envio entra na auditoria (`automation.attend.send`) e no registro de uso do MCP. Não assume a conversa nem muda responsável.
+
+**Limites a saber:** o MCP não avisa a IA quando um cliente escreve; ela precisa consultar as conversas (por exemplo, rodando de tempos em tempos).
+Quem usa um número pelo protocolo não oficial do WhatsApp assume o risco de bloqueio; o limite de velocidade reduz, não elimina.
+
+## 15. Cobranças com link de pagamento (implementada)
 
 **Problema:** cobrança automática precisa do link de pagamento de cada cliente, mas a IA não pode digitar link (seção 5) e um link por cliente não cabe num campo fixo do escritório.
 
@@ -174,7 +220,7 @@ Administrador aprova (vê o texto final, com o link)  ──▶  worker confere 
 - `{link_cobranca}`, `{valor}` e `{vencimento}` só existem com `charge_id`, e só no assunto `cobranca`. Campos fixos do escritório não podem usar esses nomes.
 - Link digitado pela IA continua recusado. Valor digitado (`R$ 150`) gera aviso para quem aprova.
 - **Na hora de enviar**, o gateway é consultado de novo: quem **pagou entre a aprovação e o envio não recebe** a cobrança (envio "pulado", com o motivo). Se o **valor ou o vencimento mudaram** depois da aprovação, também é pulado e pede nova aprovação. Gateway fora do ar: tenta de novo em 10 minutos (até 6 vezes) sem travar a fila.
-- A prévia que volta para a IA troca o link por um marcador; o administrador vê o link real na tela de aprovação. A cobrança continua começando **sempre com aprovação**.
+- A prévia que volta para a IA troca o link por um marcador; o administrador vê o link real na tela de aprovação. O envio segue a autonomia do assunto (seção 14): em *Aprovação* o administrador libera cada cobrança vendo o link e o valor; em *Automático* o valor e o vencimento do momento do pedido ficam registrados e o servidor confere o gateway de novo antes de enviar. Recomendo manter *Cobrança de honorários* em *Aprovação* até a taxa de aprovação sem edição ficar alta.
 
 **Gateways:** cada um é um adaptador pequeno (`Gateway` em `backend/internal/automation/gateway.go`: `List`, `Get`) registrado em `providers`, com os domínios confiáveis do link. Já existe o **Asaas** (`asaas.go`, só leitura: lista `PENDING` e `OVERDUE`, consulta uma cobrança, ambiente de produção ou sandbox). Para somar Mercado Pago, Pagar.me, Iugu etc. basta escrever o adaptador e registrá-lo; o resto (vínculo, regras, tela, ferramentas) não muda.
 Quem não tem adaptador usa a **importação**: CSV na tela (colunas `codigo; telefone; cliente; descricao; valor; vencimento; situacao; link`) ou `POST /api/v1/automation/charges/import` com JSON `{"charges":[{id, phone, name, description, amount, dueDate, status, url, contactId?}]}`. O domínio do link precisa estar liberado em Controles. Reimportar o mesmo código atualiza a cobrança.
@@ -183,7 +229,7 @@ Quem não tem adaptador usa a **importação**: CSV na tela (colunas `codigo; te
 
 **Chave de API:** informada na tela, guardada **cifrada** (AES-256-GCM, `ENCRYPTION_KEY`), nunca devolvida pela API, pela tela, pela IA nem registrada na auditoria.
 
-**Onde fica:** migração `00027_billing_charges.sql`; `automation/gateway.go`, `asaas.go`, `charges.go`, `importcsv.go`, `charges_http.go`; ferramenta MCP `list_charges` e o campo `charge_id` em `aiaccess/automation_tools.go`; aba *Cobranças* em `apps/web/src/features/automation`.
+**Onde fica:** migrações `00029_billing_charges.sql` e `00030_message_played_at.sql` (recibo "ouvido"); `automation/gateway.go`, `asaas.go`, `charges.go`, `importcsv.go`, `charges_http.go`; ferramenta MCP `list_charges` e o campo `charge_id` em `aiaccess/automation_tools.go`; aba *Cobranças* em `apps/web/src/features/automation`.
 Rotas (administrador): `GET /automation/gateways`, `PUT /automation/gateways/{provider}`, `POST /automation/gateways/{provider}/sync`, `GET /automation/charges`, `PUT /automation/charges/{id}/contact`, `POST /automation/charges/import`.
 
 **Como ligar o Asaas:** *Envios automáticos → Cobranças* → colar a chave de API (Asaas: Integrações → Chave de API) → *Conectar* → *Sincronizar agora* → vincular o que ficar sem cliente → liberar o assunto *Cobrança de honorários* em *Assuntos*.

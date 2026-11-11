@@ -39,6 +39,7 @@ type Base = {
   authorName?: string; // atendente que enviou (ou, em grupos, quem escreveu)
   automated?: boolean; // enviada pela IA (envio automático aprovado)
   aiProvider?: string; // claude | chatgpt | grok | gemini | other
+  aiMode?: string; // attend: a IA atendeu como um atendente
   aiApp?: string; // nome do aplicativo de IA
   group?: boolean; // mensagem de grupo: mostra o autor também nas recebidas
   quoted?: Quoted; // esta mensagem responde a outra
@@ -54,8 +55,8 @@ export type Message = Base &
   (
     | { kind: "text"; text: string }
     | { kind: "audio"; durationSec: number; waveform?: number[]; url?: string }
-    | { kind: "document"; fileName: string; mimeType: string; sizeBytes: number; url?: string; caption?: string }
-    | { kind: "image"; url?: string; caption?: string; width?: number; height?: number; hd?: boolean }
+    | { kind: "document"; fileName?: string; mimeType?: string; sizeBytes?: number; url?: string; caption?: string }
+    | { kind: "image"; url?: string; caption?: string; width?: number; height?: number; hd?: boolean; thumb?: string }
     | { kind: "sticker"; url?: string; width?: number; height?: number; animated?: boolean }
     | { kind: "location"; lat: number; lng: number; name?: string; address?: string; thumb?: string }
     | { kind: "unsupported"; label: string; text?: string }
@@ -83,6 +84,7 @@ export type Conversation = {
   classification?: "none" | "keyword" | "conflict";
   status: ConversationStatus;
   snoozedUntil?: string;
+  participants?: { id: string; name: string }[]; // pessoas incluídas no atendimento (veem e respondem sem assumir)
   assignee?: { id: string; name: string };
   unreadCount: number;
   tags: string[];

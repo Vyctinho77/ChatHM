@@ -4,6 +4,7 @@ import { providerLabel } from "@/lib/providers";
 import { motion } from "motion/react";
 import { Ban, Download, FileText, Image as ImageIcon, LoaderCircle, MapPin, Mic, Sticker } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { previewUrl } from "@/lib/media";
 import { formatBytes, formatTime } from "@/lib/format";
 import { AudioPlayer } from "./AudioPlayer";
 import { DocBadge } from "./DocBadge";
@@ -11,6 +12,7 @@ import { docKind, docKindLabel, officeApp } from "./docKind";
 import { receiptDetails } from "./receipts";
 import { Highlight } from "@/components/Highlight";
 import { RichText } from "@/components/RichText";
+import { FormattedText } from "@/components/FormattedText";
 import { Ticks } from "./Ticks";
 import type { Message, Quoted } from "./types";
 
@@ -43,7 +45,7 @@ function QuotedBlock({ q, onJump }: { q: Quoted; onJump?: (id: string) => void }
       <span className="block truncate text-[12px] font-semibold text-brand-ink [.bg-out_&]:text-out-fg">{q.fromMe ? q.author || "Você" : q.author || "Cliente"}</span>
       <span className="flex items-center gap-1 text-[12.5px] opacity-80">
         {kind && q.kind !== "text" && <span className="shrink-0">{kind.icon}</span>}
-        <span className="line-clamp-2 break-words">{q.text || kind?.label || "Mensagem"}</span>
+        <span className="line-clamp-2 break-words"><FormattedText text={q.text || kind?.label || "Mensagem"} /></span>
       </span>
     </>
   );
@@ -111,6 +113,31 @@ function StickerBody({ m }: { m: Extract<Message, { kind: "sticker" }> }) {
   );
 }
 
+/**
+ * Como no WhatsApp: a miniatura minúscula (vem junto com a mensagem) aparece desfocada na hora, a versão média carrega só quando o
+ * balão chega perto da tela e entra suavemente. O original só é baixado ao abrir a foto.
+ */
+function ProgressiveImage({ m }: { m: Extract<Message, { kind: "image" }> }) {
+  const [loaded, setLoaded] = useState(false);
+  const ratio = m.width && m.height ? m.width / m.height : undefined;
+  return (
+    <span className="relative block w-full overflow-hidden bg-black/10 dark:bg-black/25" style={ratio ? { aspectRatio: String(ratio), maxHeight: 320 } : { minHeight: 120, maxHeight: 320 }}>
+      {m.thumb && <img src={m.thumb} alt="" aria-hidden="true" draggable={false} className="absolute inset-0 size-full scale-110 object-cover blur-md" />}
+      <img
+        ref={(el) => { if (el?.complete && el.naturalWidth > 0) setLoaded(true); }}
+        src={previewUrl(m.url)}
+        alt={m.caption ?? "Imagem"}
+        width={m.width}
+        height={m.height}
+        loading="lazy"
+        decoding="async"
+        onLoad={() => setLoaded(true)}
+        className={cn("relative block size-full max-h-80 object-cover transition-opacity duration-200", loaded ? "opacity-100" : "opacity-0")}
+      />
+    </span>
+  );
+}
+
 function ImageBody({
   m,
   showAuthor,
@@ -135,13 +162,7 @@ function ImageBody({
             aria-label="Abrir imagem"
             className="block w-full cursor-zoom-in"
           >
-            <img
-              src={m.url}
-              alt={m.caption ?? "Imagem"}
-              width={m.width}
-              height={m.height}
-              className="block max-h-80 w-full object-cover"
-            />
+            <ProgressiveImage m={m} />
           </button>
         ) : (
           <div
@@ -185,13 +206,24 @@ function saveFile(url: string, fileName: string) {
   a.remove();
 }
 
+/** Balão: animado só quando a mensagem é nova; as do histórico são um <div> simples (centenas de componentes animados travavam a abertura). */
+function Pop({ animate, children, ...rest }: { animate?: boolean; children: React.ReactNode; style?: React.CSSProperties; className?: string }) {
+  if (!animate) return <div {...rest}>{children}</div>;
+  return (
+    <motion.div initial={{ opacity: 0, y: 14, scale: 0.94 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: "spring", stiffness: 480, damping: 32, mass: 0.8 }} {...rest}>
+      {children}
+    </motion.div>
+  );
+}
+
 function DocumentCard({ m, onOpen, term }: { m: Extract<Message, { kind: "document" }>; onOpen?: (id: string) => void; term?: string }) {
+  const fileName = m.fileName || "Documento";
   const kind = docKind(m.fileName, m.mimeType);
   const isPdf = kind === "pdf";
   const app = officeApp[kind];
-  const ext = m.fileName.includes(".") ? m.fileName.split(".").pop()!.toUpperCase() : "ARQ";
+  const ext = m.fileName?.includes(".") ? m.fileName.split(".").pop()!.toUpperCase() : "ARQ";
   // PDF abre no visualizador do app; Word/Excel/PowerPoint baixam e abrem no próprio Office do computador.
-  const action = m.url ? (isPdf && onOpen ? () => onOpen(m.id) : app ? () => saveFile(m.url!, m.fileName) : null) : null;
+  const action = m.url ? (isPdf && onOpen ? () => onOpen(m.id) : app ? () => saveFile(m.url!, fileName) : null) : null;
   return (
     <div
       className={cn(
@@ -214,19 +246,19 @@ function DocumentCard({ m, onOpen, term }: { m: Extract<Message, { kind: "docume
       <DocBadge kind={kind} />
       <div className="min-w-0 flex-1">
         <p className="break-all text-[13px] font-medium leading-snug">
-          <Highlight text={m.fileName} term={term} />
+          <Highlight text={fileName} term={term} />
         </p>
         <p className="text-[11px] opacity-70">
-          {docKindLabel(kind, ext)} • {formatBytes(m.sizeBytes)}
+          {docKindLabel(kind, ext)}{m.sizeBytes ? ` • ${formatBytes(m.sizeBytes)}` : ""}
           {!m.url && ` • ${historicalDocLabel(m)}`}
         </p>
       </div>
       {m.url && (
         <a
           href={m.url}
-          download={m.fileName}
+          download={fileName}
           onClick={(e) => e.stopPropagation()}
-          aria-label={`Baixar ${m.fileName}`}
+          aria-label={`Baixar ${fileName}`}
           className="rounded-md p-1 opacity-70 hover:opacity-100"
         >
           <Download className="size-4" />
@@ -383,11 +415,9 @@ export function MessageBubble({
         onMenu(m, e.clientX, e.clientY);
       } : undefined}
     >
-      <motion.div
-        // Mensagens novas "brotam" do lado de quem enviou; o histórico aparece sem animação individual.
-        initial={animateIn ? { opacity: 0, y: 14, scale: 0.94 } : false}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ type: "spring", stiffness: 480, damping: 32, mass: 0.8 }}
+      <Pop
+        // Mensagens novas "brotam" do lado de quem enviou; o histórico é um <div> comum (sem componente animado por balão).
+        animate={animateIn}
         style={{ transformOrigin: out ? "100% 100%" : "0% 100%" }}
         // A cauda fica dentro dos limites da camada animada, evitando recorte ao escalar.
         className={cn("relative -mx-2 max-w-[min(29rem,calc(75%+1rem))] px-2", !sticker && "drop-shadow-sm")}
@@ -418,7 +448,7 @@ export function MessageBubble({
           <p className="mb-0.5 flex items-center gap-1.5 text-[12.5px] font-semibold">
             <ProviderLogo provider={m.aiProvider} title={`Enviado por ${m.aiApp || providerLabel(m.aiProvider)}`} />
             {m.aiApp || providerLabel(m.aiProvider)}
-            <span className="font-normal opacity-70">· envio automático</span>
+            <span className="font-normal opacity-70">{m.aiMode === "attend" ? "· atendimento por IA" : "· envio automático"}</span>
           </p>
         )}
         {m.kind !== "image" && !out && m.group && showAuthor && m.authorName && (
@@ -429,7 +459,7 @@ export function MessageBubble({
         {m.kind === "text" && (
           <div className="flex flex-wrap items-end">
             <p className="whitespace-pre-wrap break-words">
-              <RichText text={m.automated ? m.text.replace(/^_(.+)_$/gm, "$1") : m.text} term={term} />
+                <RichText text={m.text} term={term} />
             </p>
             <Meta m={m} />
           </div>
@@ -483,7 +513,7 @@ export function MessageBubble({
           </>
         )}
       </div>
-      </motion.div>
+      </Pop>
     </div>
   );
 }

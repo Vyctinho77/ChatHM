@@ -27,12 +27,25 @@ export function useConversations() {
   });
 }
 
+const fetchMessages = async (conversationId: string) => (await get<{ messages: Message[] }>(`/conversations/${conversationId}/messages`)).messages;
+
 export function useMessages(conversationId: string | undefined) {
   return useQuery({
     queryKey: conversationKeys.messages(conversationId ?? ""),
     enabled: !!conversationId,
-    queryFn: async () => (await get<{ messages: Message[] }>(`/conversations/${conversationId}/messages`)).messages,
+    gcTime: 30 * 60_000, // conversas já abertas continuam na memória: voltar a elas é instantâneo
+    queryFn: () => fetchMessages(conversationId!),
   });
+}
+
+/** Começa a baixar as mensagens de uma conversa antes do clique (passar o mouse, focar, tocar), para abrir sem espera. */
+export function usePrefetchMessages() {
+  const qc = useQueryClient();
+  return useMemo(
+    () => (conversationId: string) =>
+      void qc.prefetchQuery({ queryKey: conversationKeys.messages(conversationId), queryFn: () => fetchMessages(conversationId), staleTime: 20_000, gcTime: 30 * 60_000 }),
+    [qc],
+  );
 }
 
 /** Busca no servidor: contatos e o conteúdo de todas as mensagens que a pessoa pode ver. */
@@ -103,6 +116,13 @@ export function useConversationActions() {
       transfer(id: string, person: { id: string; name: string }) {
         patchConv(id, (x) => ({ ...x, status: "in_progress", assignee: { id: person.id, name: person.name } }));
         post(`/conversations/${id}/transfer`, { userId: person.id }).then(resync, resync);
+      },
+      /** Inclui a pessoa no atendimento (vê e responde sem assumir); se já participa, tira. */
+      toggleParticipant(id: string, person: { id: string; name: string }) {
+        const c = list().find((x) => x.id === id);
+        const included = !!c?.participants?.some((p) => p.id === person.id);
+        patchConv(id, (x) => ({ ...x, participants: included ? (x.participants ?? []).filter((p) => p.id !== person.id) : [...(x.participants ?? []), person] }));
+        (included ? del(`/conversations/${id}/participants/${person.id}`) : post(`/conversations/${id}/participants`, { userId: person.id })).then(resync, resync);
       },
       /** Aplica a diferença entre as etiquetas atuais e as desejadas. */
       setTags(id: string, names: string[]) {

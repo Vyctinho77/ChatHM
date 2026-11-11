@@ -9,6 +9,7 @@ import (
 	"math"
 	"mime"
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -53,6 +54,8 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Post("/conversations/{id}/snooze", h.snooze)
 	r.Post("/conversations/{id}/resume", h.resume)
 	r.Post("/conversations/{id}/transfer", h.transfer)
+	r.Post("/conversations/{id}/participants", h.addParticipant)
+	r.Delete("/conversations/{id}/participants/{userId}", h.removeParticipant)
 	r.Put("/conversations/{id}/tags/{tagId}", h.addTag)
 	r.Delete("/conversations/{id}/tags/{tagId}", h.removeTag)
 	r.Patch("/contacts/{id}", h.updateContact)
@@ -237,13 +240,18 @@ func (h *Handler) readUpload(w http.ResponseWriter, r *http.Request) (SendInput,
 // attachment entrega o arquivo de um anexo depois de checar a visibilidade da conversa.
 // Sem URL pública nem assinada: a autorização é refeita a cada requisição (cookie de sessão).
 func (h *Handler) attachment(w http.ResponseWriter, r *http.Request) {
-	a, err := h.svc.Attachment(r.Context(), viewer(r), chi.URLParam(r, "id"))
+	var a AttachmentFile
+	var err error
+	if r.URL.Query().Get("size") == "preview" {
+		a, err = h.svc.AttachmentPreview(r.Context(), viewer(r), chi.URLParam(r, "id"))
+	} else {
+		a, err = h.svc.Attachment(r.Context(), viewer(r), chi.URLParam(r, "id"))
+	}
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
 	hd := w.Header()
-	hd.Set("Cache-Control", "private, no-store")
 	hd.Set("X-Content-Type-Options", "nosniff")
 	hd.Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	ct := a.MimeType
@@ -255,8 +263,18 @@ func (h *Handler) attachment(w http.ResponseWriter, r *http.Request) {
 	disp := "attachment"
 	if inline {
 		disp = "inline"
+		// Foto e áudio não mudam (o endereço é o id do anexo): o navegador guarda por um dia e confere com ETag.
+		// "private" = só no navegador da pessoa, nunca em cache compartilhado; a autorização continua sendo refeita a cada conferência.
+		// Documentos seguem sem cache.
+		hd.Set("Cache-Control", "private, max-age=86400")
+		hd.Set("Vary", "Cookie")
+		if a.SHA256 != "" {
+			hd.Set("ETag", `"`+a.SHA256+`"`)
+		}
+	} else {
+		hd.Set("Cache-Control", "private, no-store")
 	}
-	hd.Set("Content-Disposition", mime.FormatMediaType(disp, map[string]string{"filename": a.FileName}))
+	hd.Set("Content-Disposition", mime.FormatMediaType(disp, map[string]string{"filename": downloadName(a.FileName, a.MimeType, chi.URLParam(r, "id"))}))
 	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(a.Data))
 }
 
@@ -500,4 +518,72 @@ func (h *Handler) forwardMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"results": res})
+}
+
+func (h *Handler) participantError(w http.ResponseWriter, r *http.Request, err error) {
+	var taken *TakenError
+	if errors.As(err, &taken) {
+		httpx.Error(w, http.StatusConflict, "conversation_taken", "Só o responsável, quem já participa ou um administrador/gestor pode mudar os participantes.")
+		return
+	}
+	writeError(w, r, err)
+}
+
+func (h *Handler) addParticipant(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		UserID string `json:"userId"`
+	}
+	if !httpx.Decode(w, r, &in) {
+		return
+	}
+	if err := h.svc.AddParticipant(r.Context(), viewer(r), chi.URLParam(r, "id"), in.UserID); err != nil {
+		h.participantError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
+func (h *Handler) removeParticipant(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.RemoveParticipant(r.Context(), viewer(r), chi.URLParam(r, "id"), chi.URLParam(r, "userId")); err != nil {
+		h.participantError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
+// downloadName: o nome com que o navegador salva o arquivo. Foto e áudio chegam sem nome; sem extensão o
+// sistema salva um "arquivo genérico" (ícone de bloco de notas), então a extensão vem do tipo do arquivo.
+func downloadName(name, mimeType, id string) string {
+	name = strings.TrimSpace(name)
+	if path.Ext(name) != "" {
+		return name
+	}
+	ext := ""
+	if mt, _, err := mime.ParseMediaType(mimeType); err == nil {
+		ext = map[string]string{
+			"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif",
+			"audio/ogg": ".ogg", "audio/mpeg": ".mp3", "audio/mp4": ".m4a", "audio/aac": ".aac", "audio/amr": ".amr", "audio/webm": ".webm",
+			"application/pdf": ".pdf",
+		}[mt]
+		if ext == "" {
+			if exts, _ := mime.ExtensionsByType(mt); len(exts) > 0 {
+				ext = exts[0]
+			}
+		}
+	}
+	base := name
+	if base == "" {
+		prefix := "arquivo"
+		switch {
+		case strings.HasPrefix(mimeType, "image/"):
+			prefix = "imagem"
+		case strings.HasPrefix(mimeType, "audio/"):
+			prefix = "audio"
+		}
+		if len(id) > 8 {
+			id = id[:8]
+		}
+		base = prefix + "-" + id
+	}
+	return base + ext
 }
