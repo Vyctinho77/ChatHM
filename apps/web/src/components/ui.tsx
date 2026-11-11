@@ -122,6 +122,7 @@ export function Modal({
   className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
@@ -131,6 +132,8 @@ export function Modal({
   return (
     <dialog
       ref={ref}
+      aria-labelledby={titleId}
+      onCancel={(e) => { e.preventDefault(); onClose(); }}
       onClose={onClose}
       onClick={(e) => e.target === ref.current && onClose()}
       className={cn(
@@ -141,7 +144,7 @@ export function Modal({
       {open && (
         <div className="flex flex-col gap-4 p-5">
           <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold">{title}</h2>
+            <h2 id={titleId} className="text-base font-semibold">{title}</h2>
             <IconButton label="Fechar" onClick={onClose}>
               <X className="size-5" />
             </IconButton>

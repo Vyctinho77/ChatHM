@@ -305,6 +305,7 @@ export function AiAccessCard() {
   const admin = me?.user.role === "admin";
   const [showAll, setShowAll] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [confirmAttend, setConfirmAttend] = useState(false);
   const [error, setError] = useState("");
 
   const settings = useQuery({ queryKey: settingsKey, queryFn: () => get<AiSettings>("/ai/settings") });
@@ -377,7 +378,7 @@ export function AiAccessCard() {
             <Toggle checked={s.allowWrite} disabled={save.isPending} onChange={v => change({ allowWrite: v })} label="Permitir alterações" hint="Etiquetas, observações, lembretes, agenda e rascunhos, conforme os acessos da pessoa." />
             <Toggle checked={s.allowSend} disabled={save.isPending || !s.allowWrite} onChange={v => change({ allowSend: v })} label="Permitir pedidos de envio" hint={s.allowWrite ? "O assistente sugere a mensagem e você decide se envia." : "Ative as alterações para liberar pedidos de envio."} />
             <Toggle checked={!!s.allowAutomation} disabled={save.isPending || !s.allowSend} onChange={v => change({ allowAutomation: v })} label="Permitir envios automáticos" hint={s.allowSend ? "A IA inicia avisos aos clientes. Em Envios automáticos → Assuntos, escolha quais podem enviar sem aprovação." : "Ative os pedidos de envio para liberar os envios automáticos."} />
-            <Toggle checked={!!s.allowAttend} disabled={save.isPending || !s.allowSend} onChange={v => change({ allowAttend: v })} label="Permitir atendente autônomo" hint={s.allowSend ? "A IA pode responder e enviar mensagens a clientes na hora, como um atendente, sem aprovação. Só administradores criam esses tokens. Não vale para quem respondeu PARAR nem para grupos, e há limite de velocidade." : "Ative os pedidos de envio para liberar o atendente autônomo."} />
+            <Toggle checked={!!s.allowAttend} disabled={save.isPending || !s.allowSend} onChange={v => { if (v) { setError(""); setConfirmAttend(true); } else change({ allowAttend: false }); }} label="Permitir atendente autônomo" hint={s.allowSend ? "Permite que a IA envie e responda sem aprovação, como um atendente." : "Ative os pedidos de envio para liberar o atendente autônomo."} />
             {s.allowAutomation && <Link to="/automacao" className="block py-2 text-xs font-medium text-brand-ink hover:underline">Definir assuntos e autonomia de envio</Link>}
           </div>
         </details>
@@ -475,6 +476,29 @@ export function AiAccessCard() {
           </ul>
         </div>
       )}
+      {admin && enabled && confirmAttend && <Modal open onClose={() => { if (!save.isPending) setConfirmAttend(false); }} title="Ativar autonomia total da IA?" className="max-w-lg">
+        <div className="space-y-4 text-[13px] leading-relaxed">
+          {error && <Alert>{error}</Alert>}
+          <p>A IA conectada com permissão de atendente poderá <strong>enviar mensagens e responder aos clientes sem sua aprovação</strong>, inclusive quando você estiver fora do app.</p>
+          <p className="text-muted">Nesse modo, ela usa texto livre e não depende dos assuntos, horários e aprovações configurados para os avisos automáticos.</p>
+          <div className="border-y border-line/60 py-3">
+            <p className="font-medium">As proteções do servidor continuam ativas</p>
+            <ul className="mt-2 list-disc space-y-1 pl-4 text-muted">
+              <li>Bloqueio para grupos e clientes que pediram PARAR.</li>
+              <li>Limites de velocidade e pausa geral dos envios.</li>
+              <li>Registro das mensagens na conversa e na auditoria.</li>
+            </ul>
+          </div>
+          <p className="text-xs text-muted">Somente administradores podem criar tokens com essa permissão. Você pode desligá-la aqui a qualquer momento.</p>
+          <div className="flex flex-wrap justify-end gap-2 pt-2">
+            <Button type="button" variant="ghost" disabled={save.isPending} onClick={() => setConfirmAttend(false)}>Cancelar</Button>
+            <Button type="button" loading={save.isPending} disabled={!s.allowSend} onClick={() => {
+              setError("");
+              save.mutate({ ...s, allowAttend: true }, { onSuccess: () => setConfirmAttend(false) });
+            }}>Ativar autonomia total</Button>
+          </div>
+        </div>
+      </Modal>}
       {creating && <NewToken allowWrite={s.allowWrite} allowSend={s.allowSend} allowAutomation={!!s.allowAutomation} allowAttend={!!s.allowAttend} admin={admin} onClose={() => setCreating(false)} />}
     </section>
   );
