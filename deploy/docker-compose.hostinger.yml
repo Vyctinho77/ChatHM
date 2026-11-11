@@ -1,12 +1,13 @@
-# Para o Docker Manager da Hostinger (VPS): o código vem direto do GitHub (repositório público durante o deploy),
-# o banco é o Supabase e o HTTPS é automático (Caddy). As variáveis vêm do campo "environment" do projeto.
+# Para o Docker Manager da Hostinger (VPS): o banco é o Supabase e o HTTPS é automático (Caddy).
+# As variáveis vêm do campo "environment" do projeto (DOMAIN, DATABASE_URL, ENCRYPTION_KEY, SETUP_TOKEN).
+# O Docker Manager NÃO faz build a partir de URL do GitHub: a imagem chathm:latest é construída antes,
+# pelo projeto auxiliar deploy/hostinger-build.yml. Para atualizar: rode o build e depois recrie este projeto.
 name: chathm
 
 services:
   app:
-    build:
-      context: https://github.com/Vyctinho77/ChatHM.git#claude/determined-euler-j60et9
-      dockerfile: Dockerfile
+    image: chathm:latest
+    pull_policy: never
     restart: unless-stopped
     environment:
       APP_ENV: production

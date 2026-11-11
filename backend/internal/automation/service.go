@@ -23,6 +23,7 @@ import (
 	"github.com/vyctinho77/chathm/backend/internal/media"
 	"github.com/vyctinho77/chathm/backend/internal/platform/database"
 	"github.com/vyctinho77/chathm/backend/internal/platform/httpx"
+	"github.com/vyctinho77/chathm/backend/internal/platform/secretbox"
 	"github.com/vyctinho77/chathm/backend/internal/storage"
 )
 
@@ -49,10 +50,13 @@ type Service struct {
 	log   *slog.Logger
 	now   func() time.Time
 	rnd   func(n int) int // sorteio para o intervalo entre envios (trocável nos testes)
+
+	box        *secretbox.Box                                            // cifra as chaves de API dos gateways
+	newGateway func(provider string, cfg GatewayConfig) (Gateway, error) // trocável nos testes
 }
 
 func NewService(db *pgxpool.Pool, convs *conversations.Service, store storage.Store, m *media.Service, log *slog.Logger) *Service {
-	return &Service{db: db, convs: convs, store: store, media: m, log: log, now: time.Now, rnd: rand.IntN}
+	return &Service{db: db, convs: convs, store: store, media: m, log: log, now: time.Now, rnd: rand.IntN, newGateway: defaultGateway}
 }
 
 // SetClock troca o relógio (testes).
@@ -337,8 +341,13 @@ type Send struct {
 	ScheduledFor  *time.Time `json:"scheduledFor,omitempty"`
 	SentAt        *time.Time `json:"sentAt,omitempty"`
 	MessageID     string     `json:"messageId,omitempty"`
+	ChargeID      string     `json:"chargeId,omitempty"`
+	ChargeLabel   string     `json:"chargeLabel,omitempty"` // ex.: "R$ 150,00 · vence 20/11/2026 · Honorários 10/2026"
+	chargeVars    *ChargeVars
 	// Preview: o texto como o cliente receberá (variáveis substituídas, assinatura e rodapé).
 	Preview string `json:"preview"`
+	// PreviewMasked: a mesma prévia com o link de pagamento trocado por um marcador (é o que volta para a IA).
+	PreviewMasked string `json:"-"`
 }
 
 type EnqueueInput struct {
@@ -348,6 +357,7 @@ type EnqueueInput struct {
 	Text       string
 	DocumentID string
 	DedupeKey  string
+	ChargeID   string // cobrança (list_charges): o link, o valor e o vencimento entram pelo servidor
 }
 
 // masterOn: IA ligada e envios automáticos liberados pelo administrador.
@@ -451,7 +461,7 @@ func (s *Service) Enqueue(ctx context.Context, a Actor, in EnqueueInput) (Send, 
 	if !dedupeKey.MatchString(key) {
 		return Send{}, refuse("dedupe_key", "dedupe_key deve ter de 1 a 80 caracteres (letras, números e - _ . : /). Use algo como das-2026-10.")
 	}
-	flags, ref := ValidateText(in.Text, st.AllowedDomains, st.OfficeFields)
+	flags, ref := ValidateTextCharge(in.Text, st.AllowedDomains, st.OfficeFields, in.ChargeID != "")
 	if ref != nil {
 		return Send{}, ref
 	}
@@ -472,6 +482,26 @@ func (s *Service) Enqueue(ctx context.Context, a Actor, in EnqueueInput) (Send, 
 			return Send{}, ref
 		}
 		docName = d.Name
+	}
+	var charge chargeRow
+	if in.ChargeID != "" {
+		if cat.Key != "cobranca" {
+			return Send{}, refuse("charge", "Cobranças só podem ser usadas no assunto \"cobranca\".")
+		}
+		c, ref, err := s.guardCharge(ctx, in.ChargeID, in.ContactID, st)
+		if err != nil {
+			return Send{}, err
+		}
+		if ref != nil {
+			return Send{}, ref
+		}
+		charge = c
+	}
+	// Valor e vencimento no momento do pedido. Se o envio for aprovado por uma pessoa, a aprovação os atualiza; se for automático, valem estes.
+	var snapAmount *int64
+	var snapDue *time.Time
+	if charge.ID != "" {
+		snapAmount, snapDue = &charge.AmountCents, &charge.DueDate
 	}
 	var out Send
 	err = database.InTx(ctx, s.db, func(tx pgx.Tx) error {
@@ -502,14 +532,17 @@ func (s *Service) Enqueue(ctx context.Context, a Actor, in EnqueueInput) (Send, 
 		}
 		var id string
 		if err := tx.QueryRow(ctx, `
-			INSERT INTO automation_sends (token_id, created_by, provider, app_name, category, reason, text, document_id, contact_id, dedupe_key, flags, status, scheduled_for)
-			VALUES (NULLIF($1, '')::uuid, NULLIF($2, '')::uuid, $3, $4, $5, $6, $7, NULLIF($8, '')::uuid, $9, $10, $11, $12, $13) RETURNING id::text`,
-			a.TokenID, a.UserID, a.Provider, a.App, cat.Key, reason, strings.TrimSpace(in.Text), in.DocumentID, in.ContactID, key, nonNil(flags), status, scheduled).Scan(&id); err != nil {
+			INSERT INTO automation_sends (token_id, created_by, provider, app_name, category, reason, text, document_id, contact_id, dedupe_key, flags, status, scheduled_for,
+			                              charge_id, charge_amount_cents, charge_due_date)
+			VALUES (NULLIF($1, '')::uuid, NULLIF($2, '')::uuid, $3, $4, $5, $6, $7, NULLIF($8, '')::uuid, $9, $10, $11, $12, $13, NULLIF($14, '')::uuid, $15, $16) RETURNING id::text`,
+			a.TokenID, a.UserID, a.Provider, a.App, cat.Key, reason, strings.TrimSpace(in.Text), in.DocumentID, in.ContactID, key, nonNil(flags), status, scheduled,
+			charge.ID, snapAmount, snapDue).Scan(&id); err != nil {
 			return err
 		}
 		out.ID = id
 		return audit.Record(ctx, tx, audit.Entry{ActorID: a.UserID, Action: "automation.enqueue", TargetType: "automation_send", TargetID: id,
-			Metadata: map[string]any{"category": cat.Key, "contactId": in.ContactID, "provider": a.Provider, "flags": flags, "hasDocument": in.DocumentID != "", "dedupeKey": key, "level": level, "status": status}})
+			Metadata: map[string]any{"category": cat.Key, "contactId": in.ContactID, "provider": a.Provider, "flags": flags, "hasDocument": in.DocumentID != "", "chargeId": charge.ID,
+				"dedupeKey": key, "level": level, "status": status}})
 	})
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.ConstraintName == "automation_sends_dedupe" {
@@ -552,18 +585,31 @@ func nonNil(s []string) []string {
 const selectSend = `
 	SELECT s.id::text, s.created_at, s.category, coalesce(c.label, s.category), s.reason, s.text, s.contact_id::text, coalesce(nullif(ct.name, ''), ct.phone, ''),
 	       coalesce(s.document_id::text, ''), coalesce(d.name, ''), s.status, s.status_detail, s.flags, s.provider, s.app_name, s.edited,
-	       s.scheduled_for, s.sent_at, coalesce(s.message_id::text, '')
+	       s.scheduled_for, s.sent_at, coalesce(s.message_id::text, ''),
+	       coalesce(s.charge_id::text, ''), coalesce(bc.amount_cents, 0), bc.due_date, coalesce(bc.description, ''), coalesce(bc.payment_url, '')
 	  FROM automation_sends s
 	  JOIN contacts ct ON ct.id = s.contact_id
 	  LEFT JOIN automation_categories c ON c.key = s.category
-	  LEFT JOIN automation_documents d ON d.id = s.document_id`
+	  LEFT JOIN automation_documents d ON d.id = s.document_id
+	  LEFT JOIN billing_charges bc ON bc.id = s.charge_id`
 
 func scanSend(row pgx.Row) (Send, error) {
 	var x Send
+	var amount int64
+	var due *time.Time
+	var cdesc, curl string
 	err := row.Scan(&x.ID, &x.CreatedAt, &x.Category, &x.CategoryLabel, &x.Reason, &x.Text, &x.ContactID, &x.ContactName, &x.DocumentID, &x.DocumentName,
-		&x.Status, &x.StatusDetail, &x.Flags, &x.Provider, &x.App, &x.Edited, &x.ScheduledFor, &x.SentAt, &x.MessageID)
+		&x.Status, &x.StatusDetail, &x.Flags, &x.Provider, &x.App, &x.Edited, &x.ScheduledFor, &x.SentAt, &x.MessageID,
+		&x.ChargeID, &amount, &due, &cdesc, &curl)
 	if x.Flags == nil {
 		x.Flags = []string{}
+	}
+	if x.ChargeID != "" && due != nil {
+		x.chargeVars = &ChargeVars{Link: curl, Amount: formatBRL(amount), Due: due.Format("02/01/2006")}
+		x.ChargeLabel = x.chargeVars.Amount + " · vence " + x.chargeVars.Due
+		if cdesc != "" {
+			x.ChargeLabel += " · " + cdesc
+		}
 	}
 	return x, err
 }
@@ -575,7 +621,9 @@ func (s *Service) withPreview(ctx context.Context, list []Send) []Send {
 		return list
 	}
 	for i := range list {
-		list[i].Preview = "*" + Author(st.Signature) + ":*\n" + Render(list[i].Text, list[i].ContactName, st.OfficeFields)
+		head := "*" + Author(st.Signature) + ":*\n"
+		list[i].Preview = head + RenderCharge(list[i].Text, list[i].ContactName, st.OfficeFields, list[i].chargeVars, false)
+		list[i].PreviewMasked = head + RenderCharge(list[i].Text, list[i].ContactName, st.OfficeFields, list[i].chargeVars, true)
 	}
 	return list
 }
@@ -644,7 +692,7 @@ func (s *Service) Approve(ctx context.Context, actorID, ip string, ids []string,
 		if e, ok := edits[id]; ok && strings.TrimSpace(e) != strings.TrimSpace(x.Text) {
 			text, edited = strings.TrimSpace(e), true
 		}
-		flags, ref := ValidateText(text, st.AllowedDomains, st.OfficeFields)
+		flags, ref := ValidateTextCharge(text, st.AllowedDomains, st.OfficeFields, x.ChargeID != "")
 		if ref != nil {
 			refused[id] = ref.Message
 			continue
@@ -663,10 +711,27 @@ func (s *Service) Approve(ctx context.Context, actorID, ip string, ids []string,
 				continue
 			}
 		}
+		// Cobrança: o valor e o vencimento que o administrador está vendo ficam registrados; se mudarem antes de sair, o envio é pulado.
+		var snapAmount *int64
+		var snapDue *time.Time
+		if x.ChargeID != "" {
+			ch, err := s.refreshOrLoad(ctx, x.ChargeID)
+			if err != nil {
+				return approved, refused, err
+			}
+			if _, ref, gerr := s.guardCharge(ctx, ch.ID, x.ContactID, st); gerr != nil {
+				return approved, refused, gerr
+			} else if ref != nil {
+				refused[id] = ref.Message
+				continue
+			}
+			snapAmount, snapDue = &ch.AmountCents, &ch.DueDate
+		}
 		now := s.now()
 		tag, uerr := s.db.Exec(ctx, `
-			UPDATE automation_sends SET status = 'approved', approved_by = $2, approved_at = $3, scheduled_for = $3, text = $4, edited = edited OR $5, flags = $6, updated_at = $3
-			 WHERE id = $1 AND status = 'pending_approval'`, id, actorID, now, text, edited, nonNil(flags))
+			UPDATE automation_sends SET status = 'approved', approved_by = $2, approved_at = $3, scheduled_for = $3, text = $4, edited = edited OR $5, flags = $6, updated_at = $3,
+			       charge_amount_cents = $7, charge_due_date = $8
+			 WHERE id = $1 AND status = 'pending_approval'`, id, actorID, now, text, edited, nonNil(flags), snapAmount, snapDue)
 		if uerr != nil {
 			return approved, refused, uerr
 		}

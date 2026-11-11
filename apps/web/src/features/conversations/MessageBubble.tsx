@@ -344,8 +344,14 @@ export function MessageBubble({
   emphasis,
   onMenu,
   onJump,
+  contact,
+  me,
 }: {
   m: Message;
+  /** Contato da conversa: a foto dele aparece nos áudios recebidos. */
+  contact?: { name: string; avatarUrl?: string };
+  /** Nome de quem está usando o ChatHM (áudios enviados sem atendente identificado). */
+  me?: string;
   showAuthor: boolean;
   /** A primeira mensagem de cada sequência ganha uma cauda no lado do remetente. */
   startsGroup?: boolean;
@@ -461,7 +467,18 @@ export function MessageBubble({
 
         {m.kind === "audio" && (
           <div className="flex flex-col">
-            <AudioPlayer durationSec={m.durationSec} waveform={m.waveform} url={m.url} outgoing={out} metadata={<Meta m={m} />} />
+            <AudioPlayer
+              id={m.id}
+              durationSec={m.durationSec}
+              waveform={m.waveform}
+              url={m.url}
+              outgoing={out}
+              playedAt={out ? m.playedAt : undefined}
+              avatarName={out ? (m.authorName ?? me ?? "Você") : m.group ? (m.authorName ?? contact?.name ?? "?") : (contact?.name ?? m.authorName ?? "?")}
+              avatarSrc={!out && !m.group ? contact?.avatarUrl : undefined}
+              group={!out && m.group && !m.authorName}
+              metadata={<Meta m={m} />}
+            />
           {m.historical && !m.url && <p className="mt-1 text-[11px] opacity-70">Áudio do histórico · arquivo não importado</p>}
           </div>
         )}

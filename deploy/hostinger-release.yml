@@ -1,0 +1,42 @@
+# Hostinger (Docker Manager), passo 2 de 2: troca a imagem em produção com rollback automático.
+# Só recria o container do app (o Caddy não reinicia). Antes de mexer em qualquer coisa, valida o compose e as variáveis
+# do projeto "chathm". Guarda a versão atual como chathm:previous. Se o app não ficar "healthy" em 4 minutos, volta sozinho
+# para a versão anterior (ROLLED_BACK). Sucesso = DEPLOY_OK nos logs. Apague este projeto depois.
+# Rollback manual mais tarde: troque "chathm:candidate" por "chathm:previous" na linha de docker tag que a promove a latest e rode de novo.
+# (O "$$" é a forma de escrever "$" dentro de um compose.)
+name: chathm-release
+
+services:
+  release:
+    image: docker:27-cli
+    restart: "no"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /docker/chathm:/docker/chathm
+    command:
+      - sh
+      - -c
+      - |
+        CF=/docker/chathm/docker-compose.yml
+        up() { docker compose -p chathm --project-directory /docker/chathm -f $$CF up -d --force-recreate --no-deps app; }
+        docker compose version >/dev/null 2>&1 || { echo ABORT_NO_COMPOSE; exit 1; }
+        docker compose -p chathm --project-directory /docker/chathm -f $$CF config -q || { echo ABORT_BAD_CONFIG; exit 1; }
+        docker image inspect chathm:candidate >/dev/null 2>&1 || { echo ABORT_NO_CANDIDATE; exit 1; }
+        docker image inspect chathm:latest >/dev/null 2>&1 || { echo ABORT_NO_CURRENT; exit 1; }
+        docker tag chathm:latest chathm:previous
+        docker tag chathm:candidate chathm:latest
+        echo SWAP_START
+        up
+        i=0
+        while [ $$i -lt 48 ]; do
+          s=$$(docker inspect -f '{{.State.Health.Status}}' chathm-app-1 2>/dev/null)
+          echo health=$$s
+          if [ "$$s" = healthy ]; then echo DEPLOY_OK; docker image prune -f >/dev/null 2>&1; exit 0; fi
+          if [ "$$s" = unhealthy ]; then break; fi
+          i=$$((i+1)); sleep 5
+        done
+        echo UNHEALTHY_ROLLING_BACK
+        docker tag chathm:previous chathm:latest
+        up
+        echo ROLLED_BACK
+        exit 1

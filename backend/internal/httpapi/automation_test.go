@@ -19,6 +19,10 @@ func autoWorld(t *testing.T) (*world, string) {
 	}), 200)
 	w.e.svcs.Automation.SetClock(func() time.Time { return autoNow })
 	w.e.svcs.Automation.SetRandom(func(int) int { return 0 })
+	// O ritmo guarda "quando o próximo envio pode sair" com o now() do banco; sem isso os testes dependem do relógio real passar do relógio fixo.
+	if _, err := w.e.pool.Exec(t.Context(), `UPDATE automation_state SET next_allowed_at = 'epoch'`); err != nil {
+		t.Fatal(err)
+	}
 	r := w.admin.do("POST", "/api/v1/ai/tokens", map[string]any{"name": "auto", "scopes": []string{"automate"}, "provider": "claude"})
 	expect(t, r, 201)
 	return w, r.body["token"].(string)

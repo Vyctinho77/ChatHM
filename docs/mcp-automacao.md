@@ -1,6 +1,6 @@
 # Plano: envios automáticos pela IA (MCP, etapa 6) — revisão 2
 
-Status: **níveis 1 (aprovação) e 3 (automático sem aprovação) implementados**, incluindo autorização OAuth explícita. O nível 2 (janela de revisão) e os demais refinamentos continuam no plano. A revisão 2 troca "modelos fixos" por **autonomia dentro de assuntos permitidos**.
+Status: **níveis 1 (aprovação) e 3 (automático sem aprovação) implementados**, incluindo autorização OAuth explícita. O nível 2 (janela de revisão) e os demais refinamentos continuam no plano. A revisão 2 troca "modelos fixos" por **autonomia dentro de assuntos permitidos**. Também implementadas: **cobranças com link de pagamento** (seção 15).
 Decisões em aberto na seção 12.
 
 ## 1. O que se quer
@@ -200,3 +200,36 @@ negrito no WhatsApp, e cada envio entra na auditoria (`automation.attend.send`) 
 
 **Limites a saber:** o MCP não avisa a IA quando um cliente escreve; ela precisa consultar as conversas (por exemplo, rodando de tempos em tempos).
 Quem usa um número pelo protocolo não oficial do WhatsApp assume o risco de bloqueio; o limite de velocidade reduz, não elimina.
+
+## 15. Cobranças com link de pagamento (implementada)
+
+**Problema:** cobrança automática precisa do link de pagamento de cada cliente, mas a IA não pode digitar link (seção 5) e um link por cliente não cabe num campo fixo do escritório.
+
+**Solução:** a IA nunca escreve link, valor nem vencimento. Ela aponta uma **cobrança** pelo id (`charge_id`) e escreve `{valor}`, `{vencimento}` e `{link_cobranca}` no texto. O servidor confere tudo e preenche com os dados reais **na hora de enviar**.
+
+```
+Gateway (Asaas, ...)  ──sincroniza a cada 15 min──▶  cobranças (billing_charges)  ──vínculo por telefone──▶  contato do ChatHM
+IA: list_charges  ◀── id, cliente, valor, vencimento, atraso (sem link, sem telefone)
+IA: send_automatic_message(category=cobranca, contact_id, charge_id, texto com {valor} {vencimento} {link_cobranca})
+Administrador aprova (vê o texto final, com o link)  ──▶  worker confere no gateway de novo  ──▶  envia
+```
+
+**O que o servidor garante** (ao enfileirar, ao aprovar e na hora de enviar):
+- A cobrança existe, é **do próprio destinatário** e está **em aberto ou vencida**. Cobrança paga, cancelada ou sem cliente é recusada.
+- O link é `https` e de um domínio **do gateway** (Asaas: `asaas.com`) ou liberado pelo administrador em *Controles → Links permitidos*.
+- `{link_cobranca}`, `{valor}` e `{vencimento}` só existem com `charge_id`, e só no assunto `cobranca`. Campos fixos do escritório não podem usar esses nomes.
+- Link digitado pela IA continua recusado. Valor digitado (`R$ 150`) gera aviso para quem aprova.
+- **Na hora de enviar**, o gateway é consultado de novo: quem **pagou entre a aprovação e o envio não recebe** a cobrança (envio "pulado", com o motivo). Se o **valor ou o vencimento mudaram** depois da aprovação, também é pulado e pede nova aprovação. Gateway fora do ar: tenta de novo em 10 minutos (até 6 vezes) sem travar a fila.
+- A prévia que volta para a IA troca o link por um marcador; o administrador vê o link real na tela de aprovação. O envio segue a autonomia do assunto (seção 14): em *Aprovação* o administrador libera cada cobrança vendo o link e o valor; em *Automático* o valor e o vencimento do momento do pedido ficam registrados e o servidor confere o gateway de novo antes de enviar. Recomendo manter *Cobrança de honorários* em *Aprovação* até a taxa de aprovação sem edição ficar alta.
+
+**Gateways:** cada um é um adaptador pequeno (`Gateway` em `backend/internal/automation/gateway.go`: `List`, `Get`) registrado em `providers`, com os domínios confiáveis do link. Já existe o **Asaas** (`asaas.go`, só leitura: lista `PENDING` e `OVERDUE`, consulta uma cobrança, ambiente de produção ou sandbox). Para somar Mercado Pago, Pagar.me, Iugu etc. basta escrever o adaptador e registrá-lo; o resto (vínculo, regras, tela, ferramentas) não muda.
+Quem não tem adaptador usa a **importação**: CSV na tela (colunas `codigo; telefone; cliente; descricao; valor; vencimento; situacao; link`) ou `POST /api/v1/automation/charges/import` com JSON `{"charges":[{id, phone, name, description, amount, dueDate, status, url, contactId?}]}`. O domínio do link precisa estar liberado em Controles. Reimportar o mesmo código atualiza a cobrança.
+
+**Vínculo com o cliente:** pelo telefone (DDD + 8 últimos dígitos, ignorando o 55 e o nono dígito). Se houver zero ou mais de um contato com aquele número, a cobrança fica **sem cliente** e a IA não a vê; a equipe vincula em *Envios automáticos → Cobranças*. O vínculo manual nunca é sobrescrito pela sincronização.
+
+**Chave de API:** informada na tela, guardada **cifrada** (AES-256-GCM, `ENCRYPTION_KEY`), nunca devolvida pela API, pela tela, pela IA nem registrada na auditoria.
+
+**Onde fica:** migrações `00029_billing_charges.sql` e `00030_message_played_at.sql` (recibo "ouvido"); `automation/gateway.go`, `asaas.go`, `charges.go`, `importcsv.go`, `charges_http.go`; ferramenta MCP `list_charges` e o campo `charge_id` em `aiaccess/automation_tools.go`; aba *Cobranças* em `apps/web/src/features/automation`.
+Rotas (administrador): `GET /automation/gateways`, `PUT /automation/gateways/{provider}`, `POST /automation/gateways/{provider}/sync`, `GET /automation/charges`, `PUT /automation/charges/{id}/contact`, `POST /automation/charges/import`.
+
+**Como ligar o Asaas:** *Envios automáticos → Cobranças* → colar a chave de API (Asaas: Integrações → Chave de API) → *Conectar* → *Sincronizar agora* → vincular o que ficar sem cliente → liberar o assunto *Cobrança de honorários* em *Assuntos*.

@@ -1,0 +1,15 @@
+# Hostinger (Docker Manager), passo 1 de 2: constrói a imagem CANDIDATA na própria VPS. Não mexe na produção:
+# a imagem vai para a tag chathm:candidate, nunca para chathm:latest. Termina imprimindo BUILD_OK ou BUILD_FAILED.
+# Troque o que vem depois do "#" pelo COMMIT (ou branch) a publicar. O repositório precisa estar público.
+# Depois de BUILD_OK, crie o projeto com deploy/hostinger-release.yml (passo 2) e apague este.
+name: chathm-release-build
+
+services:
+  build:
+    image: docker:27-cli
+    restart: "no"
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
+    command:
+      - sh
+      - -c
+      - "df -h / | tail -1 && docker build --progress=plain -t chathm:candidate 'https://github.com/Vyctinho77/ChatHM.git#COLE-AQUI-O-COMMIT' && echo BUILD_OK || echo BUILD_FAILED"

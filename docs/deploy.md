@@ -60,3 +60,25 @@ Cada cliente tem o **próprio servidor, banco e número de WhatsApp**, isolados.
 Envie ao cliente o endereço e o código. Ele abre o endereço, digita o código, escaneia o QR com o WhatsApp do escritório dele e vira o
 administrador. Enquanto o código não for usado, **só ele** libera a instalação (o `SETUP_TOKEN` do servidor deixa de valer). Para uma instância
 nova, suba outro servidor com o mesmo `docker-compose` (outro domínio e outro banco/projeto Supabase) e use o `SETUP_TOKEN` na primeira instalação.
+
+## Hostinger (VPS com Docker Manager)
+
+O Docker Manager não constrói imagens a partir de uma URL do GitHub, então a atualização tem dois passos. O app usa a imagem local
+`chathm:latest`; o banco (Supabase) e as variáveis (`DOMAIN`, `DATABASE_URL`, `ENCRYPTION_KEY`, `SETUP_TOKEN`) ficam no projeto `chathm`
+(`deploy/docker-compose.hostinger.yml`, valores só no campo de ambiente, nunca no repositório) e **não mudam** numa atualização.
+
+**Antes de publicar**
+1. Confira **qual branch está em produção** e se o que você vai publicar **contém** esse branch (`git merge-base --is-ancestor <produção> <novo>`).
+   Publicar um branch que não o contém **remove** da produção o que só existe lá.
+2. As migrações rodam sozinhas ao subir (`AUTO_MIGRATE`). Os números precisam vir **depois** da última já aplicada no banco
+   (`select max(version_id) from goose_db_version where is_applied`): dois arquivos com o mesmo número fazem o banco ignorar o novo.
+3. Rode a suíte completa (backend com `-race` e web) no commit exato que será publicado.
+
+**Passo 1, construir a candidata** (`deploy/hostinger-build.yml`, com o commit no lugar de `COLE-AQUI-O-COMMIT`). Não toca na produção.
+Espere `BUILD_OK` nos logs (cerca de 2 min).
+
+**Passo 2, trocar** (`deploy/hostinger-release.yml`). Valida a configuração, guarda a versão atual como `chathm:previous`, recria só o
+container do app, espera ficar saudável e, se não ficar, volta sozinho para a anterior. Sucesso = `DEPLOY_OK`; falha = `ROLLED_BACK`.
+Há alguns segundos de indisponibilidade enquanto o app reinicia.
+
+**Depois**: confira `https://<domínio>/readyz` e o arquivo `assets/index-*.js` da página, e apague os dois projetos auxiliares (não guardam estado).

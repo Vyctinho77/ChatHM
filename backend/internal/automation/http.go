@@ -41,6 +41,7 @@ func (h *Handler) Routes(r chi.Router) {
 		r.Get("/automation/documents", h.documents)
 		r.Post("/automation/documents", h.upload)
 		r.Delete("/automation/documents/{id}", h.deleteDocument)
+		h.chargeRoutes(r)
 	})
 }
 

@@ -541,6 +541,63 @@ func TestReceiptsAdvanceStatusAndNeverRegress(t *testing.T) {
 	w.e.wa.Receipt(whatsapp.ReceiptRead, "NAO-EXISTE")
 }
 
+// "Ouvido" (recibo played) é separado de "lido": abrir a conversa só lê; tocar o áudio ouve (e também implica lido).
+func TestPlayedReceiptIsSeparateFromRead(t *testing.T) {
+	w := setupWorld(t)
+	w.receive("Cliente Ouvido", "oi")
+	id := mustConv(t, w.ana, "Cliente Ouvido")["id"].(string)
+	msgs := func() []map[string]any {
+		var out []map[string]any
+		for _, x := range w.ana.do("GET", "/api/v1/conversations/"+id+"/messages", nil).body["messages"].([]any) {
+			out = append(out, x.(map[string]any))
+		}
+		return out
+	}
+	asAudio := func(text string) (extID, msgID string) {
+		expect(t, w.send(w.ana, id, text), 201)
+		sent := w.e.wa.Sent()
+		extID = sent[len(sent)-1].MessageID
+		if err := w.e.pool.QueryRow(t.Context(), `UPDATE messages SET kind = 'audio' WHERE external_id = $1 RETURNING id::text`, extID).Scan(&msgID); err != nil {
+			t.Fatal(err)
+		}
+		return extID, msgID
+	}
+	last := func() map[string]any { m := msgs(); return m[len(m)-1] }
+
+	// Lido não é ouvido.
+	ext, _ := asAudio("áudio 1")
+	w.e.wa.Receipt(whatsapp.ReceiptRead, ext)
+	if m := last(); m["status"] != "read" || m["readAt"] == nil || m["playedAt"] != nil {
+		t.Fatalf("após leitura: %v", m)
+	}
+	// Ouvido depois de lido: o status já era "lido", mas o recibo de reprodução ainda é registrado.
+	w.e.wa.Receipt(whatsapp.ReceiptPlayed, ext)
+	m := last()
+	if m["status"] != "read" || m["playedAt"] == nil {
+		t.Fatalf("após reprodução: %v", m)
+	}
+	first := m["playedAt"]
+	w.e.wa.Receipt(whatsapp.ReceiptPlayed, ext) // repetido: não muda o horário
+	if last()["playedAt"] != first {
+		t.Fatal("horário de reprodução mudou")
+	}
+
+	// Ouvido antes de qualquer outro recibo implica entregue e lido.
+	ext2, _ := asAudio("áudio 2")
+	w.e.wa.Receipt(whatsapp.ReceiptPlayed, ext2)
+	if m := last(); m["status"] != "read" || m["deliveredAt"] == nil || m["readAt"] == nil || m["playedAt"] == nil {
+		t.Fatalf("reprodução direta: %v", m)
+	}
+
+	// Só mensagem de voz tem "ouvido": em texto o recibo é ignorado.
+	expect(t, w.send(w.ana, id, "texto"), 201)
+	sent := w.e.wa.Sent()
+	w.e.wa.Receipt(whatsapp.ReceiptPlayed, sent[len(sent)-1].MessageID)
+	if m := last(); m["playedAt"] != nil || m["status"] == "read" {
+		t.Fatalf("texto recebeu recibo de reprodução: %v", m)
+	}
+}
+
 func TestCloseAndNewDemandIsReclassified(t *testing.T) {
 	w := setupWorld(t)
 	phone := w.receive("Cliente Recorrente", "preciso das férias")

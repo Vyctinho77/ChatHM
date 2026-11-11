@@ -551,6 +551,8 @@ export function ChatPanel({
                 <div id={`msg-${m.id}`} className={cn(startsGroup && "mt-2")}>
                   <MessageBubble
                     m={m}
+                    contact={c.contact}
+                    me={actions.me.name}
                     showAuthor={showAuthor}
                     startsGroup={startsGroup}
                     animateIn={new Date(m.sentAt).getTime() > openedAt}
@@ -731,10 +733,16 @@ function ReceiptLine({ m, onRetry }: { m: Message; onRetry: () => void }) {
         </button>
       </span>
     );
+  } else if (m.kind === "audio" && m.playedAt) {
+    content = (
+      <span className="inline-flex items-center gap-1 text-read">
+        <CheckCheck className="size-3.5" /> Ouvida às {formatTime(m.playedAt)}
+      </span>
+    );
   } else if (status === "read" && m.readAt) {
     content = (
       <span className="inline-flex items-center gap-1 text-read">
-        <CheckCheck className="size-3.5" /> Lida às {formatTime(m.readAt)}
+        <CheckCheck className="size-3.5" /> Lida às {formatTime(m.readAt)}{m.kind === "audio" ? " · ainda não ouvida" : ""}
       </span>
     );
   } else if (status === "delivered" && m.deliveredAt) {

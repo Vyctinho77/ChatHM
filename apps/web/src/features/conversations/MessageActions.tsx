@@ -156,6 +156,7 @@ export function MessageInfoDialog({ message: m, onClose }: { message: Message; o
     if (m.status) rows.push(["Situação", statusLabel[m.status]]);
     if (m.deliveredAt) rows.push(["Entregue", formatTime(m.deliveredAt)]);
     if (m.readAt) rows.push(["Lida", formatTime(m.readAt)]);
+    if (m.kind === "audio") rows.push(["Ouvida pelo cliente", m.playedAt ? formatTime(m.playedAt) : "Ainda não"]);
   } else if (m.group && m.authorName) {
     rows.unshift(["Enviada por", m.authorName]);
   }

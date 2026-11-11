@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, CheckCheck, ChevronDown, Clock3, FileText, Pause, Pencil, Play, Plus, RotateCcw, Trash2, TriangleAlert, Upload, X } from "lucide-react";
-import { Alert, Button, IconButton } from "@/components/ui";
+import { Check, CheckCheck, ChevronDown, Clock3, FileText, Pause, Pencil, Play, Plus, RefreshCw, RotateCcw, Trash2, TriangleAlert, Upload, X } from "lucide-react";
+import { Alert, Button, Field, IconButton } from "@/components/ui";
 import { ProviderLogo } from "@/components/ProviderLogo";
 import { FormattedText } from "@/components/FormattedText";
 import { AiIcon } from "@/components/AiIcon";
@@ -16,11 +16,15 @@ import { DEMO } from "@/lib/env";
 type Send = {
   id: string; createdAt: string; category: string; categoryLabel: string; reason: string; text: string; preview: string;
   contactId: string; contactName: string; documentName?: string; status: string; statusDetail?: string; flags: string[];
-  provider: string; app: string; edited: boolean; scheduledFor?: string; sentAt?: string;
+  provider: string; app: string; edited: boolean; scheduledFor?: string; sentAt?: string; chargeLabel?: string;
 };
 type Overview = { pending: number; queued: number; sentToday: number; sentLastHour: number; failed: number; hourlyCap: number; dailyCap: number; paused: boolean; pausedReason: string; whatsappReady: boolean; masterOn: boolean };
 type Category = { key: string; label: string; enabled: boolean; level: number; windowStart: string; windowEnd: string; weekdays: number[]; minIntervalDays: number; guidelines: string };
 type Settings = { paused: boolean; pausedReason: string; signature: string; hourlyCap: number; dailyCap: number; gapMinSeconds: number; gapMaxSeconds: number; dialogHours: number; clientDaily: number; timezone: string; allowedDomains: string[]; officeFields: Record<string, string> };
+type Gateway = { provider: string; label: string; configured: boolean; enabled: boolean; sandbox: boolean; lastSyncAt?: string; lastError?: string };
+type Charge = { id: string; provider: string; contactId?: string; contactName?: string; customerName: string; description: string; amount: string; dueDate: string; daysOverdue: number; status: string; hasLink: boolean };
+type SyncResult = { seen: number; created: number; updated: number; closed: number; linked: number; unlinked: number };
+type ImportResult = { created: number; updated: number; linked: number; unlinked: number; errors: string[] };
 type Doc = { id: string; name: string; sizeBytes: number; ownerContactId?: string; ownerName?: string; shareable: boolean };
 
 const STATUS: Record<string, string> = {
@@ -29,7 +33,7 @@ const STATUS: Record<string, string> = {
 };
 const FLAG: Record<string, string> = { pressao: "Termo de pressão: revise com cuidado" };
 const DAYS = ["", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
-const TABS = [["aprovar", "Para aprovar"], ["fila", "Fila e histórico"], ["assuntos", "Assuntos"], ["controles", "Controles"], ["docs", "Documentos"]] as const;
+const TABS = [["aprovar", "Para aprovar"], ["fila", "Fila e histórico"], ["assuntos", "Assuntos"], ["cobrancas", "Cobranças"], ["controles", "Controles"], ["docs", "Documentos"]] as const;
 type Tab = (typeof TABS)[number][0];
 
 const useInvalidate = () => { const qc = useQueryClient(); return () => void qc.invalidateQueries({ queryKey: ["automation"] }); };
@@ -104,6 +108,7 @@ export function AutomationPage() {
           {tab === "aprovar" && <SendList status="pending_approval" approval />}
           {tab === "fila" && <SendList status="" />}
           {tab === "assuntos" && <Categories />}
+          {tab === "cobrancas" && <Charges />}
           {tab === "controles" && <Controls />}
           {tab === "docs" && <Documents />}
         </div>
@@ -163,6 +168,7 @@ function SendList({ status, approval }: { status: string; approval?: boolean }) 
           )}
           <p className="mt-3 text-[11px] leading-relaxed text-muted">Motivo: {s.reason}</p>
           {s.documentName && <p className="mt-2 flex items-center gap-1.5 text-xs text-muted"><FileText className="size-3.5 shrink-0" />{s.documentName}</p>}
+          {s.chargeLabel && <p className="mt-2 text-xs text-muted">Cobrança: {s.chargeLabel}</p>}
           {s.flags.map((f) => <p key={f} className="mt-2 flex items-center gap-1.5 text-xs text-danger"><TriangleAlert className="size-3.5" />{FLAG[f] ?? f}</p>)}
           {s.statusDetail && <p className="mt-2 text-xs text-muted">{s.statusDetail}</p>}
           <div className="mt-4 flex flex-wrap gap-2">
@@ -414,5 +420,153 @@ function Documents() {
         </div>
       ))}
     </div>
+  );
+}
+
+const CHARGE_STATUS: Record<string, string> = { open: "Em aberto", overdue: "Vencida", paid: "Paga", cancelled: "Cancelada" };
+const fmtDate = (iso: string) => iso.split("-").reverse().join("/");
+
+function Charges() {
+  return (
+    <div className="flex flex-col gap-6">
+      <p className="text-xs text-muted">
+        Para cobrar, a IA aponta uma cobrança daqui e o servidor coloca o link de pagamento, o valor e o vencimento reais na mensagem: ela nunca digita nem enxerga o link.
+        Antes de enviar, o sistema confere de novo no gateway; quem já pagou não recebe a cobrança.
+      </p>
+      <GatewayCards />
+      <ImportCharges />
+      <ChargeList />
+    </div>
+  );
+}
+
+function GatewayCards() {
+  const q = useQuery({ queryKey: ["automation", "gateways"], enabled: !DEMO, queryFn: async () => (await get<{ gateways: Gateway[] }>("/automation/gateways")).gateways });
+  if (q.isPending) return <Skeleton className="h-24 w-full" />;
+  return <>{(q.data ?? []).map((g) => <GatewayCard key={g.provider + String(g.enabled) + String(g.sandbox) + String(g.configured)} g={g} />)}</>;
+}
+
+function GatewayCard({ g }: { g: Gateway }) {
+  const inv = useInvalidate();
+  const [key, setKey] = useState("");
+  const [sandbox, setSandbox] = useState(g.sandbox);
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const save = useMutation({
+    mutationFn: (enabled: boolean) => api<void>("PUT", `/automation/gateways/${g.provider}`, { apiKey: key.trim(), sandbox, enabled }),
+    onSuccess: () => { setKey(""); setError(""); setInfo(""); inv(); },
+    onError: (e) => setError(errorMessage(e)),
+  });
+  const sync = useMutation({
+    mutationFn: () => post<SyncResult>(`/automation/gateways/${g.provider}/sync`),
+    onSuccess: (r) => { setError(""); setInfo(`${r.seen} cobranças em aberto (${r.created} novas, ${r.closed} encerradas). ${r.unlinked > 0 ? `${r.unlinked} ainda sem cliente: vincule abaixo.` : "Todas vinculadas a um cliente."}`); inv(); },
+    onError: (e) => { setInfo(""); setError(errorMessage(e)); inv(); },
+  });
+  return (
+    <section className="rounded-xl border border-line p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-medium">{g.label}</h2>
+        <span className={cn("rounded-full px-2 py-0.5 text-xs", g.enabled ? "bg-elevated" : "text-muted")}>{g.enabled ? "Conectado" : g.configured ? "Desligado" : "Não conectado"}</span>
+      </div>
+      {error && <div className="mt-3"><Alert>{error}</Alert></div>}
+      {g.lastError && !error && <div className="mt-3"><Alert>{g.lastError}</Alert></div>}
+      <form onSubmit={(e) => { e.preventDefault(); save.mutate(true); }} className="mt-3 grid gap-3 sm:grid-cols-2">
+        <Field label={g.configured ? "Nova chave de API (deixe vazio para manter a atual)" : "Chave de API"} type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder={g.configured ? "•••••••• (salva e protegida)" : "$aact_..."} />
+        <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={sandbox} onChange={(e) => setSandbox(e.target.checked)} className="size-4 accent-[var(--c-accent)]" />Ambiente de testes (sandbox)</label>
+        <div className="flex flex-wrap gap-2 sm:col-span-2">
+          <Button type="submit" loading={save.isPending} disabled={!g.configured && !key.trim()}>{g.enabled ? "Salvar" : "Conectar"}</Button>
+          {g.enabled && <Button type="button" variant="secondary" loading={sync.isPending} onClick={() => sync.mutate()}><RefreshCw className="size-4" />Sincronizar agora</Button>}
+          {g.enabled && <Button type="button" variant="ghost" onClick={() => save.mutate(false)}>Desligar</Button>}
+        </div>
+      </form>
+      {info && <p className="mt-3 text-xs text-muted">{info}</p>}
+      <p className="mt-3 text-xs text-muted">
+        Só leitura: o ChatHM consulta as cobranças em aberto a cada 15 minutos e nunca cria, altera ou cancela nada em {g.label}. A chave fica cifrada no servidor e não volta para esta tela nem para a IA.
+        {g.lastSyncAt ? ` Última sincronização: ${new Date(g.lastSyncAt).toLocaleString("pt-BR")}.` : ""}
+      </p>
+    </section>
+  );
+}
+
+function ImportCharges() {
+  const inv = useInvalidate();
+  const [file, setFile] = useState<File | null>(null);
+  const [error, setError] = useState("");
+  const [res, setRes] = useState<ImportResult | null>(null);
+  const up = useMutation({
+    mutationFn: () => { const f = new FormData(); f.set("file", file!); return post<ImportResult>("/automation/charges/import", f); },
+    onSuccess: (r) => { setError(""); setRes(r); setFile(null); inv(); },
+    onError: (e) => { setRes(null); setError(errorMessage(e)); },
+  });
+  return (
+    <section className="rounded-xl border border-line p-4">
+      <h2 className="font-medium">Outro gateway ou planilha</h2>
+      <p className="mt-1 text-xs text-muted">
+        Importe um CSV com as colunas <code>codigo; telefone; cliente; descricao; valor; vencimento; situacao; link</code> (vírgula ou ponto e vírgula). O domínio de cada link precisa estar em
+        <em> Controles → Links permitidos</em>. Importar de novo o mesmo código atualiza a cobrança. Dá para automatizar o envio da mesma lista por <code>POST /automation/charges/import</code>.
+      </p>
+      {error && <div className="mt-3"><Alert>{error}</Alert></div>}
+      <form onSubmit={(e) => { e.preventDefault(); if (file) up.mutate(); }} className="mt-3 flex flex-wrap items-center gap-3">
+        <input type="file" accept=".csv,text/csv" aria-label="Planilha CSV de cobranças" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="text-sm" />
+        <Button type="submit" loading={up.isPending} disabled={!file}>Importar</Button>
+      </form>
+      {res && (
+        <div className="mt-3 text-xs text-muted">
+          <p>{res.created} novas, {res.updated} atualizadas{res.unlinked > 0 ? `, ${res.unlinked} sem cliente` : ""}.</p>
+          {res.errors.length > 0 && <ul className="mt-1 list-disc pl-4 text-danger">{res.errors.map((m) => <li key={m}>{m}</li>)}</ul>}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ChargeList() {
+  const inv = useInvalidate();
+  const [filter, setFilter] = useState<"open" | "unlinked" | "">("open");
+  const { contacts } = useContacts();
+  const [error, setError] = useState("");
+  const q = useQuery({
+    queryKey: ["automation", "charges", filter], enabled: !DEMO,
+    queryFn: async () => (await get<{ charges: Charge[] }>(`/automation/charges${filter === "open" ? "?status=open" : filter === "unlinked" ? "?unlinked=1" : ""}`)).charges,
+  });
+  const link = useMutation({
+    mutationFn: (v: { id: string; contactId: string }) => api<void>("PUT", `/automation/charges/${v.id}/contact`, { contactId: v.contactId }),
+    onSuccess: () => { setError(""); inv(); },
+    onError: (e) => setError(errorMessage(e)),
+  });
+  const list = q.data ?? [];
+  return (
+    <section>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-medium">Cobranças</h2>
+        <div role="group" aria-label="Filtro" className="flex gap-1">
+          {([["open", "Em aberto"], ["unlinked", "Sem cliente"], ["", "Todas"]] as const).map(([k, label]) => (
+            <button key={k} type="button" aria-pressed={filter === k} onClick={() => setFilter(k)} className={cn("rounded-full border px-2.5 py-1 text-xs", filter === k ? "border-accent bg-accent text-accent-fg" : "border-line text-muted")}>{label}</button>
+          ))}
+        </div>
+      </div>
+      {error && <div className="mt-3"><Alert>{error}</Alert></div>}
+      {q.isPending ? <Skeleton className="mt-3 h-24 w-full" /> : list.length === 0 ? <p className="py-6 text-center text-sm text-muted">Nenhuma cobrança por aqui.</p> : (
+        <div className="mt-3 flex flex-col gap-2">
+          {list.map((c) => (
+            <div key={c.id} className="rounded-lg border border-line px-3 py-2.5 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="min-w-0"><span className="block truncate font-medium">{c.amount} · vence {fmtDate(c.dueDate)}{c.daysOverdue > 0 ? ` (${c.daysOverdue} dia${c.daysOverdue > 1 ? "s" : ""} de atraso)` : ""}</span>
+                  <span className="text-xs text-muted">{c.description || "Sem descrição"} · {c.customerName || "Cliente sem nome"} · {c.provider === "manual" ? "Importada" : c.provider}</span></span>
+                <span className="rounded-full bg-elevated px-2 py-0.5 text-xs">{CHARGE_STATUS[c.status] ?? c.status}</span>
+              </div>
+              {!c.hasLink && (c.status === "open" || c.status === "overdue") && <p className="mt-1 text-xs text-danger">Sem link de pagamento: a IA não consegue usar esta cobrança.</p>}
+              <label className="mt-2 flex items-center gap-2 text-xs text-muted">
+                <span>Cliente do ChatHM</span>
+                <select aria-label={`Cliente da cobrança ${c.description || c.id}`} value={c.contactId ?? ""} onChange={(e) => link.mutate({ id: c.id, contactId: e.target.value })} className="h-8 min-w-0 flex-1 rounded-lg border border-line bg-elevated px-2 text-sm text-fg outline-none focus:border-accent">
+                  <option value="">Sem vínculo (a IA não vê)</option>
+                  {contacts.filter((x) => x.kind !== "group").map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                </select>
+              </label>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }

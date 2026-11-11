@@ -511,7 +511,7 @@ type Conversation struct {
 }
 
 const messageCols = `m.id, m.conversation_id, m.direction, m.kind, m.body, m.payload, m.status,
-	m.sent_at, m.sender_name, m.delivered_at, m.read_at,
+	m.sent_at, m.sender_name, m.delivered_at, m.read_at, m.played_at,
 	(SELECT a.id::text FROM attachments a WHERE a.message_id = m.id), m.edited_at, m.deleted_at`
 
 type msgRow struct {
@@ -519,13 +519,13 @@ type msgRow struct {
 	payload                             []byte
 	status                              *string
 	sentAt                              time.Time
-	deliveredAt, readAt                 *time.Time
+	deliveredAt, readAt, playedAt       *time.Time
 	attachmentID                        *string
 	editedAt, deletedAt                 *time.Time
 }
 
 func (r *msgRow) dest() []any {
-	return []any{&r.id, &r.convID, &r.dir, &r.kind, &r.body, &r.payload, &r.status, &r.sentAt, &r.sender, &r.deliveredAt, &r.readAt, &r.attachmentID, &r.editedAt, &r.deletedAt}
+	return []any{&r.id, &r.convID, &r.dir, &r.kind, &r.body, &r.payload, &r.status, &r.sentAt, &r.sender, &r.deliveredAt, &r.readAt, &r.playedAt, &r.attachmentID, &r.editedAt, &r.deletedAt}
 }
 
 func (r msgRow) message() Message {
@@ -541,6 +541,9 @@ func (r msgRow) message() Message {
 	}
 	if r.readAt != nil {
 		m["readAt"] = r.readAt.UTC().Format(time.RFC3339Nano)
+	}
+	if r.playedAt != nil {
+		m["playedAt"] = r.playedAt.UTC().Format(time.RFC3339Nano)
 	}
 	if r.attachmentID != nil {
 		m["url"] = "/api/v1/attachments/" + *r.attachmentID
@@ -1393,8 +1396,10 @@ func (s *Service) RemoveTag(ctx context.Context, v Viewer, convID, tagID string)
 // ---------------------------------------------------------------------------
 // Recibos
 
-// ApplyReceipt aplica recibos de entrega/leitura. O status só avança
-// (enviada → entregue → lida), nunca retrocede.
+// ApplyReceipt aplica recibos de entrega, leitura e reprodução. O status só avança
+// (enviada → entregue → lida), nunca retrocede. "Ouvido" (mensagem de voz tocada pelo cliente) é
+// registrado à parte em played_at: abrir a conversa só gera "lido"; tocar o áudio gera "ouvido", que também
+// implica "lido".
 func (s *Service) ApplyReceipt(ctx context.Context, r whatsapp.Receipt) {
 	if len(r.MessageIDs) == 0 {
 		return
@@ -1406,18 +1411,32 @@ func (s *Service) ApplyReceipt(ctx context.Context, r whatsapp.Receipt) {
 	rank := func(col string) string {
 		return `(CASE ` + col + ` WHEN 'sent' THEN 1 WHEN 'delivered' THEN 2 WHEN 'read' THEN 3 ELSE 0 END)`
 	}
-	target := map[whatsapp.ReceiptStatus]int{whatsapp.ReceiptDelivered: 2, whatsapp.ReceiptRead: 3}[r.Status]
+	target := map[whatsapp.ReceiptStatus]int{whatsapp.ReceiptDelivered: 2, whatsapp.ReceiptRead: 3, whatsapp.ReceiptPlayed: 3}[r.Status]
 	if target == 0 {
 		return
 	}
-	rows, err := s.db.Query(ctx, `
-		UPDATE messages
-		   SET status = $2,
-		       delivered_at = coalesce(delivered_at, $3),
-		       read_at = CASE WHEN $2 = 'read' THEN coalesce(read_at, $3) ELSE read_at END
-		 WHERE external_id = ANY($1) AND direction = 'out'
-		   AND `+rank("status")+` < $4
-		RETURNING id, conversation_id`, r.MessageIDs, string(r.Status), ts, target)
+	var rows pgx.Rows
+	var err error
+	if r.Status == whatsapp.ReceiptPlayed {
+		// Só mensagem de voz. Pode chegar depois do "lido" (a conversa já estava aberta): por isso não depende do rank do status.
+		rows, err = s.db.Query(ctx, `
+			UPDATE messages
+			   SET status = CASE WHEN `+rank("status")+` < 3 THEN 'read' ELSE status END,
+			       delivered_at = coalesce(delivered_at, $2),
+			       read_at = coalesce(read_at, $2),
+			       played_at = coalesce(played_at, $2)
+			 WHERE external_id = ANY($1) AND direction = 'out' AND kind = 'audio' AND played_at IS NULL
+			RETURNING id, conversation_id`, r.MessageIDs, ts)
+	} else {
+		rows, err = s.db.Query(ctx, `
+			UPDATE messages
+			   SET status = $2,
+			       delivered_at = coalesce(delivered_at, $3),
+			       read_at = CASE WHEN $2 = 'read' THEN coalesce(read_at, $3) ELSE read_at END
+			 WHERE external_id = ANY($1) AND direction = 'out'
+			   AND `+rank("status")+` < $4
+			RETURNING id, conversation_id`, r.MessageIDs, string(r.Status), ts, target)
+	}
 	if err != nil {
 		return
 	}

@@ -7,7 +7,7 @@ import (
 	"github.com/vyctinho77/chathm/backend/internal/whatsapp"
 )
 
-// convertReceipt traduz recibos de entrega/leitura de conversas 1:1. Ignora recibos
+// convertReceipt traduz recibos de entrega, leitura e reprodução ("ouvido") de conversas 1:1. Ignora recibos
 // de grupos, dos nossos outros aparelhos ("sender"/"read-self") e de tentativas de reenvio.
 func convertReceipt(e *events.Receipt) (whatsapp.Receipt, bool) {
 	if e.IsGroup || e.IsFromMe || len(e.MessageIDs) == 0 {
@@ -17,8 +17,10 @@ func convertReceipt(e *events.Receipt) (whatsapp.Receipt, bool) {
 	switch e.Type {
 	case types.ReceiptTypeDelivered:
 		status = whatsapp.ReceiptDelivered
-	case types.ReceiptTypeRead, types.ReceiptTypePlayed:
+	case types.ReceiptTypeRead:
 		status = whatsapp.ReceiptRead
+	case types.ReceiptTypePlayed:
+		status = whatsapp.ReceiptPlayed
 	default:
 		return whatsapp.Receipt{}, false
 	}

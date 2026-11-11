@@ -12,8 +12,14 @@ export function buildMock(myId: string, myName: string) {
   const at = (daysAgo: number, h: number, m: number) =>
     new Date(today.getFullYear(), today.getMonth(), today.getDate() - daysAgo, h, m).toISOString();
 
-  const wave = (seed: number, n = 40) =>
-    Array.from({ length: n }, (_, i) => 0.25 + Math.abs(Math.sin(seed * 7.3 + i * 1.7)) * 0.75);
+  // Parecida com a do WhatsApp: 64 amostras, rajadas de fala com pausas e piso em 0,2.
+  const wave = (seed: number, n = 64) =>
+    Array.from({ length: n }, (_, i) => {
+      const word = Math.max(0, Math.sin(seed * 3.1 + i * 0.37)) ** 0.6; // palavras
+      const syllable = 0.35 + 0.65 * Math.abs(Math.sin(seed * 5.7 + i * 1.9)); // sílabas
+      const noise = 0.85 + 0.15 * Math.sin(seed * 13.3 + i * 7.1);
+      return 0.2 + 0.8 * Math.min(1, word * syllable * noise);
+    });
 
   let seq = 0;
   const id = () => `m${++seq}`;
@@ -168,6 +174,7 @@ export function buildMock(myId: string, myName: string) {
         deliveredAt:
           m.status === "delivered" || m.status === "read" ? new Date(t + 15_000).toISOString() : undefined,
         readAt: m.status === "read" ? new Date(t + 60_000 * (1 + (t / 60_000) % 4)).toISOString() : undefined,
+        playedAt: m.kind === "audio" && m.status === "read" ? new Date(t + 60_000 * (3 + (t / 60_000) % 5)).toISOString() : undefined,
       };
     }) as Message[];
     messages[c.id] = full;
