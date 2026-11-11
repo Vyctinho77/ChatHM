@@ -150,12 +150,14 @@ body {
 
 @supports (background-clip: text) or (-webkit-background-clip: text) {
   .typing-gradient {
-    background-image: linear-gradient(110deg, var(--c-muted) 20%, var(--c-text) 45%, var(--c-muted) 70%);
-    background-size: 250% 100%;
+    /* As bordas iguais se repetem a cada volta, sem salto no brilho. */
+    background-image: linear-gradient(90deg, var(--c-muted) 0%, var(--c-text) 50%, var(--c-muted) 100%);
+    background-size: 200% 100%;
+    background-repeat: repeat-x;
     background-clip: text;
     -webkit-background-clip: text;
     color: transparent;
-    animation: typing-gradient 2.2s linear infinite;
+    animation: typing-gradient 2.8s linear infinite;
   }
 }
 
@@ -177,8 +179,8 @@ body {
 }
 
 @keyframes typing-gradient {
-  from { background-position: 180% 0; }
-  to { background-position: -80% 0; }
+  from { background-position: 0% 0; }
+  to { background-position: 200% 0; }
 }
 
 @keyframes typing-dot {
