@@ -9,11 +9,11 @@ export function SoundSettings() {
   const [error, setError] = useState("");
   return <div className="flex flex-col gap-5">
     <label className="flex cursor-pointer items-start justify-between gap-4 text-sm">
-      <span><span className="block font-medium">Sons da conversa</span><span className="mt-1 block text-xs text-muted">Ao enviar e receber mensagens na conversa aberta.</span></span>
+      <span><span className="block font-medium">Sons da conversa</span><span className="mt-1 block text-xs text-muted">Na conversa aberta</span></span>
       <input type="checkbox" className="mt-1 size-4 shrink-0" checked={preferences.messages} onChange={(e) => updateSoundPreferences({ messages: e.target.checked })} />
     </label>
     <label className="flex cursor-pointer items-start justify-between gap-4 text-sm">
-      <span><span className="block font-medium">Sons de notificação</span><span className="mt-1 block text-xs text-muted">Novas mensagens fora da conversa aberta.</span></span>
+      <span><span className="block font-medium">Sons de notificação</span><span className="mt-1 block text-xs text-muted">Fora da conversa aberta</span></span>
       <input type="checkbox" className="mt-1 size-4 shrink-0" checked={preferences.notifications} onChange={(e) => updateSoundPreferences({ notifications: e.target.checked })} />
     </label>
     <div className="flex flex-wrap items-end gap-3">
@@ -35,6 +35,5 @@ export function SoundSettings() {
       <input type="range" min={0} max={100} step={1} value={Math.round(preferences.volume * 100)} onChange={(e) => updateSoundPreferences({ volume: Number(e.target.value) / 100 })} className="w-full accent-accent" />
     </label>
     {error && <p role="alert" className="text-xs text-danger">{error}</p>}
-    <p className="text-xs text-muted">Preferências salvas neste navegador para sua conta.</p>
   </div>;
 }

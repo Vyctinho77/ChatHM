@@ -1,8 +1,9 @@
-import { useId, useState, type FormEvent } from "react";
+import { useId, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronDown, Copy, KeyRound, LogIn, Plus, Settings2, ShieldCheck, Trash2 } from "lucide-react";
 import { Alert, Button, Field, Modal } from "@/components/ui";
+import { HeadingWithInfo, InfoTip } from "@/components/InfoTip";
 import { api, del, errorMessage, fieldErrors, get, post } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { Skeleton } from "@/components/Skeleton";
@@ -30,21 +31,26 @@ const settingsKey = ["ai", "settings"] as const;
 const tokensKey = (all: boolean) => ["ai", "tokens", all] as const;
 const date = (iso: string) => new Date(iso).toLocaleDateString("pt-BR");
 
-export function Toggle({ checked, onChange, label, hint, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string; disabled?: boolean }) {
+/** Interruptor. `hint` é só para o estado atual (curto); a explicação vai em `info` (botão "i"). */
+export function Toggle({ checked, onChange, label, hint, info, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string; info?: { title?: string; body: ReactNode }; disabled?: boolean }) {
   const hintId = useId();
+  const id = useId();
   return (
-    <label className={cn("flex items-center justify-between gap-6 py-3", disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer")}>
-      <span className="min-w-0">
-        <span className="block text-sm font-medium">{label}</span>
-        {hint && <span id={hintId} className="mt-1 block text-xs leading-relaxed text-muted">{hint}</span>}
-      </span>
-      <span className="relative shrink-0">
-        <input type="checkbox" role="switch" aria-label={label} aria-describedby={hint ? hintId : undefined} checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} className="peer sr-only" />
+    <div className={cn("flex items-center justify-between gap-4 py-3", disabled && "opacity-60")}>
+      <div className="min-w-0">
+        <div className="flex items-center gap-1.5">
+          <label htmlFor={id} className={cn("text-sm font-medium", disabled ? "cursor-not-allowed" : "cursor-pointer")}>{label}</label>
+          {info && <InfoTip title={info.title ?? label}>{info.body}</InfoTip>}
+        </div>
+        {hint && <span id={hintId} className="mt-0.5 block text-xs text-muted">{hint}</span>}
+      </div>
+      <label htmlFor={id} className={cn("relative shrink-0", disabled ? "cursor-not-allowed" : "cursor-pointer")}>
+        <input id={id} type="checkbox" role="switch" aria-label={label} aria-describedby={hint ? hintId : undefined} checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} className="peer sr-only" />
         <span aria-hidden="true" className="block h-6 w-10 rounded-full bg-muted/30 transition-colors peer-checked:bg-brand peer-focus-visible:ring-2 peer-focus-visible:ring-brand peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-panel peer-checked:[&>span]:translate-x-4 motion-reduce:transition-none">
           <span className="absolute left-0.5 top-0.5 size-5 rounded-full bg-white shadow-sm transition-transform motion-reduce:transition-none" />
         </span>
-      </span>
-    </label>
+      </label>
+    </div>
   );
 }
 
@@ -227,54 +233,44 @@ function NewToken({ onClose, allowWrite, allowSend, allowAutomation, allowAttend
             </select>
           </label>
           <fieldset className="flex flex-col gap-2 text-sm">
-            <legend className="mb-1 font-medium">O que o token pode fazer</legend>
+            <legend className="mb-1 flex items-center gap-1.5 font-medium">O que o token pode fazer<InfoTip title="Sem envios automáticos">Sem a opção de envios automáticos, a IA nunca envia mensagens sozinha: rascunhos e pedidos só saem com a sua aprovação.</InfoTip></legend>
             <label className="flex cursor-pointer items-start gap-2.5">
               <input type="radio" name="scope" checked={level === "read"} onChange={() => setLevel("read")} className="mt-1 accent-[var(--c-accent)]" />
-              <span><span className="font-medium">Só ler (recomendado)</span><span className="block text-xs text-muted">Conversas, mensagens, contatos, filas, etiquetas e agenda que <strong>você</strong> já enxerga.</span></span>
+              <span className="flex items-center gap-1.5 font-medium">Só ler (recomendado)<InfoTip title="Só ler">Conversas, mensagens, contatos, filas, etiquetas e agenda que <strong>você</strong> já enxerga. Nada é alterado nem enviado.</InfoTip></span>
             </label>
             <label className={cn("flex items-start gap-2.5", allowWrite ? "cursor-pointer" : "opacity-60")}>
               <input type="radio" name="scope" checked={level === "write"} disabled={!allowWrite} onChange={() => setLevel("write")} className="mt-1 accent-[var(--c-accent)]" />
               <span>
-                <span className="font-medium">Ler, alterar e deixar rascunhos</span>
-                <span className="block text-xs text-muted">
-                  {allowWrite
-                    ? "Também etiqueta, acrescenta observações, renomeia contatos, adia, cria lembretes e compromissos, transfere conversas e deixa rascunhos de resposta para você revisar."
-                    : "Um administrador precisa liberar alterações pela IA primeiro."}
-                </span>
+                <span className="flex items-center gap-1.5 font-medium">Ler, alterar e deixar rascunhos<InfoTip title="Ler, alterar e deixar rascunhos">Além de ler: etiqueta, acrescenta observações, renomeia contatos, adia, cria lembretes e compromissos, transfere conversas e deixa rascunhos de resposta para você revisar.</InfoTip></span>
+                {!allowWrite && <span className="block text-xs text-muted">Precisa ser liberado por um administrador.</span>}
               </span>
             </label>
             <label className={cn("flex items-start gap-2.5", allowSend ? "cursor-pointer" : "opacity-60")}>
               <input type="radio" name="scope" checked={level === "send"} disabled={!allowSend} onChange={() => setLevel("send")} className="mt-1 accent-[var(--c-accent)]" />
               <span>
-                <span className="font-medium">Tudo isso e pedir envios (você aprova)</span>
-                <span className="block text-xs text-muted">
-                  {allowSend ? "A IA pode pedir o envio de uma mensagem ao cliente, mas ela só sai quando você clicar em Enviar na conversa." : "Um administrador precisa liberar pedidos de envio primeiro."}
-                </span>
+                <span className="flex items-center gap-1.5 font-medium">Tudo isso e pedir envios (você aprova)<InfoTip title="Pedir envios">A IA pode pedir o envio de uma mensagem ao cliente, mas ela só sai quando você clicar em Enviar na conversa.</InfoTip></span>
+                {!allowSend && <span className="block text-xs text-muted">Precisa ser liberado por um administrador.</span>}
               </span>
             </label>
             <label className={cn("flex items-start gap-2.5", allowAutomation && allowSend ? "cursor-pointer" : "opacity-60")}>
               <input type="radio" name="scope" checked={level === "automate"} disabled={!allowAutomation || !allowSend} onChange={() => setLevel("automate")} className="mt-1 accent-[var(--c-accent)]" />
               <span>
-                <span className="font-medium">Tudo isso e envios automáticos pelas regras do servidor</span>
-                <span className="block text-xs text-muted">
-                  {allowAutomation && allowSend ? "A IA pode iniciar avisos aos clientes. Cada assunto define se exige aprovação ou envia automaticamente, sempre sob as regras do servidor." : "Um administrador precisa liberar os envios automáticos (e os pedidos de envio) primeiro."}
-                </span>
+                <span className="flex items-center gap-1.5 font-medium">Tudo isso e envios automáticos<InfoTip title="Envios automáticos">A IA pode iniciar avisos aos clientes (DAS, cobrança, prazos). Cada assunto define se exige aprovação ou envia sozinho, sempre sob as regras do servidor.</InfoTip></span>
+                {!(allowAutomation && allowSend) && <span className="block text-xs text-muted">Precisa ser liberado por um administrador.</span>}
               </span>
             </label>
             {admin && (
               <label className={cn("flex items-start gap-2.5", allowAttend ? "cursor-pointer" : "opacity-60")}>
                 <input type="radio" name="scope" checked={level === "attend"} disabled={!allowAttend} onChange={() => setLevel("attend")} className="mt-1 accent-[var(--c-accent)]" />
                 <span>
-                  <span className="font-medium">Atendente autônomo (a IA envia e responde sozinha)</span>
-                  <span className="block text-xs text-muted">
-                    {allowAttend ? "A IA conversa e envia como um atendente, na hora, com texto livre e sem aprovação. Só o essencial é bloqueado: quem pediu PARAR, grupos, pausa geral e excesso de velocidade." : "Ative o atendente autônomo em Permissões primeiro."}
-                  </span>
+                  <span className="flex items-center gap-1.5 font-medium">Atendente autônomo<InfoTip title="Atendente autônomo">A IA conversa e envia como um atendente, na hora, com texto livre e sem aprovação. Só o essencial é bloqueado: quem pediu PARAR, grupos, pausa geral e excesso de velocidade.</InfoTip></span>
+                  {!allowAttend && <span className="block text-xs text-muted">Ative em Permissões primeiro.</span>}
                 </span>
               </label>
             )}
             {(level === "automate" || level === "attend") && (
               <label className="ml-6 flex flex-col gap-1.5 text-sm">
-                <span className="font-medium">Qual IA vai usar este token?</span>
+                <span className="flex items-center gap-1.5 font-medium">Qual IA vai usar este token?<InfoTip title="Qual IA">Aparece como logo nas mensagens enviadas, no lugar do nome de um atendente.</InfoTip></span>
                 <select value={provider} onChange={(e) => setProvider(e.target.value)} className="h-10 rounded-lg border border-line bg-elevated px-3 text-sm outline-none focus:border-accent">
                   <option value="claude">Claude</option>
                   <option value="chatgpt">ChatGPT</option>
@@ -282,11 +278,9 @@ function NewToken({ onClose, allowWrite, allowSend, allowAutomation, allowAttend
                   <option value="gemini">Gemini</option>
                   <option value="other">Outra</option>
                 </select>
-                <span className="text-xs text-muted">Aparece como logo nas mensagens enviadas, no lugar do nome de um atendente.</span>
               </label>
             )}
           </fieldset>
-          <p className="text-xs text-muted">Sem a opção de envios automáticos, a IA nunca envia mensagens sozinha: rascunhos e pedidos só saem com a sua aprovação.</p>
           {error && !nameError && <Alert>{error}</Alert>}
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
@@ -358,11 +352,10 @@ export function AiAccessCard() {
     <section id="integracoes-ia" className="scroll-mt-6 divide-y divide-line/60">
       <div id="mcp-access" tabIndex={-1} className="scroll-mt-6 pb-5 outline-none">
         {admin ? (
-          <Toggle checked={s.enabled} disabled={save.isPending} onChange={(v) => change({ enabled: v })} label="Permitir acesso por IA" hint={s.enabled ? "Ativo. Cada assistente usa apenas os acessos de quem o conectou." : "Ative para conectar seus assistentes. Desligado, todos os acessos ficam suspensos."} />
+          <Toggle checked={s.enabled} disabled={save.isPending} onChange={(v) => change({ enabled: v })} label="Permitir acesso por IA" hint={s.enabled ? "Ativo" : "Desligado"} info={{ title: "Acesso por IA", body: <><p>Cada assistente usa apenas os acessos de quem o conectou. Desligado, todos os acessos ficam suspensos.</p><p><strong>Respostas sugeridas exigem aprovação.</strong> Avisos automáticos seguem a autonomia e as regras de cada assunto.</p></> }} />
         ) : (
-          <p className="py-3 text-sm text-muted">{s.enabled ? "O acesso por IA está ativo neste escritório." : "Peça a um administrador para ativar o acesso por IA."}</p>
+          <p className="py-3 text-sm text-muted">{s.enabled ? "O acesso por IA está ativo." : "Peça a um administrador para ativar o acesso por IA."}</p>
         )}
-        <p className="flex items-start gap-2 pt-1 text-xs leading-relaxed text-muted"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-brand-ink" />Respostas sugeridas exigem aprovação. Avisos automáticos seguem a autonomia e as regras de cada assunto.</p>
       </div>
 
       {error && <div className="mt-3"><Alert>{error}</Alert></div>}
@@ -375,35 +368,35 @@ export function AiAccessCard() {
             <ChevronDown className="size-4 text-muted transition-transform group-open/options:rotate-180 motion-reduce:transition-none" />
           </summary>
           <div className="divide-y divide-line/60 border-t border-line/60 pb-4">
-            <Toggle checked={s.allowWrite} disabled={save.isPending} onChange={v => change({ allowWrite: v })} label="Permitir alterações" hint="Etiquetas, observações, lembretes, agenda e rascunhos, conforme os acessos da pessoa." />
-            <Toggle checked={s.allowSend} disabled={save.isPending || !s.allowWrite} onChange={v => change({ allowSend: v })} label="Permitir pedidos de envio" hint={s.allowWrite ? "O assistente sugere a mensagem e você decide se envia." : "Ative as alterações para liberar pedidos de envio."} />
-            <Toggle checked={!!s.allowAutomation} disabled={save.isPending || !s.allowSend} onChange={v => change({ allowAutomation: v })} label="Permitir envios automáticos" hint={s.allowSend ? "A IA inicia avisos aos clientes. Em Envios automáticos → Assuntos, escolha quais podem enviar sem aprovação." : "Ative os pedidos de envio para liberar os envios automáticos."} />
-            <Toggle checked={!!s.allowAttend} disabled={save.isPending || !s.allowSend} onChange={v => { if (v) { setError(""); setConfirmAttend(true); } else change({ allowAttend: false }); }} label="Permitir atendente autônomo" hint={s.allowSend ? "Permite que a IA envie e responda sem aprovação, como um atendente." : "Ative os pedidos de envio para liberar o atendente autônomo."} />
+            <Toggle checked={s.allowWrite} disabled={save.isPending} onChange={v => change({ allowWrite: v })} label="Permitir alterações" info={{ body: "Etiquetas, observações, lembretes, agenda e rascunhos, conforme os acessos da pessoa que conectou o assistente." }} />
+            <Toggle checked={s.allowSend} disabled={save.isPending || !s.allowWrite} onChange={v => change({ allowSend: v })} label="Permitir pedidos de envio" hint={s.allowWrite ? undefined : "Requer alterações"} info={{ body: "O assistente sugere a mensagem e você decide se envia." }} />
+            <Toggle checked={!!s.allowAutomation} disabled={save.isPending || !s.allowSend} onChange={v => change({ allowAutomation: v })} label="Permitir envios automáticos" hint={s.allowSend ? undefined : "Requer pedidos de envio"} info={{ body: "A IA inicia avisos aos clientes. Em Envios automáticos → Assuntos, escolha quais podem enviar sem aprovação." }} />
+            <Toggle checked={!!s.allowAttend} disabled={save.isPending || !s.allowSend} onChange={v => { if (v) { setError(""); setConfirmAttend(true); } else change({ allowAttend: false }); }} label="Permitir atendente autônomo" hint={s.allowSend ? undefined : "Requer pedidos de envio"} info={{ body: "Permite que a IA envie e responda sem aprovação, como um atendente. As proteções do servidor continuam valendo." }} />
             {s.allowAutomation && <Link to="/automacao" className="block py-2 text-xs font-medium text-brand-ink hover:underline">Definir assuntos e autonomia de envio</Link>}
           </div>
         </details>
         <details id="mcp-privacy" className="group/options scroll-mt-6">
           <summary className="flex cursor-pointer list-none items-center gap-3 py-5 [&::-webkit-details-marker]:hidden">
             <ShieldCheck className="size-4 shrink-0 text-muted" />
-            <span className="flex-1"><span className="block text-sm font-medium">Privacidade</span><span className="mt-0.5 block text-xs text-muted">{s.strictPrivacy ? "Proteção adicional de nomes e observações" : "Escolha quais dados ocultar dos assistentes"}</span></span>
+            <span className="flex-1"><span className="flex items-center gap-1.5 text-sm font-medium">Privacidade<InfoTip title="O que sempre fica oculto">Senhas, chaves de acesso e dados financeiros ficam sempre ocultos. Aplicativos conectados por login também recebem telefones e observações protegidos.</InfoTip></span><span className="mt-0.5 block text-xs text-muted">{s.strictPrivacy ? "Proteção adicional ativa" : "Dados ocultos dos assistentes"}</span></span>
             <ChevronDown className="size-4 text-muted transition-transform group-open/options:rotate-180 motion-reduce:transition-none" />
           </summary>
           <div className="divide-y divide-line/60 border-t border-line/60">
-            <Toggle checked={s.maskDocuments} disabled={save.isPending} onChange={v => change({ maskDocuments: v })} label="Ocultar CPF e CNPJ" hint="Documentos são substituídos por uma indicação de dado oculto." />
-            <Toggle checked={s.maskPhones} disabled={save.isPending} onChange={v => change({ maskPhones: v })} label="Ocultar telefones" hint="Exibe apenas os quatro últimos dígitos." />
+            <Toggle checked={s.maskDocuments} disabled={save.isPending} onChange={v => change({ maskDocuments: v })} label="Ocultar CPF e CNPJ" info={{ body: "Documentos são substituídos por uma indicação de dado oculto." }} />
+            <Toggle checked={s.maskPhones} disabled={save.isPending} onChange={v => change({ maskPhones: v })} label="Ocultar telefones" info={{ body: "Exibe apenas os quatro últimos dígitos." }} />
             <Toggle checked={s.maskEmails} disabled={save.isPending} onChange={v => change({ maskEmails: v })} label="Ocultar e-mails" />
-            <Toggle checked={s.strictPrivacy} disabled={save.isPending} onChange={v => change({ strictPrivacy: v })} label="Proteção adicional" hint="Abrevia sobrenomes e oculta as observações internas dos contatos." />
+            <Toggle checked={s.strictPrivacy} disabled={save.isPending} onChange={v => change({ strictPrivacy: v })} label="Proteção adicional" info={{ body: "Abrevia sobrenomes e oculta as observações internas dos contatos." }} />
           </div>
-          <p className="border-t border-line/60 pb-5 pt-3 text-xs leading-relaxed text-muted">Senhas, chaves de acesso e dados financeiros ficam sempre ocultos. Aplicativos conectados por login também recebem telefones e observações protegidos.</p>
+          <div className="pb-2" />
         </details>
         <details id="mcp-login" className="group/options scroll-mt-6">
           <summary className="flex cursor-pointer list-none items-center gap-3 py-5 [&::-webkit-details-marker]:hidden">
             <LogIn className="size-4 shrink-0 text-muted" />
-            <span className="flex-1"><span className="block text-sm font-medium">Conexão por login</span><span className="mt-0.5 block text-xs text-muted">{s.allowOauth ? "Disponível para aplicativos autorizados" : "Conecte ChatGPT e outros assistentes por autorização"}</span></span>
+            <span className="flex-1"><span className="block text-sm font-medium">Conexão por login</span><span className="mt-0.5 block text-xs text-muted">{s.allowOauth ? "Ativa" : "Desligada"}</span></span>
             <ChevronDown className="size-4 text-muted transition-transform group-open/options:rotate-180 motion-reduce:transition-none" />
           </summary>
           <div className="border-t border-line/60 pb-5">
-            <Toggle checked={s.allowOauth} disabled={save.isPending} onChange={v => change({ allowOauth: v })} label="Permitir conexão por login" hint="Você autoriza o aplicativo pelo ChatHM e pode desconectá-lo quando quiser." />
+            <Toggle checked={s.allowOauth} disabled={save.isPending} onChange={v => change({ allowOauth: v })} label="Permitir conexão por login" info={{ body: "Para ChatGPT, claude.ai e outros assistentes que conectam por autorização, sem token. Você autoriza o aplicativo pelo ChatHM e pode desconectá-lo quando quiser." }} />
             {s.allowOauth && <details className="mt-1 text-xs">
               <summary className="cursor-pointer py-2 text-muted hover:text-fg">Sites autorizados</summary>
               <DomainInput domains={s.oauthRedirectHosts} disabled={save.isPending} onSave={hosts => {
@@ -418,10 +411,9 @@ export function AiAccessCard() {
       {enabled && (
         <div id="mcp-tokens" tabIndex={-1} className="scroll-mt-6 py-6 outline-none">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="flex items-center gap-2 text-sm font-semibold"><KeyRound className="size-4 text-muted" /> Tokens de acesso</h2>
+            <div className="flex items-center gap-2"><KeyRound className="size-4 text-muted" /><HeadingWithInfo infoTitle="Tokens de acesso" info="Crie um acesso para cada assistente. Você pode revogá-lo a qualquer momento.">Tokens de acesso</HeadingWithInfo></div>
             <Button type="button" onClick={() => setCreating(true)}><Plus className="size-4" /> Novo token</Button>
           </div>
-          <p className="mt-2 text-xs leading-relaxed text-muted">Crie um acesso para cada assistente. Você pode revogá-lo a qualquer momento.</p>
           {admin && <Toggle checked={showAll} onChange={setShowAll} label="Ver acessos de toda a equipe" />}
           <details id="mcp-connect-guide" className="mt-2 scroll-mt-6 border-t border-line pt-3">
             <summary className="cursor-pointer text-sm text-brand-ink">Como conectar o assistente</summary>
@@ -454,8 +446,7 @@ export function AiAccessCard() {
       )}
       {enabled && s.allowOauth && (
         <div className="py-6">
-          <h2 className="text-sm font-semibold">Aplicativos conectados</h2>
-          <p className="mt-2 text-xs leading-relaxed text-muted">Conexões autorizadas pelo login do ChatHM.</p>
+          <HeadingWithInfo infoTitle="Aplicativos conectados" info="Conexões autorizadas pelo login do ChatHM. Desconecte quando não precisar mais.">Aplicativos conectados</HeadingWithInfo>
           <ul className="mt-2 divide-y divide-line">
             {grants.isPending && <li className="py-4"><Skeleton className="h-10 w-full" /></li>}
             {grants.isError && <li className="py-4"><Alert>{errorMessage(grants.error)}</Alert></li>}

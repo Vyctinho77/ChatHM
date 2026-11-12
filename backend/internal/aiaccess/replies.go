@@ -23,6 +23,9 @@ const (
 	maxMarkItems   = 50
 	maxReplyNote   = 300
 	pendingDefault = 20
+	waitDefault    = 25 * time.Second
+	waitMax        = 30 * time.Second
+	waitPoll       = 3 * time.Second
 	pendingMax     = 50
 )
 
@@ -120,89 +123,133 @@ func (m *MCP) registerReplies(s *mcp.Server, p Principal, v conversations.Viewer
 		Since          string `json:"since,omitempty" jsonschema:"só respostas depois deste instante (ISO 8601), para consultar de tempos em tempos"`
 		Limit          int    `json:"limit,omitempty" jsonschema:"máximo de conversas (padrão 20, até 50)"`
 	}
+	listFn := func(ctx context.Context, in listIn) (any, error) {
+		var since time.Time
+		if in.Since != "" {
+			t, err := time.Parse(time.RFC3339, in.Since)
+			if err != nil {
+				return nil, errors.New("since deve estar em ISO 8601, ex.: 2026-11-07T12:00:00Z")
+			}
+			since = t
+		}
+		all, err := m.convs.List(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		byID := map[string]conversations.Conversation{}
+		ids := make([]string, 0, len(all))
+		for _, c := range all {
+			if c.Status == "closed" || c.Contact.Kind == "group" {
+				continue
+			}
+			byID[c.ID] = c
+			ids = append(ids, c.ID)
+		}
+		key := agentKey(p)
+		rows, err := m.svc.pendingReplies(ctx, key, ids, since)
+		if err != nil {
+			return nil, err
+		}
+		limit := clampLimit(in.Limit, pendingDefault, pendingMax)
+		items := []any{}
+		for i, r := range rows {
+			if i >= limit {
+				break
+			}
+			c := byID[r.ConversationID]
+			item := map[string]any{
+				"conversationId": c.ID,
+				"contact":        contactView(c.Contact, nil),
+				"queue":          map[string]any{"key": c.Segment, "name": c.SegmentName},
+				"status":         statusPT[c.Status],
+				"pending":        map[string]any{"count": r.Count, "firstAt": r.FirstAt, "lastAt": r.LastAt},
+			}
+			if c.Assignee != nil {
+				item["assignee"] = c.Assignee.Name
+			}
+			if msgs, merr := m.convs.Messages(ctx, v, c.ID, 200); merr == nil {
+				var lastIn conversations.Message
+				for _, mm := range msgs {
+					if str(mm["direction"]) == "in" {
+						lastIn = mm
+					}
+				}
+				if lastIn != nil {
+					item["lastReply"] = msgView(lastIn, p, c.Contact.ID)
+					lastAt, _ := time.Parse(time.RFC3339Nano, str(lastIn["sentAt"]))
+					for _, mm := range msgs {
+						at, _ := time.Parse(time.RFC3339Nano, str(mm["sentAt"]))
+						if str(mm["direction"]) == "out" && at.After(lastAt) {
+							item["answeredAfter"] = map[string]any{"at": str(mm["sentAt"]), "from": authorOf(mm, p, c.Contact.ID)}
+							break
+						}
+					}
+				}
+			}
+			items = append(items, item)
+		}
+		out := map[string]any{"total": len(rows), "returned": len(items), "conversations": items,
+			"howToUse": "Avise a pessoa e depois chame mark_replies (status notified ou resolved). Quando o cliente escrever de novo, a conversa volta para esta lista."}
+		if in.IncludeHandled {
+			hs, err := m.svc.handledReplies(ctx, key, ids)
+			if err != nil {
+				return nil, err
+			}
+			handled := make([]any, 0, len(hs))
+			for _, h := range hs {
+				c := byID[h.ConversationID]
+				handled = append(handled, map[string]any{"conversationId": h.ConversationID, "contact": contactView(c.Contact, nil), "status": h.Status, "note": h.Note, "updatedAt": h.UpdatedAt})
+			}
+			out["handled"] = handled
+		}
+		return out, nil
+	}
 	addTool(m, s, p, "list_pending_replies",
 		"Respostas de clientes a mensagens enviadas por IA que você ainda não tratou, por conversa, da mais recente para a mais antiga: quem respondeu, em qual fila, quantas respostas, a última resposta (com quem a escreveu em from) e se alguém já respondeu depois (answeredAfter). "+
 			"Fluxo: leia, avise a pessoa e use mark_replies para marcar o que já foi avisado ou resolvido. Esta ferramenta NÃO responde ao cliente.",
-		func(ctx context.Context, in listIn) (any, error) {
-			var since time.Time
-			if in.Since != "" {
-				t, err := time.Parse(time.RFC3339, in.Since)
-				if err != nil {
-					return nil, errors.New("since deve estar em ISO 8601, ex.: 2026-11-07T12:00:00Z")
-				}
-				since = t
+		listFn)
+
+	type waitIn struct {
+		IncludeHandled bool   `json:"include_handled,omitempty" jsonschema:"também devolve, em handled, as conversas já marcadas como avisadas ou resolvidas"`
+		Since          string `json:"since,omitempty" jsonschema:"só respostas depois deste instante (ISO 8601)"`
+		Limit          int    `json:"limit,omitempty" jsonschema:"máximo de conversas (padrão 20, até 50)"`
+		TimeoutSeconds int    `json:"timeout_seconds,omitempty" jsonschema:"quanto esperar por uma resposta nova (padrão 25, de 1 a 30 segundos)"`
+	}
+	addTool(m, s, p, "wait_for_replies",
+		"Fica esperando (até 30 s) e responde assim que houver resposta de cliente ainda não tratada; se nada chegar, volta com timedOut=true e a lista vazia. "+
+			"Serve a quem não tem endereço público para o webhook (app no computador): chame de novo em seguida, em laço. Devolve o mesmo que list_pending_replies. Use mark_replies para dar baixa no que já tratou, senão a conversa volta a cada chamada. NÃO responde ao cliente.",
+		func(ctx context.Context, in waitIn) (any, error) {
+			wait := time.Duration(in.TimeoutSeconds) * time.Second
+			if wait <= 0 {
+				wait = waitDefault
 			}
-			all, err := m.convs.List(ctx, v)
-			if err != nil {
-				return nil, err
+			if wait > waitMax {
+				wait = waitMax
 			}
-			byID := map[string]conversations.Conversation{}
-			ids := make([]string, 0, len(all))
-			for _, c := range all {
-				if c.Status == "closed" || c.Contact.Kind == "group" {
-					continue
-				}
-				byID[c.ID] = c
-				ids = append(ids, c.ID)
-			}
-			key := agentKey(p)
-			rows, err := m.svc.pendingReplies(ctx, key, ids, since)
-			if err != nil {
-				return nil, err
-			}
-			limit := clampLimit(in.Limit, pendingDefault, pendingMax)
-			items := []any{}
-			for i, r := range rows {
-				if i >= limit {
-					break
-				}
-				c := byID[r.ConversationID]
-				item := map[string]any{
-					"conversationId": c.ID,
-					"contact":        contactView(c.Contact, nil),
-					"queue":          map[string]any{"key": c.Segment, "name": c.SegmentName},
-					"status":         statusPT[c.Status],
-					"pending":        map[string]any{"count": r.Count, "firstAt": r.FirstAt, "lastAt": r.LastAt},
-				}
-				if c.Assignee != nil {
-					item["assignee"] = c.Assignee.Name
-				}
-				if msgs, merr := m.convs.Messages(ctx, v, c.ID, 200); merr == nil {
-					var lastIn conversations.Message
-					for _, mm := range msgs {
-						if str(mm["direction"]) == "in" {
-							lastIn = mm
-						}
-					}
-					if lastIn != nil {
-						item["lastReply"] = msgView(lastIn, p, c.Contact.ID)
-						lastAt, _ := time.Parse(time.RFC3339Nano, str(lastIn["sentAt"]))
-						for _, mm := range msgs {
-							at, _ := time.Parse(time.RFC3339Nano, str(mm["sentAt"]))
-							if str(mm["direction"]) == "out" && at.After(lastAt) {
-								item["answeredAfter"] = map[string]any{"at": str(mm["sentAt"]), "from": authorOf(mm, p, c.Contact.ID)}
-								break
-							}
-						}
-					}
-				}
-				items = append(items, item)
-			}
-			out := map[string]any{"total": len(rows), "returned": len(items), "conversations": items,
-				"howToUse": "Avise a pessoa e depois chame mark_replies (status notified ou resolved). Quando o cliente escrever de novo, a conversa volta para esta lista."}
-			if in.IncludeHandled {
-				hs, err := m.svc.handledReplies(ctx, key, ids)
+			deadline := time.Now().Add(wait)
+			tick := time.NewTicker(waitPoll)
+			defer tick.Stop()
+			for {
+				res, err := listFn(ctx, listIn{IncludeHandled: in.IncludeHandled, Since: in.Since, Limit: in.Limit})
 				if err != nil {
 					return nil, err
 				}
-				handled := make([]any, 0, len(hs))
-				for _, h := range hs {
-					c := byID[h.ConversationID]
-					handled = append(handled, map[string]any{"conversationId": h.ConversationID, "contact": contactView(c.Contact, nil), "status": h.Status, "note": h.Note, "updatedAt": h.UpdatedAt})
+				if out, ok := res.(map[string]any); ok {
+					if n, _ := out["total"].(int); n > 0 {
+						out["timedOut"] = false
+						return out, nil
+					}
+					if !time.Now().Before(deadline) {
+						out["timedOut"] = true
+						return out, nil
+					}
 				}
-				out["handled"] = handled
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-tick.C:
+				}
 			}
-			return out, nil
 		})
 
 	type markItem struct {

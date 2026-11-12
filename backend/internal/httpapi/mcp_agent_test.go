@@ -3,6 +3,7 @@ package httpapi
 import (
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/vyctinho77/chathm/backend/internal/aiaccess"
 )
@@ -235,5 +236,43 @@ func TestPendingRepliesWorkflow(t *testing.T) {
 	// Só marcar e listar: a única coisa enviada ao cliente nesse período foi o que a Dani escreveu.
 	if got := len(w.e.wa.Sent()) - sentBefore; got != 1 {
 		t.Fatalf("mensagens enviadas ao cliente = %d (só a da Dani)", got)
+	}
+}
+
+func TestWaitForRepliesReturnsAsSoonAsAReplyArrives(t *testing.T) {
+	w, toks := agentTokens(t)
+	phone := w.receive("Cliente Espera", "Oi")
+	id := mustConv(t, w.dani, "Cliente Espera")["id"].(string)
+	expect(t, w.send(w.dani, id, "Olá!"), 201)
+	if out, _ := w.tool(toks["attend"], "send_as_attendant", map[string]any{"conversation_id": id, "text": "Seu DAS vence dia 20."}); out["ok"] != true {
+		t.Fatalf("envio da IA: %v", out)
+	}
+
+	// Nada pendente: espera o prazo curto e volta vazio, avisando que acabou o tempo.
+	start := time.Now()
+	o, isErr := w.tool(toks["attend"], "wait_for_replies", map[string]any{"timeout_seconds": 1})
+	if isErr || o["timedOut"] != true || o["total"] != float64(0) || time.Since(start) < time.Second {
+		t.Fatalf("sem resposta: %v (%v)", o, time.Since(start))
+	}
+
+	// A resposta chega enquanto o agente espera: volta antes do prazo, sem timedOut.
+	go func() {
+		time.Sleep(1200 * time.Millisecond)
+		w.receiveFrom(phone, "Cliente Espera", "Já paguei, obrigado!")
+	}()
+	start = time.Now()
+	o, isErr = w.tool(toks["attend"], "wait_for_replies", map[string]any{"timeout_seconds": 20})
+	if isErr || o["timedOut"] != false || o["total"] != float64(1) || time.Since(start) > 15*time.Second {
+		t.Fatalf("com resposta: %v (%v)", o, time.Since(start))
+	}
+	// Já pendente: devolve na hora.
+	start = time.Now()
+	if o, _ = w.tool(toks["attend"], "wait_for_replies", map[string]any{"timeout_seconds": 20}); o["total"] != float64(1) || time.Since(start) > 2*time.Second {
+		t.Fatalf("já pendente: %v", o)
+	}
+	// Depois da baixa, volta a esperar.
+	w.tool(toks["attend"], "mark_replies", map[string]any{"items": []map[string]any{{"conversation_id": id, "status": "resolved"}}})
+	if o, _ = w.tool(toks["attend"], "wait_for_replies", map[string]any{"timeout_seconds": 1}); o["timedOut"] != true {
+		t.Fatalf("após baixa: %v", o)
 	}
 }
