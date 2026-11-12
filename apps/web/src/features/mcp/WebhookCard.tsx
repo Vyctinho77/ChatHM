@@ -4,6 +4,7 @@ import { BellRing, KeyRound, Send } from "lucide-react";
 import { Alert, Button, Field, Modal } from "@/components/ui";
 import { api, errorMessage, fieldErrors, get, post } from "@/lib/api";
 import { Skeleton } from "@/components/Skeleton";
+import { InfoTip } from "@/components/InfoTip";
 import { CopyButton, Toggle } from "./AiAccessCard";
 
 type Webhook = {
@@ -65,14 +66,20 @@ export function WebhookCard() {
 
   return (
     <section id="aviso-automatico" className="scroll-mt-6">
-      <h2 className="flex items-center gap-2 text-sm font-semibold">
-        <BellRing className="size-4" aria-hidden /> Aviso automático (webhook)
-      </h2>
-      <p className="mt-2 text-xs leading-relaxed text-muted">
-        Quando o cliente responde a uma mensagem enviada por IA, o ChatHM avisa o endereço abaixo, sem esperar o agente perguntar. O aviso diz <strong className="font-medium">quem
-        respondeu, em qual conversa e fila</strong>; o texto da mensagem não vai (o agente lê pelo MCP, com todas as proteções de privacidade, usando{" "}
-        <code>list_pending_replies</code>).
-      </p>
+      <div className="flex items-center gap-1.5">
+        <h2 className="flex items-center gap-2 text-sm font-semibold">
+          <BellRing className="size-4" aria-hidden /> Aviso automático (webhook)
+        </h2>
+        <InfoTip title="Como funciona o aviso automático">
+          <p>
+            Quando o cliente responde a uma mensagem enviada por IA, o ChatHM avisa o endereço configurado, sem esperar o agente perguntar. O aviso diz <strong>quem respondeu, em qual
+            conversa e fila</strong>; o texto da mensagem não vai (o agente lê pelo MCP, com as proteções de privacidade, usando <code>list_pending_replies</code>).
+          </p>
+          <p><strong>Sem endereço público?</strong> Um app no computador pode chamar <code>wait_for_replies</code> em laço, em vez de usar o webhook.</p>
+          <p><strong>Conferir a assinatura.</strong> Cada aviso é um POST em JSON com o cabeçalho <code>X-ChatHM-Signature: t=&lt;unix&gt;,v1=&lt;hex&gt;</code>. Calcule o HMAC-SHA256 de <code>&lt;t&gt;.&lt;corpo exato&gt;</code> com o segredo e compare com <code>v1</code>; recuse se <code>t</code> for de mais de 5 minutos atrás.</p>
+          <p>Outros cabeçalhos: <code>X-ChatHM-Event</code> (<code>message.received</code> ou <code>webhook.test</code>) e <code>X-ChatHM-Delivery</code> (id, para ignorar repetidos). Responda 2xx para confirmar; senão o ChatHM tenta de novo (10 s, 1 min, 5 min, 30 min e 2 h). Respostas em rajada chegam juntas num só aviso, com a contagem.</p>
+        </InfoTip>
+      </div>
       {settings.data && !settings.data.enabled && <div className="mt-3"><Alert tone="info">O acesso por IA está desligado: nenhum aviso é enviado enquanto ele não for ligado acima.</Alert></div>}
       {w.disabledReason && <div className="mt-3"><Alert>{w.disabledReason}</Alert></div>}
       {error && <div className="mt-3"><Alert>{error}</Alert></div>}
@@ -117,20 +124,6 @@ export function WebhookCard() {
         </div>
       )}
 
-      <details className="mt-4 text-xs leading-relaxed text-muted">
-        <summary className="cursor-pointer text-fg">Como conferir a assinatura no receptor</summary>
-        <div className="mt-2 space-y-2">
-          <p>
-            Cada aviso é um POST em JSON com o cabeçalho <code>X-ChatHM-Signature: t=&lt;unix&gt;,v1=&lt;hex&gt;</code>. Calcule o HMAC-SHA256 do texto{" "}
-            <code>&lt;t&gt;.&lt;corpo exato&gt;</code> com o segredo e compare com <code>v1</code>; recuse se <code>t</code> for de mais de 5 minutos atrás.
-          </p>
-          <p>
-            Outros cabeçalhos: <code>X-ChatHM-Event</code> (<code>message.received</code> ou <code>webhook.test</code>) e <code>X-ChatHM-Delivery</code> (id, para ignorar repetidos). Responda 2xx
-            para confirmar; senão o ChatHM tenta de novo (10 s, 1 min, 5 min, 30 min e 2 h). Respostas em rajada chegam juntas num só aviso, com a contagem.
-          </p>
-        </div>
-      </details>
-
       {secret && <SecretModal secret={secret} onClose={() => setSecret("")} />}
       {confirmRotate && (
         <RotateModal
@@ -172,7 +165,7 @@ function WebhookForm({ webhook: w, onSaved, onError }: { webhook: Webhook; onSav
       }}
       className="mt-3 divide-y divide-line/60"
     >
-      <Toggle checked={enabled} onChange={setEnabled} label="Avisar quando o cliente responder" hint="Desligado, nenhum aviso é enviado e os que estavam esperando são descartados." />
+      <Toggle checked={enabled} onChange={setEnabled} label="Avisar quando o cliente responder" info={{ body: "Desligado, nenhum aviso é enviado e os que estavam esperando são descartados." }} />
       <div className="py-3">
         <Field
           label="Endereço que recebe os avisos"
@@ -181,16 +174,16 @@ function WebhookForm({ webhook: w, onSaved, onError }: { webhook: Webhook; onSav
           placeholder="https://meu-servidor.com.br/chathm"
           value={url}
           error={fields.url}
-          hint="Precisa ser https e público (endereços da rede interna são recusados)."
+          hint="https e público"
           onChange={(e) => setUrl(e.target.value)}
         />
       </div>
-      <Toggle checked={onlyAi} onChange={setOnlyAi} label="Só respostas a mensagens enviadas por IA" hint="Ligado (recomendado): ignora conversas em que nenhuma IA falou. Desligado: avisa toda mensagem de cliente." />
+      <Toggle checked={onlyAi} onChange={setOnlyAi} label="Só respostas a mensagens enviadas por IA" info={{ body: "Ligado (recomendado): ignora conversas em que nenhuma IA falou. Desligado: avisa toda mensagem de cliente." }} />
       <Toggle
         checked={preview}
         onChange={setPreview}
         label="Incluir um trecho da mensagem"
-        hint="Desligado por padrão. Ligado, o aviso leva até 160 caracteres, com senhas, documentos, telefones e e-mails ocultados; o trecho sai do ChatHM para o receptor."
+        info={{ body: "Desligado por padrão. Ligado, o aviso leva até 160 caracteres, com senhas, documentos, telefones e e-mails ocultados; o trecho sai do ChatHM para o receptor." }}
       />
       <div className="flex justify-end gap-2 py-3">
         <Button type="submit" loading={save.isPending} disabled={!dirty || (enabled && !url.trim())}>

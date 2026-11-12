@@ -5,6 +5,7 @@ import { Alert, Button, Field, IconButton } from "@/components/ui";
 import { ProviderLogo } from "@/components/ProviderLogo";
 import { FormattedText } from "@/components/FormattedText";
 import { AiIcon } from "@/components/AiIcon";
+import { InfoTip } from "@/components/InfoTip";
 import { providerLabel } from "@/lib/providers";
 import { Skeleton } from "@/components/Skeleton";
 import { api, del, errorMessage, get, post } from "@/lib/api";
@@ -68,8 +69,10 @@ export function AutomationPage() {
     <div className="h-full overflow-y-auto bg-app">
       <header className="flex flex-wrap items-start justify-between gap-4 border-b border-line px-4 py-4 sm:px-6">
         <div>
-          <h1 className="text-xl font-semibold">Envios automáticos</h1>
-          <p className="mt-1 text-[13px] text-muted">Acompanhe os avisos da IA e defina como cada assunto pode enviar.</p>
+          <div className="flex items-center gap-1.5">
+            <h1 className="text-xl font-semibold">Envios automáticos</h1>
+            <InfoTip title="Envios automáticos">Acompanhe os avisos da IA e defina como cada assunto pode enviar. Horários e regras são sempre aplicados pelo servidor.</InfoTip>
+          </div>
         </div>
         {o && (
           <Button variant={o.paused ? "primary" : "ghost"} loading={pause.isPending} onClick={() => pause.mutate(!o.paused)}>
@@ -196,7 +199,7 @@ function Categories() {
   return (
     <div>
       {error && <Alert>{error}</Alert>}
-      <p className="mb-2 text-xs leading-relaxed text-muted">Libere os assuntos e escolha a autonomia de cada um. Horários e regras continuam sendo aplicados pelo servidor.</p>
+      <div className="mb-1 flex items-center gap-1.5 text-xs text-muted">Assuntos e autonomia<InfoTip title="Assuntos e autonomia">Libere os assuntos e escolha a autonomia de cada um. Horários e regras continuam sendo aplicados pelo servidor.</InfoTip></div>
       {(q.data ?? []).map((c) => <CategoryRow key={c.key + JSON.stringify(c)} c={c} onSave={(n) => save.mutate(n)} busy={save.isPending} />)}
     </div>
   );
@@ -291,15 +294,16 @@ function ControlsForm({ s, onSaved }: { s: Settings; onSaved: () => void }) {
     <form onSubmit={(e) => { e.preventDefault(); setOk(false); save.mutate(); }} className="divide-y divide-line/60">
       {error && <Alert>{error}</Alert>}
       <section className="pb-5">
-        <h3 className="mb-2 flex items-center gap-2 text-[13px] font-medium"><AiIcon className="size-4 text-muted" />Identidade da IA</h3>
-        <p className="mb-5 text-xs leading-relaxed text-muted">Escolha o nome em negrito que o cliente verá nas mensagens enviadas pela IA.</p>
+        <div className="mb-5 flex items-center gap-1.5">
+          <h3 className="flex items-center gap-2 text-[13px] font-medium"><AiIcon className="size-4 text-muted" />Identidade da IA</h3>
+          <InfoTip title="Identidade da IA">Escolha o nome em negrito que o cliente verá nas mensagens enviadas pela IA. Vale para novos avisos automáticos e respostas da IA pelo MCP; mensagens já enviadas mantêm o nome original.</InfoTip>
+        </div>
         <div className="grid gap-5 sm:grid-cols-2 sm:gap-10">
           <div>
             <label className="flex max-w-sm flex-col gap-2">
               <span className="text-[13px] font-medium">Nome nas mensagens</span>
-              <input value={d.signature} maxLength={60} placeholder="Assistente do escritório" aria-describedby="agent-name-hint" onChange={(e) => { setOk(false); setD({ ...d, signature: e.target.value }); }} className={inputClass} />
+              <input value={d.signature} maxLength={60} placeholder="Assistente do escritório" onChange={(e) => { setOk(false); setD({ ...d, signature: e.target.value }); }} className={inputClass} />
             </label>
-            <p id="agent-name-hint" className="mt-2 text-xs leading-relaxed text-muted">Vale para novos avisos automáticos e respostas da IA pelo MCP. Mensagens já enviadas mantêm o nome original.</p>
             <Button type="button" variant="ghost" className="mt-2 -ml-3 text-xs" disabled={!d.signature} onClick={() => { setOk(false); setD({ ...d, signature: "" }); }}>Usar nome padrão</Button>
           </div>
           <div>
@@ -329,22 +333,21 @@ function ControlsForm({ s, onSaved }: { s: Settings; onSaved: () => void }) {
             {num("gapMaxSeconds", "Entre envios · máximo", d.gapMinSeconds, 600, "s")}
             {num("dialogHours", "Após conversa humana", 0, 168, "h")}
           </div>
-          <p className="mt-1 text-xs leading-relaxed text-muted">Avisos esperam esse período após a última conversa com a equipe.</p>
+          <p className="mt-1 flex items-center gap-1 text-xs text-muted">Após conversa humana<InfoTip title="Após conversa humana">Avisos esperam esse período após a última conversa com a equipe.</InfoTip></p>
         </div>
       </section>
       <section className="py-5">
         <label className="flex max-w-lg flex-col gap-2">
-          <span className="text-[13px] font-medium">Links permitidos</span>
+          <span className="flex items-center gap-1.5 text-[13px] font-medium">Links permitidos<InfoTip title="Links permitidos">Domínios autorizados, separados por vírgula. Deixe vazio para bloquear links.</InfoTip></span>
           <input value={domains} onChange={(e) => { setOk(false); setDomains(e.target.value); }} placeholder="meuescritorio.com.br, gov.br" className={inputClass} />
         </label>
-        <p className="mt-2 text-xs text-muted">Domínios autorizados, separados por vírgula. Deixe vazio para bloquear links.</p>
       </section>
       <details className="group py-5">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
-          <span className="text-[13px] font-medium">Dados fixos do escritório <span className="ml-1 text-xs font-normal text-muted">{fields.length || "opcional"}</span></span>
+          <span className="text-[13px] font-medium">Dados fixos do escritório<span className="ml-1 text-xs font-normal text-muted">{fields.length || "opcional"}</span></span>
           <ChevronDown className="size-4 text-muted transition-transform group-open:rotate-180" />
         </summary>
-        <p className="mb-4 mt-2 text-xs leading-relaxed text-muted">Informações que a IA reutiliza, como {"{pix_escritorio}"}. Os valores são definidos por você.</p>
+        <p className="mb-4 mt-2 text-xs text-muted">Ex.: {"{pix_escritorio}"}</p>
         <div className="flex flex-col gap-3">
           {fields.map((f, i) => <div key={f.id} className="flex items-start gap-2">
             <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
@@ -385,7 +388,7 @@ function Documents() {
   return (
     <div>
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <p className="max-w-md text-xs leading-relaxed text-muted">PDFs disponíveis para os avisos. Documentos de um cliente são enviados apenas para ele.</p>
+        <div className="flex items-center gap-1.5 text-xs text-muted">Biblioteca de PDFs<InfoTip title="Biblioteca de PDFs">PDFs disponíveis para os avisos. Documentos de um cliente são enviados apenas para ele.</InfoTip></div>
         {!adding && <Button onClick={() => setAdding(true)}><Plus className="size-3.5" />Adicionar PDF</Button>}
       </div>
       {error && <Alert>{error}</Alert>}
@@ -429,10 +432,7 @@ const fmtDate = (iso: string) => iso.split("-").reverse().join("/");
 function Charges() {
   return (
     <div className="flex flex-col gap-6">
-      <p className="text-xs text-muted">
-        Para cobrar, a IA aponta uma cobrança daqui e o servidor coloca o link de pagamento, o valor e o vencimento reais na mensagem: ela nunca digita nem enxerga o link.
-        Antes de enviar, o sistema confere de novo no gateway; quem já pagou não recebe a cobrança.
-      </p>
+      <div className="flex items-center gap-1.5 text-xs text-muted">Como a cobrança funciona<InfoTip title="Como a cobrança funciona">Para cobrar, a IA aponta uma cobrança daqui e o servidor coloca o link de pagamento, o valor e o vencimento reais na mensagem: ela nunca digita nem enxerga o link. Antes de enviar, o sistema confere de novo no gateway; quem já pagou não recebe a cobrança.</InfoTip></div>
       <GatewayCards />
       <ImportCharges />
       <ChargeList />
