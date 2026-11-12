@@ -72,7 +72,7 @@ export function SettingsPage() {
           <SoundSettings />
         </Card>
 
-        <Card title="Transferências" description="O que acontece com o seu lembrete quando você transfere uma conversa.">
+        <Card title="Transferências" info="O que acontece com o seu lembrete quando você transfere uma conversa. A preferência fica salva neste navegador para a sua conta.">
           <TransferSettings userId={me.user.id} />
         </Card>
 
