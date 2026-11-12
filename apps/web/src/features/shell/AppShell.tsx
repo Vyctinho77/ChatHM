@@ -7,6 +7,7 @@ import type { Me } from "@/features/auth/api";
 import { DEMO } from "@/lib/env";
 import { useRealtime } from "@/features/realtime/useRealtime";
 import { useAppSounds } from "@/lib/sounds";
+import { NoticeHost } from "@/components/NoticeHost";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 
@@ -27,6 +28,7 @@ export function AppShell({ me }: { me: Me }) {
 
   return (
     <div className="flex h-full flex-col bg-app">
+      <NoticeHost />
       {!desktop && <TopBar onOpenMenu={() => setDrawer(true)} />}
 
       <div className="min-h-0 flex-1">

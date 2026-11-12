@@ -9,7 +9,8 @@ vale na hora, sem novo login. Só o administrador muda perfis (Equipe → Pessoa
 |---|:-:|:-:|:-:|
 | Ver conversas das filas das equipes de que participa (e as sem equipe) | ✔ | ✔ | ✔ (todas) |
 | Atender, responder, etiquetar, agenda e lembretes | ✔ | ✔ | ✔ |
-| Transferir / encerrar / adiar o atendimento **de outra pessoa** (que ele já enxerga) | — | ✔ | ✔ |
+| Transferir / encerrar para todos / adiar o atendimento **de outra pessoa** (que ele já enxerga) | — | ✔ | ✔ |
+| Encerrar a **própria parte** de um atendimento em que está (responsável ou participante) | ✔ | ✔ | ✔ |
 | Assumir uma conversa de colega (transferir para si) | — | ✔ | ✔ |
 | Adicionar e remover pessoas **das equipes de que participa** | — | ✔ | ✔ (qualquer equipe) |
 | Criar, renomear e excluir equipes | — | — | ✔ |

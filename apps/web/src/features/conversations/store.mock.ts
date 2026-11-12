@@ -159,7 +159,8 @@ export function useConversationActions() {
       db?.conversations.forEach((c) => patchConversation(c.id, (x) => ({ ...x, unreadCount: 0 })));
       refresh();
     },
-    close(id: string) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- a demonstração tem uma pessoa só: sair e encerrar dão no mesmo
+    async close(id: string, _opts?: { scope?: "all" | "me"; passTo?: string; shareReminder?: boolean }) {
       patchConversation(id, (x) => ({ ...x, status: "closed" }));
       refresh();
     },

@@ -72,15 +72,15 @@ func (s *Service) Close(ctx context.Context, v Viewer, convID string, opts Close
 			status        string
 			assignee      *string
 			segID, teamID *string
-			contact       string
+			ct            Contact
 		)
 		err := tx.QueryRow(ctx, `
 			SELECT c.status, c.assignee_id::text, c.segment_id::text, s.team_id::text,
-			       CASE WHEN ct.kind = 'group' OR ct.name_edited OR ct.whatsapp_saved THEN ct.name ELSE coalesce(nullif(ct.phone, ''), ct.name) END
+			       ct.name, ct.phone, (ct.name_edited OR ct.whatsapp_saved), ct.kind
 			  FROM conversations c
 			  JOIN contacts ct ON ct.id = c.contact_id
 			  LEFT JOIN segments s ON s.id = c.segment_id
-			 WHERE c.id = $3 AND `+forViewer+` FOR UPDATE OF c`, v.ID, v.Admin, convID).Scan(&status, &assignee, &segID, &teamID, &contact)
+			 WHERE c.id = $3 AND `+forViewer+` FOR UPDATE OF c`, v.ID, v.Admin, convID).Scan(&status, &assignee, &segID, &teamID, &ct.Name, &ct.Phone, &ct.Saved, &ct.Kind)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -91,6 +91,7 @@ func (s *Service) Close(ctx context.Context, v Viewer, convID string, opts Close
 			return nil
 		}
 		isAssignee := assignee != nil && *assignee == v.ID
+		contact := contactTitle(ct)
 
 		// Participantes, da que entrou primeiro à última; só as ativas podem continuar o atendimento.
 		rows, err := tx.Query(ctx, `
@@ -223,4 +224,13 @@ func (s *Service) closeTx(ctx context.Context, tx pgx.Tx, v Viewer, convID strin
 		return err
 	}
 	return audit.Record(ctx, tx, audit.Entry{ActorID: v.ID, Action: audit.ConversationClose, TargetType: "conversation", TargetID: convID, Metadata: meta})
+}
+
+// contactTitle: como o cliente aparece nos avisos, igual ao cabeçalho da conversa: grupos e contatos salvos pelo nome, os demais
+// pelo telefone formatado (o nome de perfil do WhatsApp é escolhido pelo próprio cliente).
+func contactTitle(c Contact) string {
+	if c.Kind == "group" || c.Saved || c.Phone == "" {
+		return c.Name
+	}
+	return FormatPhone(c.Phone)
 }

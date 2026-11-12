@@ -5,6 +5,37 @@ import { connectionKey, type Connection } from "@/features/whatsapp/api";
 import { conversationKeys } from "@/features/conversations/store.api";
 import type { Conversation } from "@/features/conversations/types";
 import { reminderKey } from "@/features/conversations/reminders";
+import { clearNotices } from "@/lib/notices";
+
+describe("conversation notices", () => {
+  it("tells the people in the atendimento when someone else closed it for everyone, or handed it over to them", async () => {
+    const qc = new QueryClient();
+    clearNotices();
+    applyRealtimeEvent(qc, { type: "conversation.notice", data: { id: "c1", kind: "closed_for_all", by: "Admin Um", contact: "Mercado Silva" } });
+    applyRealtimeEvent(qc, { type: "conversation.notice", data: { id: "c2", kind: "handed_over", by: "Ana", contact: "Clínica Sol" } });
+    applyRealtimeEvent(qc, { type: "conversation.notice", data: { id: "c2", kind: "handed_over", by: "Ana", contact: "Clínica Sol" } }); // repetido
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const { createElement } = await import("react");
+    const { useNotices } = await import("@/lib/notices");
+    const html = renderToStaticMarkup(createElement(function Probe() { return createElement("div", null, useNotices().map((n) => `${n.text}|${n.link?.to ?? ""}`).join("\n")); }));
+    expect(html).toContain("Admin Um encerrou o atendimento de Mercado Silva para todos.|");
+    expect(html).toContain("Ana passou o atendimento de Clínica Sol para você.|/conversas/c2");
+    expect(html.match(/passou o atendimento/g)).toHaveLength(1);
+    clearNotices();
+    qc.clear();
+  });
+
+  it("falls back to neutral wording without the person or contact name", async () => {
+    const qc = new QueryClient();
+    clearNotices();
+    applyRealtimeEvent(qc, { type: "conversation.notice", data: { id: "c3", kind: "closed_for_all" } });
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const { createElement } = await import("react");
+    const { useNotices } = await import("@/lib/notices");
+    expect(renderToStaticMarkup(createElement(function Probe() { return createElement("div", null, useNotices()[0]?.text); }))).toContain("Alguém encerrou o atendimento para todos.");
+    clearNotices();
+  });
+});
 
 describe("WhatsApp events", () => {
   it("refreshes personal reminders without mixing them into the shared conversation", () => {

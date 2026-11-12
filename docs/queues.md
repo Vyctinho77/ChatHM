@@ -126,8 +126,9 @@ entregue → lida). Contatos que desativam a confirmação de leitura ficam em "
 
 ## Encerrar
 
-Quem pode: o responsável e administradores. Encerra a atribuição, mantém o histórico e libera uma nova conversa
-para a próxima mensagem do cliente. Ação idempotente.
+Para todos: o responsável, gestores e administradores. Encerra a atribuição, mantém o histórico e libera uma nova conversa
+para a próxima mensagem do cliente. Ação idempotente. Quem está no atendimento também pode encerrar só a própria parte, e o
+atendimento continua para quem ficou (ver [participantes](atendimento-participantes.md)).
 
 ## Etiquetas
 
@@ -150,7 +151,7 @@ que veja a conversa aplica e remove. Etiquetas nunca alteram o segmento.
 - **Transferir** (clique direito na conversa ou botão no chat): lista todo o escritório (`GET /people`). Pode transferir o
   responsável, um administrador ou qualquer pessoa se a conversa ainda não tem responsável. A conversa passa a ser só do
   destinatário (e de administradores), como ao assumir.
-- **Encerrar**: o atendimento sai da lista de todos. Se o cliente voltar, abre-se um novo atendimento, classificado de novo:
+- **Encerrar para todos**: o atendimento sai da lista de todos. (**Encerrar minha parte** só tira a conversa de quem pede.) Se o cliente voltar, abre-se um novo atendimento, classificado de novo:
   assuntos da minha equipe caem na fila da equipe (qualquer integrante assume ao responder); outros assuntos aparecem só
   para as outras equipes. O histórico anterior só é visível a quem podia ver aquele atendimento.
 - Filtros da lista: **Minhas** (atribuídas a mim), **Não atribuídos** (sem equipe) e **Todas**.

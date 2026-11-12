@@ -23,6 +23,8 @@ import type { ViewablePdf } from "./PdfViewer";
 // pdf.js é pesado: só é baixado quando alguém abre um PDF.
 const PdfViewer = lazy(() => import("./PdfViewer").then((mod) => ({ default: mod.PdfViewer })));
 import { TransferMenu } from "./TransferMenu";
+import { endHint, endLabel } from "./closeOptions";
+import { useEndFlow } from "./useEndFlow";
 import { useTransferFlow } from "./transferFlow";
 import { DEMO } from "@/lib/env";
 import { AiSuggestions } from "./AiSuggestions";
@@ -225,6 +227,9 @@ export function ChatPanel({
   const lockedByOther = !!c.assignee && !mine && !participating && !closed;
   // O responsável encerra; administradores e gestores também encerram qualquer atendimento que enxergam.
   const canClose = capabilities.close && !closed && (mine || isAdmin);
+  // Encerrar: para todos ou só a própria parte (ver closeOptions e useEndFlow).
+  const endFlow = useEndFlow(c, actions, isAdmin);
+  const { end, canEnd, startEnd } = endFlow;
   const showAttendanceStatus = !lockedByOther && !closed && !c.snoozedUntil;
 
   const canTransfer = !closed && (mine || isAdmin || !c.assignee);
@@ -388,11 +393,29 @@ export function ChatPanel({
               <UsersRound className="size-5" />
             </IconButton>
           )}
-          {canClose && (
-            <IconButton label="Encerrar atendimento" onClick={() => actions.close(c.id)}>
+          {canEnd && (end.actions.length === 1 ? (
+            <IconButton label={end.direct ? "Encerrar atendimento" : endLabel[end.actions[0]!]} onClick={() => startEnd(end.actions[0]!)}>
               <CircleCheck className="size-5" />
             </IconButton>
-          )}
+          ) : (
+            <Menu
+              className="w-72"
+              trigger={({ toggle }) => (
+                <IconButton label="Encerrar atendimento" onClick={toggle}>
+                  <CircleCheck className="size-5" />
+                </IconButton>
+              )}
+            >
+              {(close) => end.actions.map((kind) => (
+                <MenuItem key={kind} icon={<CircleCheck />} onClick={() => (close(), startEnd(kind))}>
+                  <span className="min-w-0">
+                    <span className="block">{endLabel[kind]}</span>
+                    <span className="block text-[11px] font-normal text-muted">{endHint(kind, end.others)}</span>
+                  </span>
+                </MenuItem>
+              ))}
+            </Menu>
+          ))}
           {canClose && (
             <IconButton
               label={c.snoozedUntil ? "Alterar adiamento" : "Adiar atendimento"}
@@ -438,13 +461,15 @@ export function ChatPanel({
                 >
                   Incluir pessoa no atendimento…
                 </MenuItem>
-                <MenuItem
-                  icon={<CircleCheck />}
-                  disabled={!canClose}
-                  onClick={() => (actions.close(c.id), close())}
-                >
-                  Encerrar atendimento
-                </MenuItem>
+                {canEnd ? end.actions.map((kind) => (
+                  <MenuItem key={kind} icon={<CircleCheck />} onClick={() => (close(), startEnd(kind))}>
+                    {end.direct ? "Encerrar atendimento" : endLabel[kind]}
+                  </MenuItem>
+                )) : (
+                  <MenuItem icon={<CircleCheck />} disabled>
+                    Encerrar atendimento
+                  </MenuItem>
+                )}
               </>
             )}
           </Menu>
@@ -719,6 +744,7 @@ export function ChatPanel({
         />
       )}
       {transferFlow.dialog}
+      {endFlow.dialog}
     </section>
   );
 }

@@ -6,6 +6,7 @@ import type { Conversation, Message } from "@/features/conversations/types";
 import { connectionKey, type Connection, type HistoryProgress } from "@/features/whatsapp/api";
 import { reminderKey } from "@/features/conversations/reminders";
 import { applyInternalEvent } from "@/features/internal/api";
+import { pushNotice } from "@/lib/notices";
 import { applyTyping, clearTyping, type TypingUpdate } from "@/features/conversations/typing";
 import { playIncomingSound } from "@/lib/sounds";
 
@@ -13,6 +14,7 @@ type ServerEvent =
   | { type: "conversation.updated"; data: Conversation }
   | { type: "conversation.removed"; data: { id: string } }
   | { type: "conversation.reminder.updated"; data: { id: string } }
+  | { type: "conversation.notice"; data: { id: string; kind: "closed_for_all" | "handed_over"; by?: string; contact?: string } }
   | { type: "conversation.typing"; data: TypingUpdate }
   | { type: "message.created"; data: Message }
   | { type: "message.updated"; data: Message }
@@ -51,6 +53,15 @@ export function applyRealtimeEvent(qc: QueryClient, ev: ServerEvent | HistoryEve
     case "conversation.reminder.updated":
       void qc.invalidateQueries({ queryKey: reminderKey });
       break;
+    case "conversation.notice": {
+      // Outra pessoa mudou o atendimento em que estou: aviso curto na tela.
+      const { id, kind, by, contact } = ev.data;
+      const who = by || "Alguém";
+      const of = contact ? ` de ${contact}` : "";
+      if (kind === "handed_over") pushNotice({ id: `notice:${kind}:${id}`, text: `${who} passou o atendimento${of} para você.`, link: { to: `/conversas/${id}`, label: "Abrir" } });
+      else pushNotice({ id: `notice:${kind}:${id}`, text: `${who} encerrou o atendimento${of} para todos.` });
+      break;
+    }
     case "conversation.typing":
       // Never retain typing state for conversations outside the current visible list.
       if (qc.getQueryData<Conversation[]>(conversationKeys.list)?.some((c) => c.id === ev.data.conversationId && c.status !== "closed")) applyTyping(ev.data);

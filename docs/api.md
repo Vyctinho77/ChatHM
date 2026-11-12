@@ -166,7 +166,7 @@ Todas as rotas respeitam a visibilidade por equipe ([`queues.md`](queues.md)); o
 | GET | `/conversations/{id}/messages` | — | `200 {messages: Message[]}` (até 300 mais recentes, em ordem cronológica) |
 | POST | `/conversations/{id}/messages` | `{id?: uuid, text}` | `201 Message` (nova) · `200 Message` (repetição) · `409 conversation_taken` · `409 conversation_closed` · `409 id_conflict` · `422` · `503 whatsapp_unavailable` |
 | POST | `/conversations/{id}/read` | — | `204` |
-| POST | `/conversations/{id}/close` | — | `204` (responsável ou admin; idempotente) · `403` |
+| POST | `/conversations/{id}/close` | `{scope?: "all" \| "me", passTo?, shareReminder?}` (opcional; sem corpo = `all`) | `204` (`all`: responsável, gestor ou admin; `me`: responsável ou participante, que sai e passa o atendimento; idempotente) · `403` · `403 not_involved` · `422` |
 | POST | `/conversations/{id}/transfer` | `{userId}` | `204` (responsável, admin ou conversa sem responsável) · `409 conversation_taken` · `409 conversation_closed` · `422` (pessoa inexistente/desativada) |
 | GET | `/people` | — | `200 {people: {id, name, role, teams: string[]}[]}` — usuários ativos (qualquer autenticado; sem e-mail) |
 | PUT | `/conversations/{id}/tags/{tagId}` | — | `204` (idempotente) · `404 tag_not_found` |
@@ -270,6 +270,7 @@ Excluir uma equipe vinculada a segmentos responde `409 team_in_use`.
 ```ts
 { type: "conversation.updated", data: Conversation }   // só para quem pode ver a conversa
 { type: "conversation.removed", data: { id: string } } // perdeu o acesso: remover da lista
+{ type: "conversation.notice",  data: { id, kind: "closed_for_all" | "handed_over", by, contact } } // só para quem está no atendimento
 { type: "message.created",      data: Message }
 { type: "message.updated",      data: Message }        // recibos e falhas de envio
 { type: "whatsapp.status",      data: Omit<Connection, "qr" | "simulator"> }

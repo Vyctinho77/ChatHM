@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/vyctinho77/chathm/backend/internal/conversations"
 )
 
 func (w *world) closeConv(c *client, id string, body any) resp {
@@ -78,7 +80,7 @@ func TestCloseForEveryoneIsUnchangedAndWarnsTheOthers(t *testing.T) {
 		t.Fatalf("status = %s, want closed", status)
 	}
 
-	id, _ := w.attended(t, "Cliente Com Equipe")
+	id, phone := w.attended(t, "Cliente Com Equipe")
 	w.addParticipant(t, w.ana, id, bia)
 	anaWS, biaWS, adminWS := w.ana.websocket(t), w.bia.websocket(t), w.admin.websocket(t)
 	eventually(t, "sockets", func() bool { return w.e.svcs.Hub.Count() == 3 })
@@ -95,7 +97,8 @@ func TestCloseForEveryoneIsUnchangedAndWarnsTheOthers(t *testing.T) {
 	eventually(t, "notices", func() bool { return anaWS.count("conversation.notice") == 1 && biaWS.count("conversation.notice") == 1 })
 	for _, ws := range []*wsClient{anaWS, biaWS} {
 		ev := ws.last("conversation.notice")
-		if ev["kind"] != "closed_for_all" || ev["id"] != id || ev["contact"] == "" || ev["by"] == "" {
+		// O cliente sem nome salvo aparece pelo telefone formatado, como no cabeçalho da conversa.
+		if ev["kind"] != "closed_for_all" || ev["id"] != id || ev["contact"] != conversations.FormatPhone(phone) || ev["by"] == "" {
 			t.Fatalf("notice wrong: %v", ev)
 		}
 	}

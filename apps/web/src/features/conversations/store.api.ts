@@ -109,9 +109,18 @@ export function useConversationActions() {
           .filter((c) => c.unreadCount > 0)
           .forEach((c) => markRead(c.id));
       },
-      close(id: string) {
-        patchConv(id, (x) => ({ ...x, status: "closed" }));
-        post(`/conversations/${id}/close`).catch(resync);
+      /** Encerra para todos (padrão) ou só a parte de quem pede; neste caso a conversa segue para quem ficou. */
+      async close(id: string, opts?: { scope?: "all" | "me"; passTo?: string; shareReminder?: boolean }) {
+        const scope = opts?.scope ?? "all";
+        if (scope === "all") patchConv(id, (x) => ({ ...x, status: "closed" }));
+        try {
+          await post(`/conversations/${id}/close`, { scope, ...(opts?.passTo ? { passTo: opts.passTo } : {}), ...(opts?.shareReminder ? { shareReminder: true } : {}) });
+        } catch (e) {
+          await resync();
+          throw e;
+        }
+        // Só a lista (exact): a chave dela é prefixo da das mensagens, e quem saiu pode já não enxergar a conversa aberta.
+        if (scope === "me") await qc.invalidateQueries({ queryKey: conversationKeys.list, exact: true });
       },
       transfer(id: string, person: { id: string; name: string }, shareReminder = false) {
         patchConv(id, (x) => ({ ...x, status: "in_progress", assignee: { id: person.id, name: person.name } }));
