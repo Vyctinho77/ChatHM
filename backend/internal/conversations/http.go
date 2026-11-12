@@ -289,6 +289,7 @@ func (h *Handler) read(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) snooze(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Until *time.Time `json:"until"`
+		Scope string     `json:"scope"` // "all" (padrão) ou "me"
 	}
 	if !httpx.Decode(w, r, &in) {
 		return
@@ -297,15 +298,22 @@ func (h *Handler) snooze(w http.ResponseWriter, r *http.Request) {
 		httpx.Validation(w, httpx.FieldErrors{"until": "Escolha quando retomar o atendimento."})
 		return
 	}
-	if err := h.svc.Snooze(r.Context(), viewer(r), chi.URLParam(r, "id"), in.Until); err != nil {
+	if err := h.svc.SnoozeFor(r.Context(), viewer(r), chi.URLParam(r, "id"), in.Until, in.Scope); err != nil {
 		writeError(w, r, err)
 		return
 	}
 	httpx.NoContent(w)
 }
 
+// resume: corpo opcional {scope: "all" (padrão) | "me"}.
 func (h *Handler) resume(w http.ResponseWriter, r *http.Request) {
-	if err := h.svc.Snooze(r.Context(), viewer(r), chi.URLParam(r, "id"), nil); err != nil {
+	var in struct {
+		Scope string `json:"scope"`
+	}
+	if r.ContentLength != 0 && !httpx.Decode(w, r, &in) {
+		return
+	}
+	if err := h.svc.SnoozeFor(r.Context(), viewer(r), chi.URLParam(r, "id"), nil, in.Scope); err != nil {
 		writeError(w, r, err)
 		return
 	}

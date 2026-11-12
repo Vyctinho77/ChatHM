@@ -223,6 +223,9 @@ func (s *Service) closeTx(ctx context.Context, tx pgx.Tx, v Viewer, convID strin
 	if _, err := tx.Exec(ctx, `UPDATE conversation_assignments SET ended_at = now(), ended_reason = 'closed' WHERE conversation_id = $1 AND ended_at IS NULL`, convID); err != nil {
 		return err
 	}
+	if err := clearPersonal(ctx, tx, convID); err != nil {
+		return err
+	}
 	return audit.Record(ctx, tx, audit.Entry{ActorID: v.ID, Action: audit.ConversationClose, TargetType: "conversation", TargetID: convID, Metadata: meta})
 }
 

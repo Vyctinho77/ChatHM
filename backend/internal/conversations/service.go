@@ -199,7 +199,7 @@ func (s *Service) publishState(ctx context.Context, convID string, before userSe
 			// Encerrada sai da lista de todos que a viam.
 			s.pub.Publish(EventConversationRemoved, map[string]string{"id": convID}, after.filter())
 		} else {
-			s.pub.Publish(EventConversationUpdated, c, after.filter())
+			s.publishViewers(ctx, c, after)
 		}
 	}
 	if len(before) > 0 {
@@ -361,6 +361,9 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 				if err := audit.Record(ctx, tx, audit.Entry{Action: "conversation.resume", TargetType: "conversation", TargetID: convID, Metadata: map[string]any{"reason": "inbound_message"}}); err != nil {
 					return err
 				}
+			}
+			if err := clearPersonal(ctx, tx, convID); err != nil { // cliente escreveu: volta para quem tinha adiado só para si
+				return err
 			}
 		}
 		if _, err := tx.Exec(ctx, `
@@ -526,6 +529,7 @@ type Conversation struct {
 	Classification string     `json:"classification"`
 	Status         string     `json:"status"`
 	SnoozedUntil   *time.Time `json:"snoozedUntil,omitempty"`
+	SnoozedFor     string     `json:"snoozedFor,omitempty"` // "all" (adiada para todos) ou "me" (só para quem está vendo)
 	Assignee       *Ref       `json:"assignee,omitempty"`
 	Participants   []Ref      `json:"participants"` // outras pessoas incluídas no atendimento
 	UnreadCount    int        `json:"unreadCount"`
@@ -663,6 +667,9 @@ func scanConversation(row pgx.Row) (Conversation, error) {
 	if err != nil {
 		return c, err
 	}
+	if c.SnoozedUntil != nil {
+		c.SnoozedFor = SnoozeAll
+	}
 	c.Participants = []Ref{}
 	_ = json.Unmarshal(parts, &c.Participants)
 	c.Contact.finish(name, phone, waID, kind, avatarVer)
@@ -704,10 +711,11 @@ func (s *Service) fetch(ctx context.Context, db database.DBTX, id string) (Conve
 func (s *Service) List(ctx context.Context, v Viewer) ([]Conversation, error) {
 	// Separate limits keep postponed work from displacing the active queue.
 	visibleIDs := `SELECT c.id FROM conversations c LEFT JOIN segments s ON s.id = c.segment_id
+		LEFT JOIN conversation_user_state us ON us.conversation_id = c.id AND us.user_id = $1::uuid
 		WHERE c.status <> 'closed' AND ` + forViewer
 	rows, err := s.db.Query(ctx, listQuery+` WHERE c.id IN ((`+visibleIDs+`
-		AND c.snoozed_until IS NULL ORDER BY c.last_message_at DESC LIMIT 300) UNION ALL (`+visibleIDs+`
-		AND c.snoozed_until IS NOT NULL ORDER BY c.snoozed_until LIMIT 300))
+		AND coalesce(c.snoozed_until, us.snoozed_until) IS NULL ORDER BY c.last_message_at DESC LIMIT 300) UNION ALL (`+visibleIDs+`
+		AND coalesce(c.snoozed_until, us.snoozed_until) IS NOT NULL ORDER BY coalesce(c.snoozed_until, us.snoozed_until) LIMIT 300))
 		ORDER BY c.last_message_at DESC`, v.ID, v.Admin)
 	if err != nil {
 		return nil, err
@@ -721,7 +729,14 @@ func (s *Service) List(ctx context.Context, v Viewer) ([]Conversation, error) {
 		}
 		out = append(out, c)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	if err := s.personalize(ctx, v.ID, out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // Get devolve a conversa se o viewer puder vê-la; caso contrário, ErrNotFound
@@ -734,7 +749,14 @@ func (s *Service) Get(ctx context.Context, v Viewer, id string) (Conversation, e
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Conversation{}, ErrNotFound
 	}
-	return c, err
+	if err != nil {
+		return c, err
+	}
+	one := []Conversation{c}
+	if err := s.personalize(ctx, v.ID, one); err != nil {
+		return Conversation{}, err
+	}
+	return one[0], nil
 }
 
 // Messages devolve as mensagens mais recentes (até 300) em ordem cronológica. Inclui as de
@@ -793,12 +815,13 @@ func (s *Service) MarkRead(ctx context.Context, v Viewer, id string) error {
 	if _, err := s.Get(ctx, v, id); err != nil {
 		return err
 	}
-	tag, err := s.db.Exec(ctx, `UPDATE conversations SET unread_count = 0 WHERE id = $1 AND unread_count > 0`, id)
+	// Individual: só esta pessoa deixa de ver a conversa como não lida; as demais continuam com o contador delas.
+	changed, err := s.markReadFor(ctx, id, v.ID)
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() > 0 {
-		s.publishState(ctx, id, nil)
+	if changed {
+		s.publishUser(ctx, id, v.ID)
 	}
 	return nil
 }
@@ -1117,6 +1140,11 @@ func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInpu
 				}
 			}
 			if _, err := tx.Exec(ctx, `UPDATE conversations SET last_message_at = now(), unread_count = 0 WHERE id = $1`, convID); err != nil {
+				return err
+			}
+			// Responder atende a conversa para todos: o "lido até" de cada pessoa avança, e quem respondeu sai do adiamento só seu.
+			if _, err := tx.Exec(ctx, `UPDATE conversation_user_state SET read_through = `+readThrough+`,
+				snoozed_until = CASE WHEN user_id = $2 THEN NULL ELSE snoozed_until END WHERE conversation_id = $1`, convID, v.ID); err != nil {
 				return err
 			}
 			created = true
