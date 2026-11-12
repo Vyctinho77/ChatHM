@@ -312,8 +312,17 @@ func (h *Handler) resume(w http.ResponseWriter, r *http.Request) {
 	httpx.NoContent(w)
 }
 
+// close: corpo opcional {scope: "all" (padrão) | "me", passTo?, shareReminder?}. Sem corpo, encerra para todos.
 func (h *Handler) close(w http.ResponseWriter, r *http.Request) {
-	if err := h.svc.Close(r.Context(), viewer(r), chi.URLParam(r, "id")); err != nil {
+	var in struct {
+		Scope         string `json:"scope"`
+		PassTo        string `json:"passTo"`
+		ShareReminder bool   `json:"shareReminder"`
+	}
+	if r.ContentLength != 0 && !httpx.Decode(w, r, &in) {
+		return
+	}
+	if err := h.svc.Close(r.Context(), viewer(r), chi.URLParam(r, "id"), CloseOptions{Scope: in.Scope, PassTo: in.PassTo, ShareReminder: in.ShareReminder}); err != nil {
 		writeError(w, r, err)
 		return
 	}
@@ -390,6 +399,8 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.Error(w, http.StatusNotFound, "not_found", "Registro não encontrado.")
 	case errors.Is(err, ErrClosed):
 		httpx.Error(w, http.StatusConflict, "conversation_closed", "Este atendimento está encerrado. Aguarde uma nova mensagem do cliente.")
+	case errors.Is(err, ErrNotInvolved):
+		httpx.Error(w, http.StatusForbidden, "not_involved", "Você não está neste atendimento. Para encerrá-lo, use \"Encerrar para todos\".")
 	case errors.Is(err, ErrForbidden):
 		httpx.Error(w, http.StatusForbidden, "forbidden", "Somente o responsável pelo atendimento pode fazer isso.")
 	case errors.Is(err, ErrUnavailable):

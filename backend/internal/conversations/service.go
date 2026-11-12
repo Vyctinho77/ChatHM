@@ -1268,45 +1268,6 @@ func (s *Service) currentAssignee(ctx context.Context, convID string) string {
 // ---------------------------------------------------------------------------
 // Encerrar e etiquetas
 
-// Close encerra o atendimento. Quem pode: o responsável e administradores.
-func (s *Service) Close(ctx context.Context, v Viewer, convID string) error {
-	if !httpx.ValidUUID(convID) {
-		return ErrNotFound
-	}
-	err := database.InTx(ctx, s.db, func(tx pgx.Tx) error {
-		var status string
-		var assignee *string
-		err := tx.QueryRow(ctx, `
-			SELECT c.status, c.assignee_id FROM conversations c LEFT JOIN segments s ON s.id = c.segment_id
-			 WHERE c.id = $3 AND `+forViewer+` FOR UPDATE OF c`, v.ID, v.Admin, convID).Scan(&status, &assignee)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrNotFound
-		}
-		if err != nil {
-			return err
-		}
-		if status == "closed" {
-			return nil
-		}
-		if !v.CanSupervise() && (assignee == nil || *assignee != v.ID) {
-			return ErrForbidden
-		}
-		if _, err := tx.Exec(ctx, `UPDATE conversations SET status = 'closed', closed_at = now(), snoozed_until = NULL, snoozed_by = NULL WHERE id = $1`, convID); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `UPDATE conversation_assignments SET ended_at = now(), ended_reason = 'closed'
-			WHERE conversation_id = $1 AND ended_at IS NULL`, convID); err != nil {
-			return err
-		}
-		return audit.Record(ctx, tx, audit.Entry{ActorID: v.ID, Action: audit.ConversationClose, TargetType: "conversation", TargetID: convID})
-	})
-	if err != nil {
-		return err
-	}
-	s.publishState(ctx, convID, nil) // encerrada: sai da lista de quem a via (ver publishState)
-	return nil
-}
-
 // Transfer passa o atendimento para outra pessoa do escritório (mesmo de outra equipe).
 //
 // Quem pode: o responsável atual, um administrador ou, se a conversa ainda não tem
@@ -1372,9 +1333,7 @@ func (s *Service) Transfer(ctx context.Context, v Viewer, convID, targetID strin
 		// transfere a conversa de outra pessoa nunca lê nem repassa o lembrete dela.
 		var note, noteColor *string
 		if shareReminder && assignee != nil && *assignee == v.ID {
-			err := tx.QueryRow(ctx, `SELECT text, color FROM conversation_reminders WHERE user_id = $1 AND conversation_id = $2`,
-				v.ID, convID).Scan(&note, &noteColor)
-			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			if note, noteColor, err = readReminder(ctx, tx, v.ID, convID); err != nil {
 				return err
 			}
 		}
@@ -1395,14 +1354,8 @@ func (s *Service) Transfer(ctx context.Context, v Viewer, convID, targetID strin
 			convID, targetID, teamID, segID, note, noteColor, handoverBy); err != nil {
 			return err
 		}
-		if note != nil {
-			// Substitui qualquer lembrete antigo de quem recebe nesta conversa; a cópia de quem transferiu é mantida.
-			if _, err := tx.Exec(ctx, `INSERT INTO conversation_reminders (user_id, conversation_id, text, color)
-				VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, conversation_id)
-				DO UPDATE SET text = EXCLUDED.text, color = EXCLUDED.color, updated_at = now()`,
-				targetID, convID, note, noteColor); err != nil {
-				return err
-			}
+		if err := copyReminder(ctx, tx, targetID, convID, note, noteColor); err != nil {
+			return err
 		}
 		changed = true
 		return audit.Record(ctx, tx, audit.Entry{ActorID: v.ID, Action: audit.ConversationTransfer, TargetType: "conversation", TargetID: convID,

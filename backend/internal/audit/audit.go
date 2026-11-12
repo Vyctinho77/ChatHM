@@ -51,6 +51,8 @@ const (
 	ConversationClaim    = "conversation.claim"
 	ConversationClose    = "conversation.close"
 	ConversationTransfer = "conversation.transfer"
+	// A pessoa saiu do atendimento (encerrou a própria parte); a conversa continua com quem ficou.
+	ConversationLeave = "conversation.leave"
 	// Gestor/administrador apagou a mensagem de outra pessoa no chat interno (o conteúdo não é registrado).
 	InternalMessageModerate = "internal_chat.message.moderate"
 )

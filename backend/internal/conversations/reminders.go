@@ -121,3 +121,24 @@ func (h *Handler) deleteReminder(w http.ResponseWriter, r *http.Request) {
 	}
 	httpx.NoContent(w)
 }
+
+// readReminder lê o lembrete pessoal de quem entrega a conversa (nil, nil quando não há).
+func readReminder(ctx context.Context, tx pgx.Tx, userID, convID string) (note, color *string, err error) {
+	err = tx.QueryRow(ctx, `SELECT text, color FROM conversation_reminders WHERE user_id = $1 AND conversation_id = $2`, userID, convID).Scan(&note, &color)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil, nil
+	}
+	return note, color, err
+}
+
+// copyReminder dá a quem recebe a conversa uma cópia do lembrete (sem nada a copiar, não faz nada). Substitui qualquer
+// lembrete antigo dela nesta conversa; o original de quem entregou é mantido.
+func copyReminder(ctx context.Context, tx pgx.Tx, toUser, convID string, note, color *string) error {
+	if note == nil {
+		return nil
+	}
+	_, err := tx.Exec(ctx, `INSERT INTO conversation_reminders (user_id, conversation_id, text, color)
+		VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, conversation_id)
+		DO UPDATE SET text = EXCLUDED.text, color = EXCLUDED.color, updated_at = now()`, toUser, convID, note, color)
+	return err
+}
