@@ -494,12 +494,12 @@ export async function demoApi(method: string, path: string, body: Body = {}): Pr
 }
 
 // --- Chat interno (demonstração): uma sala em memória, só texto -------------
-type DChatMsg = { id: string; seq: number; authorId: string; text: string; sentAt: string; editedAt?: string; deleted?: boolean; quotedId?: string };
+type DChatMsg = { id: string; seq: number; authorId: string; text: string; sentAt: string; editedAt?: string; deleted?: boolean; quotedId?: string; mentions?: { id: string; name: string }[] };
 const chatRoom = { id: uid(), name: "Escritório" };
 const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
 const chatMsgs: DChatMsg[] = [
   { id: uid(), seq: 1, authorId: users[1]!.id, text: "Bom dia! Alguém sabe até quando vai o prazo da DCTF deste mês?", sentAt: minutesAgo(42) },
-  { id: uid(), seq: 2, authorId: users[2]!.id, text: "Dia 15, segundo o calendário da Receita.", sentAt: minutesAgo(38) },
+  { id: uid(), seq: 2, authorId: users[2]!.id, text: "@Admin HM, o prazo da DCTF é dia 15, segundo o calendário da Receita.", sentAt: minutesAgo(38), mentions: [{ id: users[0]!.id, name: "Admin HM" }] },
   { id: uid(), seq: 3, authorId: users[0]!.id, text: "Isso mesmo. Se algum cliente ainda não mandou os documentos, avisem hoje.", sentAt: minutesAgo(35) },
 ];
 const chatRead = new Map<string, number>();
@@ -512,6 +512,7 @@ function chatView(m: DChatMsg) {
   return {
     ...base,
     text: m.text,
+    ...(m.mentions?.length ? { mentions: m.mentions } : {}),
     ...(m.editedAt ? { editedAt: m.editedAt } : {}),
     ...(q ? { quoted: q.deleted ? { id: q.id, deleted: true } : { id: q.id, authorId: q.authorId, author: users.find((x) => x.id === q.authorId)?.name ?? "?", kind: "text", text: q.text } } : {}),
   };
@@ -520,7 +521,8 @@ function chatRoomFor(u: U) {
   // Quem entra começa lendo o que já existia; na demonstração as duas últimas mensagens ficam por ler para mostrar o selo.
   if (!chatRead.has(u.id)) chatRead.set(u.id, Math.max(0, chatMsgs.length - 2));
   const lastReadSeq = chatRead.get(u.id)!;
-  return { ...chatRoom, lastReadSeq, lastSeq: chatMsgs.at(-1)?.seq ?? 0, unread: chatMsgs.filter((m) => !m.deleted && m.authorId !== u.id && m.seq > lastReadSeq).length };
+  const unread = chatMsgs.filter((m) => !m.deleted && m.authorId !== u.id && m.seq > lastReadSeq);
+  return { ...chatRoom, lastReadSeq, lastSeq: chatMsgs.at(-1)?.seq ?? 0, unread: unread.length, mentions: unread.filter((m) => m.mentions?.some((x) => x.id === u.id)).length };
 }
 function demoInternalChat(method: string, seg: string[], body: Body | FormData) {
   const u = requireSession();
@@ -542,7 +544,9 @@ function demoInternalChat(method: string, seg: string[], body: Body | FormData) 
       if (!text || [...text].length > 4000) throw invalid({ text: "Digite uma mensagem de até 4000 caracteres." });
       const old = chatMsgs.find((x) => x.id === b.id);
       if (old) return chatView(old);
-      const m: DChatMsg = { id: String(b.id || uid()), seq: (chatMsgs.at(-1)?.seq ?? 0) + 1, authorId: u.id, text, sentAt: now(), quotedId: b.replyTo ? String(b.replyTo) : undefined };
+      const mentions = (Array.isArray(b.mentions) ? (b.mentions as { id: string; name: string }[]) : [])
+        .filter((x) => x.id !== u.id && users.some((p) => p.id === x.id && p.name === x.name) && text.includes(`@${x.name}`));
+      const m: DChatMsg = { id: String(b.id || uid()), seq: (chatMsgs.at(-1)?.seq ?? 0) + 1, authorId: u.id, text, sentAt: now(), quotedId: b.replyTo ? String(b.replyTo) : undefined, ...(mentions.length ? { mentions } : {}) };
       chatMsgs.push(m);
       return chatView(m);
     }
@@ -553,6 +557,7 @@ function demoInternalChat(method: string, seg: string[], body: Body | FormData) 
       if (!text) throw invalid({ text: "Digite uma mensagem de até 4000 caracteres." });
       m.text = text;
       m.editedAt = now();
+      m.mentions = (Array.isArray(b.mentions) ? (b.mentions as { id: string; name: string }[]) : []).filter((x) => x.id !== u.id && users.some((p) => p.id === x.id && p.name === x.name) && text.includes(`@${x.name}`));
       return chatView(m);
     }
     case "DELETE messages/:id": {

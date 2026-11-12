@@ -2,10 +2,13 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { meKey, useMe, type Me } from "@/features/auth/api";
 import { api, del, get, isRejection, patch, post } from "@/lib/api";
+import type { Conversation } from "@/features/conversations/types";
 import { pendingFiles, type OutgoingDraft, buildOutgoing } from "@/features/conversations/store.types";
+import type { MentionRef } from "@/features/conversations/mentions";
+import { INTERNAL_SOUND_CONVERSATION, getInternalChatSound, playIncomingSound } from "@/lib/sounds";
 import type { Message, Quoted } from "@/features/conversations/types";
 
-export type InternalRoom = { id: string; name: string; unread: number; lastReadSeq: number; lastSeq: number };
+export type InternalRoom = { id: string; name: string; unread: number; mentions: number; lastReadSeq: number; lastSeq: number };
 /** `seq` é a ordem no servidor (ausente nas mensagens ainda não confirmadas). */
 export type InternalMessage = Message & { seq?: number };
 export type Page = { messages: InternalMessage[]; hasMore: boolean };
@@ -61,9 +64,48 @@ export function useInternalRoom() {
   });
 }
 
-/** Mensagens não lidas (selo da aba). */
-export function useInternalUnread() {
-  return useInternalRoom().data?.unread ?? 0;
+/** Mensagens não lidas e quantas delas mencionam a pessoa (selo da aba). */
+export function useInternalCounts() {
+  const room = useInternalRoom().data;
+  return { unread: room?.unread ?? 0, mentions: room?.mentions ?? 0 };
+}
+
+/** Os dados que o cartão de uma conversa compartilhada mostra; só existem para quem pode ver a conversa. */
+export type SharedConversation = { id: string; status: Conversation["status"]; assignee?: string; contact: { name: string; phone: string; saved: boolean; kind: string } };
+
+/** Mesmo título da lista de conversas: grupos e contatos salvos pelo nome; os demais pelo telefone. */
+export const contactTitle = (c: SharedConversation["contact"]) => (c.kind === "group" || c.saved ? c.name : c.phone || c.name);
+
+export function useSharedConversation(id: string) {
+  const { data: me } = useMe();
+  const userId = me?.user.id ?? "";
+  return useQuery({
+    queryKey: ["internal-chat", "shared", userId, id] as const,
+    enabled: !!userId,
+    staleTime: 30_000,
+    retry: false, // 404 = sem acesso; repetir não muda nada
+    queryFn: () => get<SharedConversation>(`/internal-chat/shared-conversations/${id}`),
+  });
+}
+
+/** Mensagem do cartão de conversa compartilhada, ainda não confirmada pelo servidor. */
+export function buildSharedConversationMessage(me: Me["user"], roomId: string, sharedConversationId: string, comment: string, quoted?: Quoted): InternalMessage {
+  return {
+    id: crypto.randomUUID(),
+    conversationId: roomId,
+    direction: "out",
+    sentAt: new Date().toISOString(),
+    status: "pending",
+    authorName: me.name,
+    authorId: me.id,
+    authorRole: me.role,
+    group: true,
+    noReceipts: true,
+    kind: "conversation",
+    sharedConversationId,
+    ...(comment.trim() ? { caption: comment.trim() } : {}),
+    ...(quoted ? { quoted } : {}),
+  } as InternalMessage;
 }
 
 export function useInternalMessages() {
@@ -127,7 +169,9 @@ export function useSendInternal() {
       const path = "/internal-chat/messages";
       switch (msg.kind) {
         case "text":
-          return post<Raw>(path, { id: msg.id, text: msg.text, replyTo: msg.quoted?.id });
+          return post<Raw>(path, { id: msg.id, text: msg.text, replyTo: msg.quoted?.id, mentions: msg.mentions ?? [] });
+        case "conversation":
+          return post<Raw>(path, { id: msg.id, kind: "conversation", sharedConversationId: msg.sharedConversationId, text: msg.caption ?? "", replyTo: msg.quoted?.id });
         case "location":
           return post<Raw>(path, { id: msg.id, kind: "location", lat: msg.lat, lng: msg.lng, name: msg.name ?? "", address: msg.address ?? "" });
         case "image":
@@ -177,7 +221,7 @@ export function useEditInternal() {
   const { data: me } = useMe();
   const userId = me?.user.id ?? "";
   return useMutation({
-    mutationFn: ({ id, text }: { id: string; text: string }) => patch<Raw>(`/internal-chat/messages/${id}`, { text }),
+    mutationFn: ({ id, text, mentions }: { id: string; text: string; mentions?: MentionRef[] }) => patch<Raw>(`/internal-chat/messages/${id}`, { text, mentions: mentions ?? [] }),
     onSuccess: (raw) => qc.setQueryData<Page>(messagesKey(userId), (old) => upsertMessage(old, fromServer(raw, userId))),
   });
 }
@@ -220,20 +264,25 @@ export function applyInternalEvent(qc: QueryClient, ev: { type: string; data: un
       qc.setQueryData<Page>(messagesKey(meId), (old) => upsertMessage(old, m));
       // Mensagem de outra pessoa: sobe o selo. Quem está com o chat aberto e no fim da conversa a marca como lida em seguida.
       if (m.authorId !== meId) {
-        qc.setQueryData<InternalRoom>(roomKey(meId), (old) => old && { ...old, unread: old.unread + 1, lastSeq: Math.max(old.lastSeq, m.seq ?? 0) });
+        const mentionsMe = !!m.mentions?.some((x) => x.id === meId);
+        qc.setQueryData<InternalRoom>(roomKey(meId), (old) => old && { ...old, unread: old.unread + 1, mentions: old.mentions + (mentionsMe ? 1 : 0), lastSeq: Math.max(old.lastSeq, m.seq ?? 0) });
+        // Som: só quando me mencionam (padrão), a cada mensagem ou nunca, conforme a preferência.
+        const mode = getInternalChatSound();
+        if (mode === "all" || (mode === "mentions" && mentionsMe)) void playIncomingSound({ id: m.id, conversationId: INTERNAL_SOUND_CONVERSATION, direction: "in", sentAt: m.sentAt });
       }
       break;
     }
     case "internal.message.updated": {
       const m = fromServer(ev.data as Raw, meId);
       qc.setQueryData<Page>(messagesKey(meId), (old) => upsertMessage(old, m));
-      // Uma mensagem apagada pode ter sido uma não lida: o servidor refaz a conta.
-      if (m.deleted) void qc.invalidateQueries({ queryKey: roomKey(meId) });
+      // Apagar, ou editar para citar (ou deixar de citar) alguém, muda a conta de não lidas e de menções de quem não é a
+      // autora, e o evento não diz quem deixou de ser citado: o servidor refaz a conta. São eventos raros.
+      void qc.invalidateQueries({ queryKey: roomKey(meId) });
       break;
     }
     case "internal.read": {
-      const d = ev.data as { unread: number; lastReadSeq: number };
-      qc.setQueryData<InternalRoom>(roomKey(meId), (old) => old && { ...old, unread: d.unread, lastReadSeq: d.lastReadSeq });
+      const d = ev.data as { unread: number; mentions?: number; lastReadSeq: number };
+      qc.setQueryData<InternalRoom>(roomKey(meId), (old) => old && { ...old, unread: d.unread, mentions: d.mentions ?? 0, lastReadSeq: d.lastReadSeq });
       break;
     }
   }

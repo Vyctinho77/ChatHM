@@ -40,6 +40,7 @@ type Base = {
   authorId?: string; // identidade estável de quem escreveu
   authorRole?: "admin" | "manager" | "agent"; // chat interno: perfil de quem escreveu
   noReceipts?: boolean; // chat interno: sem tiques de entrega/leitura
+  mentions?: { id: string; name: string }[]; // chat interno: pessoas citadas com @
   automated?: boolean; // enviada pela IA (envio automático aprovado)
   aiProvider?: string; // claude | chatgpt | grok | gemini | other
   aiMode?: string; // attend: a IA atendeu como um atendente
@@ -63,6 +64,7 @@ export type Message = Base &
     | { kind: "sticker"; url?: string; width?: number; height?: number; animated?: boolean }
     | { kind: "location"; lat: number; lng: number; name?: string; address?: string; thumb?: string }
     | { kind: "unsupported"; label: string; text?: string }
+    | { kind: "conversation"; sharedConversationId: string; caption?: string } // chat interno: cartão de uma conversa de cliente
   );
 
 export type Contact = {

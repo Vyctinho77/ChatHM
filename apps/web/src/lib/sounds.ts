@@ -16,8 +16,13 @@ export const notificationTones = {
   hypnotic: { label: "Hipnótico", url: hypnoticURL },
 } as const;
 export type NotificationTone = keyof typeof notificationTones;
-export type SoundPreferences = { messages: boolean; notifications: boolean; tone: NotificationTone; volume: number };
-const defaults: SoundPreferences = { messages: true, notifications: true, tone: "default", volume: 0.8 };
+/** Quando o chat interno toca som: só quando a pessoa é mencionada (padrão), a cada mensagem ou nunca. */
+export type InternalChatSound = "mentions" | "all" | "off";
+export const internalChatSounds: Record<InternalChatSound, string> = { mentions: "Só quando me mencionarem", all: "Todas as mensagens", off: "Nunca" };
+export type SoundPreferences = { messages: boolean; notifications: boolean; tone: NotificationTone; volume: number; internalChat: InternalChatSound };
+const defaults: SoundPreferences = { messages: true, notifications: true, tone: "default", volume: 0.8, internalChat: "mentions" };
+/** Identificador do chat interno para os sons: aberto e em foco toca o som de dentro da conversa; fora dele, a notificação. */
+export const INTERNAL_SOUND_CONVERSATION = "internal-chat";
 let preferences = defaults;
 let userId: string | null = null;
 let activeConversation: string | null = null;
@@ -40,6 +45,7 @@ function normalizePreferences(saved: Partial<SoundPreferences> | null): SoundPre
     notifications: typeof saved?.notifications === "boolean" ? saved.notifications : defaults.notifications,
     tone: saved?.tone && Object.hasOwn(notificationTones, saved.tone) ? saved.tone : defaults.tone,
     volume: typeof saved?.volume === "number" && Number.isFinite(saved.volume) ? Math.max(0, Math.min(1, saved.volume)) : defaults.volume,
+    internalChat: saved?.internalChat && Object.hasOwn(internalChatSounds, saved.internalChat) ? saved.internalChat : defaults.internalChat,
   };
 }
 
@@ -52,6 +58,8 @@ function readPreferences(): SoundPreferences {
 export function useSoundPreferences() {
   return useSyncExternalStore((listener) => { listeners.add(listener); return () => { listeners.delete(listener); }; }, () => preferences, () => defaults);
 }
+
+export const getInternalChatSound = (): InternalChatSound => preferences.internalChat;
 
 export function updateSoundPreferences(change: Partial<SoundPreferences>) {
   if (!userId) return;
@@ -234,5 +242,5 @@ export function setSoundConversation(id: string | null) { activeConversation = i
 export function useAppSounds(id: string) {
   const { pathname } = useLocation();
   useEffect(() => startSoundSession(id), [id]);
-  useEffect(() => { setSoundConversation(/^\/conversas\/([^/]+)\/?$/.exec(pathname)?.[1] ?? null); }, [id, pathname]);
+  useEffect(() => { setSoundConversation(pathname === "/interno" ? INTERNAL_SOUND_CONVERSATION : /^\/conversas\/([^/]+)\/?$/.exec(pathname)?.[1] ?? null); }, [id, pathname]);
 }

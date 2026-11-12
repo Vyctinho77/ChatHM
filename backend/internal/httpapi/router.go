@@ -104,6 +104,7 @@ func NewRouter(d Deps) http.Handler {
 	chatSvc := d.InternalChat
 	if chatSvc == nil {
 		chatSvc = internalchat.NewService(d.DB, d.Hub) // sem armazenamento: anexos indisponíveis
+		chatSvc.SetConversations(d.Conversations)
 	}
 	chatH := internalchat.NewHandler(chatSvc)
 	oauthH := aiaccess.NewOAuthHandler(aiSvc, baseURL)

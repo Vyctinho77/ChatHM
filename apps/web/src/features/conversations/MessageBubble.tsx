@@ -350,10 +350,16 @@ export function MessageBubble({
   contact,
   me,
   renderAuthor,
+  renderText,
+  renderCard,
 }: {
   m: Message;
   /** Como mostrar quem escreveu nas mensagens recebidas de grupo (o chat interno acrescenta o perfil); padrão: só o nome. */
   renderAuthor?: (m: Message) => React.ReactNode;
+  /** Como desenhar o texto das mensagens de texto (o chat interno destaca as @menções); padrão: texto com links. */
+  renderText?: (m: Extract<Message, { kind: "text" }>) => React.ReactNode;
+  /** Corpo do cartão de conversa compartilhada (só existe no chat interno). */
+  renderCard?: (m: Extract<Message, { kind: "conversation" }>) => React.ReactNode;
   /** Contato da conversa: a foto dele aparece nos áudios recebidos. */
   contact?: { name: string; avatarUrl?: string };
   /** Nome de quem está usando o ChatHM (áudios enviados sem atendente identificado). */
@@ -465,8 +471,16 @@ export function MessageBubble({
         {m.kind === "text" && (
           <div className="flex flex-wrap items-end">
             <p className="whitespace-pre-wrap break-words">
-                <RichText text={m.text} term={term} />
+                {renderText ? renderText(m) : <RichText text={m.text} term={term} />}
             </p>
+            <Meta m={m} />
+          </div>
+        )}
+
+        {m.kind === "conversation" && (
+          <div className="flex flex-col gap-1 pt-1">
+            {renderCard?.(m)}
+            {m.caption && <p className="whitespace-pre-wrap break-words pt-1"><RichText text={m.caption} term={term} /></p>}
             <Meta m={m} />
           </div>
         )}

@@ -118,6 +118,7 @@ func NewServices(ctx context.Context, cfg config.Config, db *pgxpool.Pool, opt O
 	}
 	s.InternalChat = internalchat.NewService(db, hub)
 	s.InternalChat.SetMedia(store, mediaSvc)
+	s.InternalChat.SetConversations(convs)
 	s.AI.Attach(convs, hub)
 	s.AI.SetBox(box)               // segredo do webhook de avisos, cifrado com a ENCRYPTION_KEY
 	convs.SetInboundNotifier(s.AI) // avisa o webhook quando o cliente escreve

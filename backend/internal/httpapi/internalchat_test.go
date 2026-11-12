@@ -341,3 +341,211 @@ func TestInternalChatStaysOutOfCustomerData(t *testing.T) {
 		}
 	}
 }
+
+type mentionRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+func chatRoomState(t *testing.T, c *client) (unread, mentions int) {
+	t.Helper()
+	r := c.do("GET", chatPath+"/room", nil)
+	expect(t, r, 200)
+	return int(r.body["unread"].(float64)), int(r.body["mentions"].(float64))
+}
+
+func chatSendMentioning(c *client, text string, mentions ...mentionRef) resp {
+	return c.do("POST", chatPath+"/messages", map[string]any{"id": uuid.NewString(), "text": text, "mentions": mentions})
+}
+
+func TestInternalChatMentions(t *testing.T) {
+	w := setupWorld(t)
+	ana, bia, caio, dani := w.users["ana"], w.users["bia"], w.users["caio"], w.users["dani"]
+	// Primeiro acesso de todos (a conta de não lidas começa aqui).
+	for _, c := range []*client{w.ana, w.bia, w.caio, w.dani} {
+		chatRoomState(t, c)
+	}
+	biaWS := w.bia.websocket(t)
+	eventually(t, "socket", func() bool { return w.e.svcs.Hub.Count() == 1 })
+
+	// Uma menção: aparece na mensagem, conta para a pessoa citada e para mais ninguém.
+	r := chatSendMentioning(w.ana, "@bia pode ver a folha do cliente?", mentionRef{bia, "bia"})
+	expect(t, r, 201)
+	ms, _ := r.body["mentions"].([]any)
+	if len(ms) != 1 || ms[0].(map[string]any)["id"] != bia || ms[0].(map[string]any)["name"] != "bia" {
+		t.Fatalf("mention not stored on the message: %v", r.body["mentions"])
+	}
+	if u, m := chatRoomState(t, w.bia); u != 1 || m != 1 {
+		t.Fatalf("bia unread/mentions = %d/%d, want 1/1", u, m)
+	}
+	if u, m := chatRoomState(t, w.caio); u != 1 || m != 0 {
+		t.Fatalf("caio unread/mentions = %d/%d, want 1/0", u, m)
+	}
+	if u, m := chatRoomState(t, w.ana); u != 0 || m != 0 {
+		t.Fatalf("author counts her own message: %d/%d", u, m)
+	}
+	eventually(t, "mention event", func() bool { return biaWS.count("internal.message.created") == 1 })
+	if ev := biaWS.last("internal.message.created"); len(ev["mentions"].([]any)) != 1 {
+		t.Fatalf("event lost the mentions: %v", ev)
+	}
+
+	// Várias pessoas, repetidas contam uma vez e quem escreve nunca é mencionada.
+	r = chatSendMentioning(w.ana, "@bia @caio @bia @ana alinhando", mentionRef{bia, "bia"}, mentionRef{caio, "caio"}, mentionRef{bia, "bia"}, mentionRef{ana, "ana"})
+	expect(t, r, 201)
+	if ms, _ := r.body["mentions"].([]any); len(ms) != 2 {
+		t.Fatalf("mentions should be bia and caio only: %v", r.body["mentions"])
+	}
+	if _, m := chatRoomState(t, w.bia); m != 2 {
+		t.Fatalf("bia mentions = %d, want 2 (duplicates count once per message)", m)
+	}
+	if _, m := chatRoomState(t, w.caio); m != 1 {
+		t.Fatalf("caio mentions = %d, want 1", m)
+	}
+	var own int
+	if err := w.e.pool.QueryRow(t.Context(), `SELECT count(*) FROM internal_mentions WHERE user_id = $1`, ana).Scan(&own); err != nil || own != 0 {
+		t.Fatalf("self mention stored: %d %v", own, err)
+	}
+
+	// Validação: cada menção é conferida no servidor.
+	bad := []struct {
+		name string
+		r    resp
+	}{
+		{"unknown person", chatSendMentioning(w.ana, "@fulano oi", mentionRef{uuid.NewString(), "fulano"})},
+		{"wrong name", chatSendMentioning(w.ana, "@Bia oi", mentionRef{bia, "Bia"})},
+		{"not in the text", chatSendMentioning(w.ana, "oi sem citar", mentionRef{bia, "bia"})},
+		{"not an id", chatSendMentioning(w.ana, "@bia oi", mentionRef{"nao-e-uuid", "bia"})},
+		{"empty name", chatSendMentioning(w.ana, "@ oi", mentionRef{bia, ""})},
+	}
+	many := make([]mentionRef, 21)
+	text := ""
+	for i := range many {
+		many[i] = mentionRef{bia, "bia"}
+		text += "@bia "
+	}
+	bad = append(bad, struct {
+		name string
+		r    resp
+	}{"too many", chatSendMentioning(w.ana, text, many...)})
+	if _, err := w.e.pool.Exec(t.Context(), `UPDATE users SET is_active = false WHERE id = $1`, dani); err != nil {
+		t.Fatal(err)
+	}
+	bad = append(bad, struct {
+		name string
+		r    resp
+	}{"deactivated", chatSendMentioning(w.ana, "@dani oi", mentionRef{dani, "dani"})})
+	for _, b := range bad {
+		if b.r.status != 422 || b.r.body["error"] == nil {
+			t.Fatalf("%s: status %d, want 422 (%v)", b.name, b.r.status, b.r.body)
+		}
+	}
+
+	// Ler zera as menções só de quem leu, e o evento do próprio usuário traz a conta nova.
+	read := w.bia.do("POST", chatPath+"/read", nil)
+	expect(t, read, 200)
+	if read.body["mentions"] != float64(0) || read.body["unread"] != float64(0) {
+		t.Fatalf("read did not clear: %v", read.body)
+	}
+	eventually(t, "read event", func() bool { return biaWS.count("internal.read") == 1 })
+	if ev := biaWS.last("internal.read"); ev["mentions"] != float64(0) {
+		t.Fatalf("read event without mentions: %v", ev)
+	}
+	if _, m := chatRoomState(t, w.caio); m != 1 {
+		t.Fatal("reading leaked to another person")
+	}
+
+	// Apagar a mensagem tira a menção da conta; editar ajusta quem é citado.
+	first := chatSendMentioning(w.ana, "@caio e @bia, vejam", mentionRef{caio, "caio"}, mentionRef{bia, "bia"})
+	expect(t, first, 201)
+	id := first.body["id"].(string)
+	if _, m := chatRoomState(t, w.caio); m != 2 {
+		t.Fatalf("caio mentions = %d, want 2", m)
+	}
+	edit := w.ana.do("PATCH", chatPath+"/messages/"+id, map[string]any{"text": "@caio, vejam só você", "mentions": []mentionRef{{caio, "caio"}}})
+	expect(t, edit, 200)
+	if ms, _ := edit.body["mentions"].([]any); len(ms) != 1 || ms[0].(map[string]any)["id"] != caio {
+		t.Fatalf("edit did not update the mentions: %v", edit.body["mentions"])
+	}
+	if _, m := chatRoomState(t, w.bia); m != 0 {
+		t.Fatalf("bia still mentioned after the edit: %d", m)
+	}
+	expect(t, w.ana.do("PATCH", chatPath+"/messages/"+id, map[string]any{"text": "@fulano oi", "mentions": []mentionRef{{uuid.NewString(), "fulano"}}}), 422)
+	expect(t, w.ana.do("DELETE", chatPath+"/messages/"+id, nil), 204)
+	if _, m := chatRoomState(t, w.caio); m != 1 {
+		t.Fatalf("caio mentions = %d after delete, want 1", m)
+	}
+	if len(w.e.wa.Sent()) != 0 {
+		t.Fatal("mentions went to WhatsApp")
+	}
+}
+
+func TestInternalChatSharedConversations(t *testing.T) {
+	w := setupWorld(t)
+	w.receive("Cliente Folha Silva", "folha de pagamento")
+	convID := mustConv(t, w.admin, "Cliente Folha Silva")["id"].(string)
+	card := func(c *client, comment string) resp {
+		return c.do("POST", chatPath+"/messages", map[string]any{"id": uuid.NewString(), "kind": "conversation", "sharedConversationId": convID, "text": comment})
+	}
+
+	// Quem enxerga a conversa (da equipe, ou administrador) compartilha; quem não enxerga, não.
+	r := card(w.ana, "Alguém já resolveu algo parecido?")
+	expect(t, r, 201)
+	if r.body["kind"] != "conversation" || r.body["sharedConversationId"] != convID || r.body["caption"] != "Alguém já resolveu algo parecido?" {
+		t.Fatalf("card message wrong: %v", r.body)
+	}
+	expect(t, card(w.admin, ""), 201)
+	for _, c := range []*client{w.bia, w.caio, w.dani} {
+		if r := card(c, "x"); r.status != 422 || r.body["error"] == nil {
+			t.Fatalf("someone without access shared the conversation: %d %v", r.status, r.body)
+		}
+	}
+	expect(t, w.ana.do("POST", chatPath+"/messages", map[string]any{"kind": "conversation", "sharedConversationId": uuid.NewString()}), 422)
+	expect(t, w.ana.do("POST", chatPath+"/messages", map[string]any{"kind": "conversation", "sharedConversationId": "nao-e-uuid"}), 422)
+	expect(t, w.ana.do("POST", chatPath+"/messages", map[string]any{"kind": "conversation"}), 422)
+	expect(t, w.ana.do("POST", chatPath+"/messages", map[string]any{"kind": "conversation", "sharedConversationId": convID, "text": strings.Repeat("a", 1025)}), 422)
+
+	// O contato nunca viaja dentro da mensagem: quem não pode ver a conversa não descobre quem é o cliente.
+	for _, c := range []*client{w.admin, w.ana, w.bia, w.caio, w.dani} {
+		ms, _ := chatMessages(t, c, "")
+		if strings.Contains(fmt.Sprint(ms), "Cliente Folha Silva") {
+			t.Fatal("customer name leaked into the internal chat message")
+		}
+	}
+
+	// Cada pessoa vê o cartão conforme o próprio acesso.
+	path := chatPath + "/shared-conversations/" + convID
+	expect(t, w.e.client().do("GET", path, nil), 401)
+	for _, c := range []*client{w.admin, w.ana, w.ana2} {
+		got := c.do("GET", path, nil)
+		expect(t, got, 200)
+		contact, _ := got.body["contact"].(map[string]any)
+		if contact["name"] != "Cliente Folha Silva" || got.body["status"] != "new" || got.body["id"] != convID {
+			t.Fatalf("card data wrong: %v", got.body)
+		}
+		if !strings.Contains(got.header.Get("Cache-Control"), "no-store") {
+			t.Fatalf("card must not be cached: %v", got.header)
+		}
+	}
+	for _, c := range []*client{w.bia, w.caio, w.dani} {
+		expect(t, c.do("GET", path, nil), 404)
+	}
+	expect(t, w.ana.do("GET", chatPath+"/shared-conversations/"+uuid.NewString(), nil), 404)
+	expect(t, w.ana.do("GET", chatPath+"/shared-conversations/nao-e-uuid", nil), 404)
+
+	// O cartão acompanha a conversa: quem assume aparece, e encerrada continua consultável.
+	before := len(w.e.wa.Sent())
+	expect(t, w.send(w.ana, convID, "Vou verificar"), 201)
+	got := w.ana2.do("GET", path, nil)
+	expect(t, got, 200)
+	if got.body["status"] != "in_progress" || got.body["assignee"] != "ana" {
+		t.Fatalf("card did not follow the conversation: %v", got.body)
+	}
+	expect(t, w.ana.do("POST", "/api/v1/conversations/"+convID+"/close", nil), 204)
+	if got := w.admin.do("GET", path, nil); got.status != 200 || got.body["status"] != "closed" {
+		t.Fatalf("closed conversation card: %d %v", got.status, got.body)
+	}
+	// Compartilhar não envia nada ao cliente (só a resposta de "Vou verificar" saiu).
+	if len(w.e.wa.Sent()) != before+1 {
+		t.Fatal("sharing a conversation sent a WhatsApp message")
+	}
+}

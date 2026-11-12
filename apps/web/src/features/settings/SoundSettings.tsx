@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Play, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui";
-import { notificationTones, previewNotification, updateSoundPreferences, useSoundPreferences, type NotificationTone } from "@/lib/sounds";
+import { internalChatSounds, notificationTones, previewNotification, updateSoundPreferences, useSoundPreferences, type InternalChatSound, type NotificationTone } from "@/lib/sounds";
 
 export function SoundSettings() {
   const preferences = useSoundPreferences();
@@ -15,6 +15,13 @@ export function SoundSettings() {
     <label className="flex cursor-pointer items-start justify-between gap-4 text-sm">
       <span><span className="block font-medium">Sons de notificação</span><span className="mt-1 block text-xs text-muted">Fora da conversa aberta</span></span>
       <input type="checkbox" className="mt-1 size-4 shrink-0" checked={preferences.notifications} onChange={(e) => updateSoundPreferences({ notifications: e.target.checked })} />
+    </label>
+    <label className="flex flex-col gap-2 text-sm font-medium">
+      Som do chat interno
+      <select value={preferences.internalChat} onChange={(e) => updateSoundPreferences({ internalChat: e.target.value as InternalChatSound })} className="h-9 rounded-lg border border-line bg-elevated px-3 text-sm font-normal outline-none focus:border-brand-ink">
+        {Object.entries(internalChatSounds).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+      </select>
+      <span className="text-xs font-normal text-muted">Vale quando o chat interno não está aberto na tela. Também dá para silenciar pelo sino no topo do chat.</span>
     </label>
     <div className="flex flex-wrap items-end gap-3">
       <label className="flex min-w-40 flex-1 flex-col gap-2 text-sm font-medium">

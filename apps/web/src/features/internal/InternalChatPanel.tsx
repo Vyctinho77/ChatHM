@@ -1,9 +1,11 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowDown, ArrowLeft, MessagesSquare } from "lucide-react";
+import { ArrowDown, ArrowLeft, Bell, BellOff, MessagesSquare, Share2 } from "lucide-react";
 import { Alert, IconButton } from "@/components/ui";
 import { ChatSkeleton } from "@/components/Skeleton";
 import { errorMessage, isRejection } from "@/lib/api";
+import { DEMO } from "@/lib/env";
+import { updateSoundPreferences, useSoundPreferences } from "@/lib/sounds";
 import { cn } from "@/lib/cn";
 import { formatDayDivider, formatTime, sameDay } from "@/lib/format";
 import { canSupervise, useMe } from "@/features/auth/api";
@@ -16,14 +18,20 @@ import { MessageBubble } from "@/features/conversations/MessageBubble";
 import { MessageMenu } from "@/features/conversations/MessageActions";
 import type { ViewablePdf } from "@/features/conversations/PdfViewer";
 import { useFileDrop } from "@/features/conversations/useFileDrop";
+import type { MentionPerson } from "@/features/conversations/mentions";
 import type { OutgoingDraft } from "@/features/conversations/store";
 import type { Message, Quoted } from "@/features/conversations/types";
 import { AuthorLine } from "./AuthorLine";
 import { InternalDeleteDialog } from "./DeleteDialog";
 import { MembersDialog } from "./MembersDialog";
+import { MentionText } from "./MentionText";
+import { roleLabel } from "./roles";
+import { ShareConversationDialog } from "./ShareConversationDialog";
+import { SharedConversationCard } from "./SharedConversationCard";
 import { internalCapabilities } from "./caps";
 import {
   buildInternalOutgoing,
+  buildSharedConversationMessage,
   useEditInternal,
   useInternalMessages,
   useInternalRoom,
@@ -42,7 +50,7 @@ const MESSAGE_PAUSE_MS = 30 * 60 * 1000;
 
 /** Prévia usada para citar a mensagem numa resposta. */
 function quotedOf(m: Message): Quoted {
-  const text = m.kind === "text" ? m.text : m.kind === "document" ? (m.caption || m.fileName || "Documento") : m.kind === "image" ? (m.caption ?? "") : "";
+  const text = m.kind === "text" ? m.text : m.kind === "document" ? (m.caption || m.fileName || "Documento") : m.kind === "image" ? (m.caption ?? "") : m.kind === "conversation" ? "Conversa de cliente" : "";
   return { id: m.id, author: m.authorName ?? "", fromMe: m.direction === "out", kind: m.kind, text: text.slice(0, 160) };
 }
 
@@ -82,6 +90,8 @@ export function InternalChatPanel({ onBack }: { onBack?: () => void }) {
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [deleting, setDeleting] = useState<InternalMessage | null>(null);
   const [membersOpen, setMembersOpen] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const sound = useSoundPreferences();
   const [flashId, setFlashId] = useState<string | null>(null);
   const [viewerId, setViewerId] = useState<string | null>(null);
   const [pdfId, setPdfId] = useState<string | null>(null);
@@ -99,6 +109,9 @@ export function InternalChatPanel({ onBack }: { onBack?: () => void }) {
   });
 
   const unread = room?.unread ?? 0;
+  const mentions = room?.mentions ?? 0;
+  // Quem pode ser mencionado: o escritório todo, com perfil e equipes na lista.
+  const mentionPeople = useMemo<MentionPerson[]>(() => (people ?? []).map((p) => ({ id: p.id, name: p.name, subtitle: [roleLabel[p.role], ...p.teams].join(" · ") })), [people]);
   const viewable = useMemo(() => (messages ?? []).filter((m): m is ViewableImage & InternalMessage => m.kind === "image" && !!m.url), [messages]);
   const openPdf = (messages ?? []).find((m): m is ViewablePdf & InternalMessage => m.id === pdfId && m.kind === "document" && !!m.url);
   const menuMsg = menu ? messages?.find((m) => m.id === menu.id) : undefined;
@@ -193,6 +206,14 @@ export function InternalChatPanel({ onBack }: { onBack?: () => void }) {
     );
   }
 
+  function shareConversation(conversationId: string, comment: string) {
+    if (!me) return;
+    const quote = reply && replyConsumed.current !== reply.id ? quotedOf(reply) : undefined;
+    if (reply) replyConsumed.current = reply.id;
+    setReply(null);
+    send.mutate({ msg: buildSharedConversationMessage(me.user, room?.id ?? DRAFT_ID, conversationId, comment, quote) });
+  }
+
   const subtitle = people ? `Escritório · ${people.length} ${people.length === 1 ? "pessoa" : "pessoas"}` : "Escritório";
 
   return (
@@ -218,6 +239,14 @@ export function InternalChatPanel({ onBack }: { onBack?: () => void }) {
             <span className="block truncate text-[11.5px] text-muted">{subtitle}</span>
           </span>
         </button>
+        <IconButton
+          label={sound.internalChat === "off" ? "Ativar os sons do chat interno" : "Silenciar os sons do chat interno"}
+          aria-pressed={sound.internalChat === "off"}
+          onClick={() => updateSoundPreferences({ internalChat: sound.internalChat === "off" ? "mentions" : "off" })}
+          className="ml-auto"
+        >
+          {sound.internalChat === "off" ? <BellOff className="size-5" /> : <Bell className="size-5" />}
+        </IconButton>
       </header>
 
       <div className="relative min-h-0 flex-1">
@@ -280,6 +309,8 @@ export function InternalChatPanel({ onBack }: { onBack?: () => void }) {
                       animateIn={new Date(m.sentAt).getTime() > openedAt}
                       emphasis={m.id === flashId}
                       renderAuthor={renderAuthor}
+                      renderText={(t) => <MentionText m={t} myId={myId} />}
+                      renderCard={(c) => <SharedConversationCard id={c.sharedConversationId} />}
                       onOpenImage={setViewerId}
                       onOpenPdf={setPdfId}
                       onMenu={(msg, x, y) => setMenu({ id: msg.id, x, y })}
@@ -305,7 +336,7 @@ export function InternalChatPanel({ onBack }: { onBack?: () => void }) {
             <motion.button
               key={unread > 0 ? "new" : "jump"}
               type="button"
-              aria-label={unread > 0 ? "Ir para as mensagens novas" : "Ir para a mensagem mais recente"}
+              aria-label={mentions > 0 ? "Ir para a menção" : unread > 0 ? "Ir para as mensagens novas" : "Ir para a mensagem mais recente"}
               onClick={jumpToLatest}
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
@@ -313,12 +344,12 @@ export function InternalChatPanel({ onBack }: { onBack?: () => void }) {
               className={cn(
                 "absolute bottom-4 inline-flex items-center justify-center shadow-lg",
                 unread > 0
-                  ? "left-1/2 -translate-x-1/2 gap-1.5 rounded-full bg-accent px-3.5 py-1.5 text-[13px] font-semibold text-accent-fg hover:brightness-110"
+                  ? cn("left-1/2 -translate-x-1/2 gap-1.5 rounded-full px-3.5 py-1.5 text-[13px] font-semibold hover:brightness-110", mentions > 0 ? "bg-amber-400 text-amber-950" : "bg-accent text-accent-fg")
                   : "right-5 size-10 rounded-full border border-line bg-elevated text-muted hover:text-fg",
               )}
             >
               <ArrowDown className={unread > 0 ? "size-4" : "size-5"} aria-hidden />
-              {unread > 0 && (unread === 1 ? "1 nova mensagem" : `${unread} novas mensagens`)}
+              {unread > 0 && (mentions > 0 ? (mentions === 1 ? "@ 1 menção" : `@ ${mentions} menções`) : unread === 1 ? "1 nova mensagem" : `${unread} novas mensagens`)}
             </motion.button>
           )}
         </AnimatePresence>
@@ -347,11 +378,15 @@ export function InternalChatPanel({ onBack }: { onBack?: () => void }) {
         onCancelReply={() => setReply(null)}
         edit={editing && editing.kind === "text" ? { id: editing.id, text: editing.text } : null}
         onCancelEdit={() => setEditing(null)}
-        onSaveEdit={async (t) => {
+        onSaveEdit={async (t, mentionRefs) => {
           if (!editing) return;
-          await edit.mutateAsync({ id: editing.id, text: t });
+          await edit.mutateAsync({ id: editing.id, text: t, mentions: mentionRefs });
           setEditing(null);
         }}
+        mentionPeople={mentionPeople}
+        myId={myId}
+        // A demonstração não tem as conversas de clientes de verdade para compartilhar.
+        attachExtras={DEMO ? undefined : [{ label: "Conversa de cliente", icon: <Share2 />, onClick: () => setSharing(true) }]}
         incoming={incoming}
         onSend={submit}
       />
@@ -373,6 +408,7 @@ export function InternalChatPanel({ onBack }: { onBack?: () => void }) {
       )}
       {deleting && <InternalDeleteDialog message={deleting} mine={deleting.authorId === myId} onClose={() => setDeleting(null)} />}
       {membersOpen && <MembersDialog myId={myId} onClose={() => setMembersOpen(false)} />}
+      {sharing && <ShareConversationDialog onShare={shareConversation} onClose={() => setSharing(false)} />}
       {viewerId && <ImageViewer images={viewable} startId={viewerId} contactName="Chat interno" onClose={closeViewer} />}
       {openPdf && (
         <Suspense fallback={null}>

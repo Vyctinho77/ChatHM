@@ -38,6 +38,7 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Delete("/internal-chat/messages/{id}", h.delete)
 	r.Post("/internal-chat/read", h.read)
 	r.Get("/internal-chat/attachments/{id}", h.attachment)
+	r.Get("/internal-chat/shared-conversations/{id}", h.sharedConversation)
 }
 
 func writeError(w http.ResponseWriter, r *http.Request, err error) {
@@ -100,15 +101,19 @@ func (h *Handler) send(w http.ResponseWriter, r *http.Request) {
 			Name    string  `json:"name"`
 			Address string  `json:"address"`
 			ReplyTo string  `json:"replyTo"`
+
+			Mentions             []Mention `json:"mentions"`
+			SharedConversationID string    `json:"sharedConversationId"`
 		}
 		if !httpx.Decode(w, r, &body) {
 			return
 		}
-		if body.Kind != "" && body.Kind != "text" && body.Kind != "location" {
+		if body.Kind != "" && body.Kind != "text" && body.Kind != "location" && body.Kind != "conversation" {
 			httpx.Validation(w, httpx.FieldErrors{"kind": "Anexos são enviados como multipart/form-data."})
 			return
 		}
-		in = SendInput{ID: body.ID, Kind: body.Kind, Text: body.Text, Lat: body.Lat, Lng: body.Lng, Name: body.Name, Address: body.Address, ReplyTo: body.ReplyTo}
+		in = SendInput{ID: body.ID, Kind: body.Kind, Text: body.Text, Lat: body.Lat, Lng: body.Lng, Name: body.Name, Address: body.Address, ReplyTo: body.ReplyTo,
+			Mentions: body.Mentions, SharedConversationID: body.SharedConversationID}
 	}
 	m, created, err := h.svc.Send(r.Context(), viewer(r), in)
 	if err != nil {
@@ -214,12 +219,13 @@ func (h *Handler) readUpload(w http.ResponseWriter, r *http.Request) (SendInput,
 
 func (h *Handler) edit(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Text string `json:"text"`
+		Text     string    `json:"text"`
+		Mentions []Mention `json:"mentions"`
 	}
 	if !httpx.Decode(w, r, &in) {
 		return
 	}
-	m, err := h.svc.Edit(r.Context(), viewer(r), chi.URLParam(r, "id"), in.Text)
+	m, err := h.svc.Edit(r.Context(), viewer(r), chi.URLParam(r, "id"), in.Text, in.Mentions)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -277,4 +283,14 @@ func (h *Handler) attachment(w http.ResponseWriter, r *http.Request) {
 	}
 	hd.Set("Content-Disposition", mime.FormatMediaType(disp, map[string]string{"filename": name}))
 	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(a.Data))
+}
+
+// sharedConversation: o que o cartão de uma conversa compartilhada mostra; 404 para quem não pode ver a conversa.
+func (h *Handler) sharedConversation(w http.ResponseWriter, r *http.Request) {
+	c, err := h.svc.SharedConversation(r.Context(), viewer(r), chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, c) // as respostas JSON já saem com Cache-Control: no-store
 }

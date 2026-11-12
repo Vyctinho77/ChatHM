@@ -118,6 +118,27 @@ describe("app sound effects", () => {
     expect(started[0]).toContain("message-receive");
   });
 
+  it("plays the internal chat in-app sound when it is open, and the notification when it is not", async () => {
+    unlock();
+    expect(sounds.getInternalChatSound()).toBe("mentions"); // padrão: só quando me mencionam
+    sounds.setSoundConversation(sounds.INTERNAL_SOUND_CONVERSATION);
+    await sounds.playIncomingSound({ ...incoming("open"), conversationId: sounds.INTERNAL_SOUND_CONVERSATION });
+    expect(started[0]).toContain("message-receive");
+    sounds.setSoundConversation("another-chat");
+    await sounds.playIncomingSound({ ...incoming("closed"), conversationId: sounds.INTERNAL_SOUND_CONVERSATION });
+    expect(started[1]).toContain("notification-default");
+  });
+
+  it("keeps the internal chat sound preference, falling back to mentions for anything unknown", async () => {
+    sounds.updateSoundPreferences({ internalChat: "all" });
+    expect(sounds.getInternalChatSound()).toBe("all");
+    sounds.updateSoundPreferences({ internalChat: "off" });
+    expect(sounds.getInternalChatSound()).toBe("off");
+    sounds.updateSoundPreferences({ internalChat: "whatever" as never });
+    expect(sounds.getInternalChatSound()).toBe("mentions");
+    expect(Object.keys(sounds.internalChatSounds)).toEqual(["mentions", "all", "off"]);
+  });
+
   it("uses the selected notification for another chat and respects separate mute options", async () => {
     unlock(); sounds.setSoundConversation("another-chat");
     sounds.updateSoundPreferences({ tone: "water" });

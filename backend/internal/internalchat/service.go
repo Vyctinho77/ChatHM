@@ -6,6 +6,10 @@
 //   - a pessoa autora edita (até 24 horas) e apaga as próprias mensagens; gestor e administrador apagam as de qualquer
 //     pessoa, e isso é auditado (sem o conteúdo);
 //   - cada pessoa tem um marcador de leitura próprio, que alimenta o selo de não lidas;
+//   - @menção: quem escreve manda a lista de pessoas mencionadas; o servidor confere cada uma (ativa, nome igual ao
+//     escrito e presente no texto) e conta as menções ainda não lidas de cada pessoa;
+//   - conversa de cliente compartilhada: a mensagem guarda só o id da conversa. Quem compartilha precisa poder vê-la, e
+//     cada pessoa só descobre o contato (nome, situação) se também puder ver aquela conversa;
 //   - as mensagens são serializadas no mesmo formato "achatado" do chat principal, para o front reaproveitar a bolha;
 //     o que depende de quem olha (se a mensagem é minha) o cliente decide comparando authorId.
 package internalchat
@@ -27,6 +31,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/vyctinho77/chathm/backend/internal/audit"
+	"github.com/vyctinho77/chathm/backend/internal/conversations"
 	"github.com/vyctinho77/chathm/backend/internal/media"
 	"github.com/vyctinho77/chathm/backend/internal/platform/database"
 	"github.com/vyctinho77/chathm/backend/internal/platform/httpx"
@@ -77,6 +82,7 @@ type Service struct {
 	pub   Publisher
 	store storage.Store
 	media *media.Service
+	convs *conversations.Service
 
 	roomMu sync.Mutex
 	room   *Room
@@ -86,6 +92,9 @@ func NewService(db *pgxpool.Pool, pub Publisher) *Service { return &Service{db: 
 
 // SetMedia liga o armazenamento privado e o processamento de anexos.
 func (s *Service) SetMedia(st storage.Store, m *media.Service) { s.store, s.media = st, m }
+
+// SetConversations liga a checagem de acesso às conversas de clientes (cartões compartilhados).
+func (s *Service) SetConversations(c *conversations.Service) { s.convs = c }
 
 // MaxUpload é o limite de tamanho de um anexo (0 sem o serviço de mídia).
 func (s *Service) MaxUpload() int64 {
@@ -103,6 +112,7 @@ type Room struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Unread      int    `json:"unread"`
+	Mentions    int    `json:"mentions"` // não lidas que mencionam a pessoa
 	LastReadSeq int64  `json:"lastReadSeq"`
 	LastSeq     int64  `json:"lastSeq"`
 }
@@ -138,8 +148,10 @@ func (s *Service) Room(ctx context.Context, v Viewer) (Room, error) {
 		SELECT rd.last_read_seq,
 		       coalesce((SELECT max(seq) FROM internal_messages WHERE room_id = $1), 0),
 		       (SELECT count(*) FROM internal_messages m
-		         WHERE m.room_id = $1 AND m.deleted_at IS NULL AND m.author_id <> $2 AND m.seq > rd.last_read_seq)
-		  FROM internal_reads rd WHERE rd.room_id = $1 AND rd.user_id = $2`, r.ID, v.ID).Scan(&r.LastReadSeq, &r.LastSeq, &r.Unread)
+		         WHERE m.room_id = $1 AND m.deleted_at IS NULL AND m.author_id <> $2 AND m.seq > rd.last_read_seq),
+		       (SELECT count(*) FROM internal_mentions mn JOIN internal_messages m ON m.id = mn.message_id
+		         WHERE m.room_id = $1 AND mn.user_id = $2 AND m.deleted_at IS NULL AND m.author_id <> $2 AND m.seq > rd.last_read_seq)
+		  FROM internal_reads rd WHERE rd.room_id = $1 AND rd.user_id = $2`, r.ID, v.ID).Scan(&r.LastReadSeq, &r.LastSeq, &r.Unread, &r.Mentions)
 	return r, err
 }
 
@@ -190,7 +202,7 @@ func scanMessage(row pgx.Row) (Message, error) {
 	switch kind {
 	case "text":
 		m["text"] = body
-	case "image", "document":
+	case "image", "document", "conversation":
 		if body != "" {
 			m["caption"] = body
 		}
@@ -278,6 +290,68 @@ type SendInput struct {
 	Name, Address string
 
 	ReplyTo string // id da mensagem respondida
+
+	Mentions             []Mention // pessoas mencionadas no texto (@Nome)
+	SharedConversationID string    // kind conversation: conversa de cliente compartilhada (o texto é um comentário)
+}
+
+// Mention é uma pessoa citada com @: Name é o texto escrito depois do @ (precisa ser o nome atual dela).
+type Mention struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+const maxMentions = 20
+
+// resolveMentions confere cada menção: pessoa ativa, nome igual ao escrito e presente no texto como @Nome.
+// Quem escreve nunca é mencionado (ignorado), e pessoas repetidas contam uma vez.
+func (s *Service) resolveMentions(ctx context.Context, authorID, body string, in []Mention) ([]Mention, error) {
+	bad := httpx.FieldErrors{"mentions": "Uma das pessoas mencionadas mudou de nome ou foi desativada. Escreva a menção de novo."}
+	if len(in) > maxMentions {
+		return nil, httpx.FieldErrors{"mentions": fmt.Sprintf("Mencione até %d pessoas por mensagem.", maxMentions)}
+	}
+	seen := map[string]bool{}
+	var out []Mention
+	var ids []string
+	for _, m := range in {
+		if !httpx.ValidUUID(m.ID) {
+			return nil, bad
+		}
+		if m.ID == authorID || seen[m.ID] {
+			continue
+		}
+		if m.Name == "" || !strings.Contains(body, "@"+m.Name) {
+			return nil, bad
+		}
+		seen[m.ID] = true
+		out = append(out, m)
+		ids = append(ids, m.ID)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	rows, err := s.db.Query(ctx, `SELECT id::text, name FROM users WHERE id = ANY($1::uuid[]) AND is_active`, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	names := map[string]string{}
+	for rows.Next() {
+		var id, name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, err
+		}
+		names[id] = name
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for _, m := range out {
+		if names[m.ID] != m.Name {
+			return nil, bad
+		}
+	}
+	return out, nil
 }
 
 // Send grava e distribui uma mensagem. created=false quando repete um envio anterior (idempotente).
@@ -315,6 +389,21 @@ func (s *Service) Send(ctx context.Context, v Viewer, in SendInput) (Message, bo
 		case "document":
 			payload["fileName"] = in.Att.FileName
 		}
+	case "conversation":
+		if utf8.RuneCountInString(text) > maxCaptionRunes {
+			return nil, false, httpx.FieldErrors{"text": fmt.Sprintf("O comentário pode ter até %d caracteres.", maxCaptionRunes)}
+		}
+		if s.convs == nil || !httpx.ValidUUID(in.SharedConversationID) {
+			return nil, false, httpx.FieldErrors{"sharedConversationId": "Escolha uma conversa que você possa ver."}
+		}
+		// Só compartilha quem já enxerga a conversa; não revela se ela existe para quem não enxerga.
+		if _, err := s.convs.Get(ctx, conversations.Viewer{ID: v.ID, Admin: v.Admin, Supervisor: v.Supervisor}, in.SharedConversationID); err != nil {
+			if errors.Is(err, conversations.ErrNotFound) {
+				return nil, false, httpx.FieldErrors{"sharedConversationId": "Escolha uma conversa que você possa ver."}
+			}
+			return nil, false, err
+		}
+		payload["sharedConversationId"] = in.SharedConversationID
 	case "location":
 		if in.Lat < -90 || in.Lat > 90 || in.Lng < -180 || in.Lng > 180 || (in.Lat == 0 && in.Lng == 0) {
 			return nil, false, httpx.FieldErrors{"lat": "Localização inválida."}
@@ -339,6 +428,13 @@ func (s *Service) Send(ctx context.Context, v Viewer, in SendInput) (Message, bo
 	room, err := s.office(ctx)
 	if err != nil {
 		return nil, false, err
+	}
+	mentions, err := s.resolveMentions(ctx, v.ID, text, in.Mentions)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(mentions) > 0 {
+		payload["mentions"] = mentions
 	}
 	pj, err := json.Marshal(payload)
 	if err != nil {
@@ -399,6 +495,11 @@ func (s *Service) Send(ctx context.Context, v Viewer, in SendInput) (Message, bo
 				return err
 			}
 		}
+		for _, m := range mentions {
+			if _, err := tx.Exec(ctx, `INSERT INTO internal_mentions (message_id, user_id) VALUES ($1, $2)`, msgID, m.ID); err != nil {
+				return err
+			}
+		}
 		created = true
 		return nil
 	})
@@ -419,7 +520,7 @@ func (s *Service) Send(ctx context.Context, v Viewer, in SendInput) (Message, bo
 }
 
 // Edit altera o texto de uma mensagem própria (até 24 horas depois do envio).
-func (s *Service) Edit(ctx context.Context, v Viewer, id, text string) (Message, error) {
+func (s *Service) Edit(ctx context.Context, v Viewer, id, text string, mentions []Mention) (Message, error) {
 	text = strings.TrimSpace(text)
 	if text == "" || utf8.RuneCountInString(text) > maxTextRunes {
 		return nil, httpx.FieldErrors{"text": fmt.Sprintf("Digite uma mensagem de até %d caracteres.", maxTextRunes)}
@@ -449,7 +550,38 @@ func (s *Service) Edit(ctx context.Context, v Viewer, id, text string) (Message,
 		return nil, httpx.FieldErrors{"text": "Só dá para editar até 24 horas depois do envio."}
 	}
 	if text != body {
-		if _, err := s.db.Exec(ctx, `UPDATE internal_messages SET body = $2, edited_at = now() WHERE id = $1 AND deleted_at IS NULL`, id, text); err != nil {
+		// As menções acompanham o texto novo: quem deixou de ser citada sai da conta de não lidas, e quem entrou passa a contar.
+		resolved, err := s.resolveMentions(ctx, v.ID, text, mentions)
+		if err != nil {
+			return nil, err
+		}
+		payload := map[string]any{}
+		if len(resolved) > 0 {
+			payload["mentions"] = resolved
+		}
+		pj, err := json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+		err = database.InTx(ctx, s.db, func(tx pgx.Tx) error {
+			tag, err := tx.Exec(ctx, `UPDATE internal_messages SET body = $2, payload = $3, edited_at = now() WHERE id = $1 AND deleted_at IS NULL`, id, text, pj)
+			if err != nil {
+				return err
+			}
+			if tag.RowsAffected() == 0 {
+				return httpx.FieldErrors{"text": "Esta mensagem não pode ser editada."}
+			}
+			if _, err := tx.Exec(ctx, `DELETE FROM internal_mentions WHERE message_id = $1`, id); err != nil {
+				return err
+			}
+			for _, m := range resolved {
+				if _, err := tx.Exec(ctx, `INSERT INTO internal_mentions (message_id, user_id) VALUES ($1, $2)`, id, m.ID); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -528,7 +660,7 @@ func (s *Service) MarkRead(ctx context.Context, v Viewer) (Room, error) {
 	room, err := s.Room(ctx, v)
 	if err == nil && s.pub != nil {
 		uid := v.ID
-		s.pub.Publish(EventRead, map[string]any{"unread": room.Unread, "lastReadSeq": room.LastReadSeq}, func(c *realtime.Client) bool { return c.UserID == uid })
+		s.pub.Publish(EventRead, map[string]any{"unread": room.Unread, "mentions": room.Mentions, "lastReadSeq": room.LastReadSeq}, func(c *realtime.Client) bool { return c.UserID == uid })
 	}
 	return room, err
 }
@@ -561,4 +693,40 @@ func (s *Service) Attachment(ctx context.Context, id string) (AttachmentFile, er
 		return AttachmentFile{}, ErrNotFound
 	}
 	return AttachmentFile{Data: data, MimeType: mimeType, FileName: name, SHA256: sha}, err
+}
+
+// SharedContact é o que o cartão de uma conversa compartilhada mostra do cliente.
+type SharedContact struct {
+	Name  string `json:"name"`
+	Phone string `json:"phone"`
+	Saved bool   `json:"saved"`
+	Kind  string `json:"kind"`
+}
+
+// SharedConversation é a conversa de cliente por trás de um cartão, vista por quem pergunta.
+type SharedConversation struct {
+	ID       string        `json:"id"`
+	Status   string        `json:"status"`
+	Assignee string        `json:"assignee,omitempty"`
+	Contact  SharedContact `json:"contact"`
+}
+
+// SharedConversation devolve os dados do cartão só se a pessoa já pode ver a conversa; senão, ErrNotFound
+// (não revela nem que ela existe). O nome do contato nunca vai dentro da mensagem do chat.
+func (s *Service) SharedConversation(ctx context.Context, v Viewer, id string) (SharedConversation, error) {
+	if s.convs == nil || !httpx.ValidUUID(id) {
+		return SharedConversation{}, ErrNotFound
+	}
+	c, err := s.convs.Get(ctx, conversations.Viewer{ID: v.ID, Admin: v.Admin, Supervisor: v.Supervisor}, id)
+	if errors.Is(err, conversations.ErrNotFound) {
+		return SharedConversation{}, ErrNotFound
+	}
+	if err != nil {
+		return SharedConversation{}, err
+	}
+	out := SharedConversation{ID: c.ID, Status: c.Status, Contact: SharedContact{Name: c.Contact.Name, Phone: c.Contact.Phone, Saved: c.Contact.Saved, Kind: c.Contact.Kind}}
+	if c.Assignee != nil {
+		out.Assignee = c.Assignee.Name
+	}
+	return out, nil
 }

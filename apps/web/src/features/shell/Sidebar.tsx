@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { Me } from "@/features/auth/api";
 import { useConversations } from "@/features/conversations/store";
-import { useInternalUnread } from "@/features/internal/api";
+import { useInternalCounts } from "@/features/internal/api";
 import { stateLabel, useConnection } from "@/features/whatsapp/api";
 import { mainNav, secondaryNav, settingsNav, type NavItem } from "./nav";
 import { UserMenu } from "./UserMenu";
@@ -40,7 +40,7 @@ export function Sidebar({ me, onNavigate }: { me: Me; onNavigate?: () => void })
   const { data } = useConversations();
   const { data: wa } = useConnection();
   const unread = data?.filter((c) => c.unreadCount > 0 && !c.snoozedUntil).length ?? 0;
-  const internalUnread = useInternalUnread();
+  const { unread: internalUnread, mentions: internalMentions } = useInternalCounts();
   const allowed = (i: NavItem) => !i.roles || i.roles.includes(role);
   const whatsappConnected = wa?.state === "connected";
 
@@ -68,8 +68,13 @@ export function Sidebar({ me, onNavigate }: { me: Me; onNavigate?: () => void })
             item={item.to === "/whatsapp" ? { ...item, label: whatsappConnected ? "Conectado" : "Conectar" } : item}
             onNavigate={onNavigate}
             iconClassName={item.to === "/whatsapp" ? whatsappConnected ? "text-brand-ink" : "text-danger" : undefined}
-            description={item.to === "/whatsapp" ? `WhatsApp: ${stateLabel[wa?.state ?? "disconnected"]}` : item.to === "/interno" && internalUnread > 0 ? `Chat interno: ${internalUnread} ${internalUnread === 1 ? "mensagem não lida" : "mensagens não lidas"}` : undefined}
-            extra={item.to === "/interno" && internalUnread > 0 ? <Badge className="bg-unread text-accent-fg">{internalUnread > 99 ? "99+" : internalUnread}</Badge> : undefined}
+            description={item.to === "/whatsapp" ? `WhatsApp: ${stateLabel[wa?.state ?? "disconnected"]}` : item.to === "/interno" && internalUnread > 0 ? `Chat interno: ${internalUnread} ${internalUnread === 1 ? "mensagem não lida" : "mensagens não lidas"}${internalMentions > 0 ? `, ${internalMentions} mencionando você` : ""}` : undefined}
+            extra={item.to === "/interno" && internalUnread > 0 ? (
+              <span className="flex items-center gap-1">
+                {internalMentions > 0 && <Badge className="bg-amber-400 text-amber-950" aria-hidden>@</Badge>}
+                <Badge className="bg-unread text-accent-fg">{internalUnread > 99 ? "99+" : internalUnread}</Badge>
+              </span>
+            ) : undefined}
           />
         ))}
       </div>
