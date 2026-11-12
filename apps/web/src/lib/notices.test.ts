@@ -42,4 +42,17 @@ describe("notices", () => {
     for (const id of ["1", "2", "3", "4", "5", "6"]) pushNotice({ id, text: id });
     expect(await snapshot()).toBe("3,4,5,6");
   });
+
+  it("keeps a sticky notice until the person acts, and tells only when it was closed with the ×", async () => {
+    let closed = 0;
+    pushNotice({ id: "v", text: "Nova versão", sticky: true, action: { label: "Atualizar", run: () => undefined }, onDismiss: () => { closed++; } });
+    vi.advanceTimersByTime(60_000);
+    expect(await snapshot()).toBe("v");
+    dismissNotice("v"); // trocado ou limpo pelo app: não conta como "a pessoa fechou"
+    expect(closed).toBe(0);
+    pushNotice({ id: "v", text: "Nova versão", sticky: true, onDismiss: () => { closed++; } });
+    dismissNotice("v", true);
+    expect(closed).toBe(1);
+    expect(await snapshot()).toBe("");
+  });
 });

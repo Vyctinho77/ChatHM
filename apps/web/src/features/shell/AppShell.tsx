@@ -9,6 +9,7 @@ import { useRealtime } from "@/features/realtime/useRealtime";
 import { useAppSounds } from "@/lib/sounds";
 import { NoticeHost } from "@/components/NoticeHost";
 import { Sidebar } from "./Sidebar";
+import { useVersionCheck } from "./useVersionCheck";
 import { TopBar } from "./TopBar";
 
 export function ResizeHandle() {
@@ -24,6 +25,7 @@ export function AppShell({ me }: { me: Me }) {
   const desktop = useMediaQuery("(min-width: 1024px)");
   const [drawer, setDrawer] = useState(false);
   useRealtime(!DEMO);
+  useVersionCheck(!DEMO);
   const layout = useDefaultLayout({ id: "chathm-shell", storage: safeStorage });
 
   return (

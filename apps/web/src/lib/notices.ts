@@ -1,7 +1,17 @@
 import { useSyncExternalStore } from "react";
 
 // Avisos curtos na tela ("fulano encerrou o atendimento para todos"): somem sozinhos, e dá para fechar antes.
-export type Notice = { id: string; text: string; link?: { to: string; label: string } };
+export type Notice = {
+  id: string;
+  text: string;
+  link?: { to: string; label: string };
+  /** Botão do aviso (por exemplo, "Atualizar"). */
+  action?: { label: string; run: () => void };
+  /** Não some sozinho: fica até a pessoa agir ou fechar. */
+  sticky?: boolean;
+  /** Chamado só quando a pessoa fecha o aviso no "×" (não quando ele some sozinho ou é trocado). */
+  onDismiss?: () => void;
+};
 
 const SHOW_MS = 10_000;
 const MAX = 4;
@@ -10,7 +20,8 @@ const listeners = new Set<() => void>();
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 const notify = () => listeners.forEach((l) => l());
 
-export function dismissNotice(id: string) {
+export function dismissNotice(id: string, byPerson = false) {
+  if (byPerson) notices.find((n) => n.id === id)?.onDismiss?.();
   clearTimeout(timers.get(id));
   timers.delete(id);
   if (notices.some((n) => n.id === id)) {
@@ -23,7 +34,7 @@ export function dismissNotice(id: string) {
 export function pushNotice(n: Notice) {
   if (notices.some((x) => x.id === n.id)) return;
   notices = [...notices, n].slice(-MAX);
-  timers.set(n.id, setTimeout(() => dismissNotice(n.id), SHOW_MS));
+  if (!n.sticky) timers.set(n.id, setTimeout(() => dismissNotice(n.id), SHOW_MS));
   notify();
 }
 

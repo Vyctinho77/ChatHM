@@ -16,6 +16,9 @@ import { FormattedText } from "@/components/FormattedText";
 import { Ticks } from "./Ticks";
 import type { Message, Quoted } from "./types";
 
+/** Os tipos que esta versão sabe desenhar; os outros (de uma versão mais nova do servidor) ganham um aviso em vez de um balão vazio. */
+const KNOWN_KINDS = new Set(["text", "audio", "document", "image", "sticker", "unsupported", "location", "conversation"]);
+
 function Meta({ m }: { m: Message }) {
   return (
     <span
@@ -520,6 +523,15 @@ export function MessageBubble({
               <Ban className="size-3.5" /> {m.label} — ainda não exibido no ChatHM
             </p>
             {m.text && <p className="w-full whitespace-pre-wrap break-words">{m.text}</p>}
+            <Meta m={m} />
+          </div>
+        )}
+
+        {!KNOWN_KINDS.has(m.kind) && (
+          <div className="flex flex-wrap items-end">
+            <p className="flex items-center gap-1.5 italic opacity-80">
+              <Ban className="size-3.5" /> Mensagem de um tipo novo: atualize a página para ver
+            </p>
             <Meta m={m} />
           </div>
         )}
