@@ -23,6 +23,7 @@ const routes: RouteObject[] = [
     children: [
       { index: true, element: <Navigate to="/conversas" replace /> },
       { path: "conversas/:id?", element: <ConversationsPage /> },
+      { path: "interno", element: <ConversationsPage internal /> },
       { path: "filas", element: <QueuesPage /> },
       { path: "filas/palavras/:key", element: <SegmentKeywordsPage /> },
       { path: "agenda", element: <AgendaPage /> },

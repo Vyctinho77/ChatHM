@@ -37,6 +37,9 @@ type Base = {
   readAt?: string; // recibo de leitura (mensagens enviadas)
   playedAt?: string; // o cliente ouviu a mensagem de voz enviada (recibo "ouvido", separado de "lida")
   authorName?: string; // atendente que enviou (ou, em grupos, quem escreveu)
+  authorId?: string; // identidade estável de quem escreveu
+  authorRole?: "admin" | "manager" | "agent"; // chat interno: perfil de quem escreveu
+  noReceipts?: boolean; // chat interno: sem tiques de entrega/leitura
   automated?: boolean; // enviada pela IA (envio automático aprovado)
   aiProvider?: string; // claude | chatgpt | grok | gemini | other
   aiMode?: string; // attend: a IA atendeu como um atendente

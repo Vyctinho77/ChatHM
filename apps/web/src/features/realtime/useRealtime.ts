@@ -5,6 +5,7 @@ import { conversationKeys } from "@/features/conversations/store.api";
 import type { Conversation, Message } from "@/features/conversations/types";
 import { connectionKey, type Connection, type HistoryProgress } from "@/features/whatsapp/api";
 import { reminderKey } from "@/features/conversations/reminders";
+import { applyInternalEvent } from "@/features/internal/api";
 import { applyTyping, clearTyping, type TypingUpdate } from "@/features/conversations/typing";
 import { playIncomingSound } from "@/lib/sounds";
 
@@ -19,7 +20,8 @@ type ServerEvent =
   | { type: "whatsapp.qr"; data: Connection["qr"] };
 // History import progresses independently from the live connection.
 type HistoryEvent = { type: "whatsapp.sync"; data: HistoryProgress } | { type: "contact.avatar"; data: { contactId: string } }
-  | { type: "ai.suggestion"; data: { conversationId: string; id: string } };
+  | { type: "ai.suggestion"; data: { conversationId: string; id: string } }
+  | { type: "internal.message.created" | "internal.message.updated" | "internal.read"; data: unknown };
 
 const sortByLast = (a: Conversation, b: Conversation) =>
   (b.lastMessage?.sentAt ?? "").localeCompare(a.lastMessage?.sentAt ?? "");
@@ -83,6 +85,11 @@ export function applyRealtimeEvent(qc: QueryClient, ev: ServerEvent | HistoryEve
       // Nova foto de perfil: recarrega listas que mostram avatares.
       void qc.invalidateQueries({ queryKey: ["contacts"] });
       void qc.invalidateQueries({ queryKey: conversationKeys.list });
+      break;
+    case "internal.message.created":
+    case "internal.message.updated":
+    case "internal.read":
+      applyInternalEvent(qc, ev);
       break;
     case "whatsapp.sync":
       qc.setQueryData<Connection>(connectionKey, (old) => old ? { ...old, sync: ev.data } : old);

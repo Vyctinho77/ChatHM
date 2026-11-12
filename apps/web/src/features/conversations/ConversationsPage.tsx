@@ -10,6 +10,7 @@ import { ChatPanel } from "./ChatPanel";
 import { ContactPanel } from "./ContactPanel";
 import { ConversationList } from "./ConversationList";
 import { GettingStarted } from "./GettingStarted";
+import { InternalChatPanel } from "@/features/internal/InternalChatPanel";
 import { useConversations } from "./store";
 
 // Painel sobreposto desliza a partir da direita.
@@ -33,7 +34,8 @@ function EmptyChat() {
   );
 }
 
-export function ConversationsPage() {
+/** `internal`: o chat interno ocupa o painel da conversa (a lista de contatos continua ao lado). */
+export function ConversationsPage({ internal = false }: { internal?: boolean }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const { data } = useConversations();
@@ -56,6 +58,7 @@ export function ConversationsPage() {
 
   // Telas pequenas: uma coluna por vez (lista → chat → contato).
   if (!wide) {
+    if (internal) return <InternalChatPanel onBack={() => navigate("/conversas")} />;
     if (!conversation) return <ConversationList selectedId={id} onSelect={select} />;
     return (
       <div className="relative h-full overflow-hidden">
@@ -84,7 +87,9 @@ export function ConversationsPage() {
     );
   }
 
-  const chat = conversation ? (
+  const chat = internal ? (
+    <InternalChatPanel />
+  ) : conversation ? (
     <motion.div
       key={conversation.id}
       className="h-full"

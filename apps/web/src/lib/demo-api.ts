@@ -129,6 +129,7 @@ export async function demoApi(method: string, path: string, body: Body = {}): Pr
   const route = `${method} /${seg.map((s, i) => (i > 0 && /^[0-9a-f-]{36}$/.test(s) ? ":id" : s)).join("/")}`;
   const id = seg[1];
   const sub = seg[3];
+  if (seg[0] === "internal-chat") return demoInternalChat(method, path.split("?")[0]!.split("/").filter(Boolean), body);
 
   switch (route) {
     case "POST /auth/register": {
@@ -488,6 +489,81 @@ export async function demoApi(method: string, path: string, body: Body = {}): Pr
       requireAdmin();
       members.delete(`${id}:${sub}`);
       return undefined;
+  }
+  throw new DemoError(404, "not_found", "Rota não encontrada.");
+}
+
+// --- Chat interno (demonstração): uma sala em memória, só texto -------------
+type DChatMsg = { id: string; seq: number; authorId: string; text: string; sentAt: string; editedAt?: string; deleted?: boolean; quotedId?: string };
+const chatRoom = { id: uid(), name: "Escritório" };
+const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
+const chatMsgs: DChatMsg[] = [
+  { id: uid(), seq: 1, authorId: users[1]!.id, text: "Bom dia! Alguém sabe até quando vai o prazo da DCTF deste mês?", sentAt: minutesAgo(42) },
+  { id: uid(), seq: 2, authorId: users[2]!.id, text: "Dia 15, segundo o calendário da Receita.", sentAt: minutesAgo(38) },
+  { id: uid(), seq: 3, authorId: users[0]!.id, text: "Isso mesmo. Se algum cliente ainda não mandou os documentos, avisem hoje.", sentAt: minutesAgo(35) },
+];
+const chatRead = new Map<string, number>();
+const roleOf = (id: string): Role => users.find((u) => u.id === id)?.role ?? "agent";
+function chatView(m: DChatMsg) {
+  const u = users.find((x) => x.id === m.authorId);
+  const base = { id: m.id, conversationId: chatRoom.id, seq: m.seq, kind: "text", sentAt: m.sentAt, authorId: m.authorId, authorName: u?.name ?? "?", authorRole: roleOf(m.authorId), authorActive: !!u?.isActive };
+  if (m.deleted) return { ...base, deleted: true, text: "" };
+  const q = chatMsgs.find((x) => x.id === m.quotedId);
+  return {
+    ...base,
+    text: m.text,
+    ...(m.editedAt ? { editedAt: m.editedAt } : {}),
+    ...(q ? { quoted: q.deleted ? { id: q.id, deleted: true } : { id: q.id, authorId: q.authorId, author: users.find((x) => x.id === q.authorId)?.name ?? "?", kind: "text", text: q.text } } : {}),
+  };
+}
+function chatRoomFor(u: U) {
+  // Quem entra começa lendo o que já existia; na demonstração as duas últimas mensagens ficam por ler para mostrar o selo.
+  if (!chatRead.has(u.id)) chatRead.set(u.id, Math.max(0, chatMsgs.length - 2));
+  const lastReadSeq = chatRead.get(u.id)!;
+  return { ...chatRoom, lastReadSeq, lastSeq: chatMsgs.at(-1)?.seq ?? 0, unread: chatMsgs.filter((m) => !m.deleted && m.authorId !== u.id && m.seq > lastReadSeq).length };
+}
+function demoInternalChat(method: string, seg: string[], body: Body | FormData) {
+  const u = requireSession();
+  const route = `${method} ${seg.slice(1).map((s, i) => (i > 0 && /^[0-9a-f-]{36}$/.test(s) ? ":id" : s)).join("/")}`;
+  const msg = () => {
+    const m = chatMsgs.find((x) => x.id === seg[2]);
+    if (!m) throw notFound("Mensagem");
+    return m;
+  };
+  const b = (body instanceof FormData ? {} : body) as Body;
+  switch (route) {
+    case "GET room":
+      return chatRoomFor(u);
+    case "GET messages":
+      return { messages: chatMsgs.map(chatView), hasMore: false };
+    case "POST messages": {
+      if (body instanceof FormData || (b.kind && b.kind !== "text")) throw invalid({ file: "Arquivos e localização não estão disponíveis na demonstração." });
+      const text = String(b.text ?? "").trim();
+      if (!text || [...text].length > 4000) throw invalid({ text: "Digite uma mensagem de até 4000 caracteres." });
+      const old = chatMsgs.find((x) => x.id === b.id);
+      if (old) return chatView(old);
+      const m: DChatMsg = { id: String(b.id || uid()), seq: (chatMsgs.at(-1)?.seq ?? 0) + 1, authorId: u.id, text, sentAt: now(), quotedId: b.replyTo ? String(b.replyTo) : undefined };
+      chatMsgs.push(m);
+      return chatView(m);
+    }
+    case "PATCH messages/:id": {
+      const m = msg();
+      const text = String(b.text ?? "").trim();
+      if (m.authorId !== u.id) throw new DemoError(403, "forbidden", "Só quem escreveu a mensagem (ou um gestor/administrador) pode fazer isso.");
+      if (!text) throw invalid({ text: "Digite uma mensagem de até 4000 caracteres." });
+      m.text = text;
+      m.editedAt = now();
+      return chatView(m);
+    }
+    case "DELETE messages/:id": {
+      const m = msg();
+      if (m.authorId !== u.id && u.role !== "admin") throw new DemoError(403, "forbidden", "Só quem escreveu a mensagem (ou um gestor/administrador) pode fazer isso.");
+      m.deleted = true;
+      return undefined;
+    }
+    case "POST read":
+      chatRead.set(u.id, chatMsgs.at(-1)?.seq ?? 0);
+      return chatRoomFor(u);
   }
   throw new DemoError(404, "not_found", "Rota não encontrada.");
 }

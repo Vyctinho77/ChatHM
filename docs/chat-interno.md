@@ -2,9 +2,29 @@
 
 Um grupo do escritório, no estilo do WhatsApp, para a equipe tirar dúvidas. Nada aqui passa pelo
 WhatsApp, aparece para clientes, entra nas ferramentas do MCP ou alimenta as sugestões da IA.
-Esta é a parte do servidor; a tela vem na etapa seguinte.
 
-## Regras
+## Na tela
+
+- **Onde fica:** a aba **Chat interno** está no menu lateral, logo abaixo de **Envios automáticos** (que só o
+  administrador vê; para os demais perfis ela vem depois de **MCP**). Todos os perfis têm a aba.
+- **Como abre:** ao clicar, o chat ocupa o painel onde as conversas normais aparecem, e a lista de contatos continua
+  à vista ao lado. Ao sair (Conversas, ou escolher um contato), o painel volta ao estado vazio de sempre; ao voltar,
+  o histórico está lá. Em telas pequenas, ele ocupa a tela toda, com um botão de voltar.
+- **Quem escreveu:** acima da primeira mensagem de cada sequência aparecem o nome (com uma cor própria da pessoa), o
+  perfil (Administrador, Gestor ou Atendente) e a equipe. Pessoas desativadas aparecem como "(desativado)". O cabeçalho
+  mostra quantas pessoas há no escritório, e clicar nele lista todo mundo com perfil e equipes.
+- **Notificação:** a aba mostra um selo com o número de mensagens não lidas (99+ acima disso), atualizado ao vivo, e o
+  leitor de tela o anuncia ("Chat interno: 3 mensagens não lidas"). Com o chat aberto e a rolagem no fim, o que
+  chega é marcado como lido; lendo mais acima, aparece o aviso "N novas mensagens" para descer.
+- **Escrever:** o mesmo campo do chat principal: texto, emojis, fotos, documentos (também arrastando ou colando),
+  mensagem de voz e localização, com o rascunho guardado. Clique direito (ou toque longo) numa mensagem abre
+  **Responder**, **Copiar**, **Baixar** (arquivos), **Editar** (as suas, até 24 horas) e **Apagar** (as suas; gestor e
+  administrador apagam qualquer uma). Não há tiques de entrega/leitura, encaminhar nem "dados da mensagem", que só fazem
+  sentido no WhatsApp. Mensagem não enviada mostra "Tentar de novo".
+- **Histórico:** abre nas 50 mensagens mais recentes; as anteriores carregam ao rolar para cima.
+- **Demonstração:** a versão de demonstração tem uma sala de exemplo só de texto (sem anexos).
+
+## Regras do servidor
 
 - **Quem usa:** toda pessoa autenticada (com a verificação em duas etapas concluída), de qualquer perfil.
 - **Uma sala só**, "Escritório". O banco já guarda o tipo da sala (`internal_rooms.kind`), então salas por equipe

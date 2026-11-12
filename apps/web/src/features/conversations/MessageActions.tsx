@@ -22,11 +22,15 @@ type MenuProps = {
   onDelete: () => void;
   onInfo: () => void;
   onClose: () => void;
+  /** O que dá para fazer com a mensagem, quando não é a regra do WhatsApp (chat interno). */
+  caps?: ReturnType<typeof messageCapabilities>;
+  /** Mostra "Apagar" (padrão: sim). */
+  canDelete?: boolean;
 };
 
 /** Menu de botão direito de uma mensagem. Posição fixa limitada à tela; fecha com Esc, clique fora ou rolagem. */
-export function MessageMenu({ message: m, x, y, onReply, onForward, onEdit, onDelete, onInfo, onClose }: MenuProps) {
-  const caps = messageCapabilities(m);
+export function MessageMenu({ message: m, x, y, onReply, onForward, onEdit, onDelete, onInfo, onClose, caps: capsOverride, canDelete = true }: MenuProps) {
+  const caps = capsOverride ?? messageCapabilities(m);
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y });
   const [copied, setCopied] = useState(false);
@@ -97,8 +101,8 @@ export function MessageMenu({ message: m, x, y, onReply, onForward, onEdit, onDe
         onClose();
       })}
       {caps.edit && item(<Pencil />, "Editar", () => (onEdit(), onClose()))}
-      <div className="my-1 border-t border-line" />
-      {item(<Trash2 />, "Apagar", () => (onDelete(), onClose()), { danger: true })}
+      {canDelete && <div className="my-1 border-t border-line" />}
+      {canDelete && item(<Trash2 />, "Apagar", () => (onDelete(), onClose()), { danger: true })}
     </div>,
     document.body,
   );
