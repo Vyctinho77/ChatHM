@@ -5,7 +5,7 @@ mas outras pessoas, de qualquer equipe ou administradores, podem ser **incluída
 
 - **Quem inclui ou tira:** o responsável, quem já participa, e administradores/gestores. A própria pessoa também pode sair.
 - **O que o participante faz:** vê a conversa (mesmo que ela seja de outra fila) e responde, sem assumir nem tirar o responsável. Aparece em **Minhas**, com "Ana + você" na lista.
-- **O que não muda:** transferir e adiar continuam do responsável (e de administradores/gestores). **Encerrar para todos** também; mas quem participa pode **encerrar a própria parte** (ver o fim desta página).
+- **O que não muda:** transferir continua do responsável (e de administradores/gestores); adiar para todos também, mas qualquer pessoa pode adiar **só para si** (ver `adiamento.md`). **Encerrar para todos** também; mas quem participa pode **encerrar a própria parte** (ver o fim desta página).
 - **Onde:** botão de pessoas no cabeçalho da conversa, ou "Incluir pessoa no atendimento…" em Mais opções. O cabeçalho mostra "+ Bia".
 - **Ao tirar a pessoa**, a conversa some da lista dela na hora, se ela não a enxergava por outra regra (equipe ou responsável).
 - **Encerrou o atendimento:** a inclusão vale só para aquele atendimento; um novo contato do cliente abre outro sem participantes.

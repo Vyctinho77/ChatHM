@@ -80,6 +80,9 @@ export type Contact = {
   note: string;
 };
 
+/** Adiar para toda a equipe ou só para quem pediu. */
+export type SnoozeScope = "all" | "me";
+
 export type Conversation = {
   id: string;
   contact: Contact;
@@ -89,6 +92,8 @@ export type Conversation = {
   classification?: "none" | "keyword" | "conflict";
   status: ConversationStatus;
   snoozedUntil?: string;
+  /** Quem vê a conversa adiada: "all" = para toda a equipe, "me" = só para quem está vendo. */
+  snoozedFor?: SnoozeScope;
   participants?: { id: string; name: string }[]; // pessoas incluídas no atendimento (veem e respondem sem assumir)
   assignee?: { id: string; name: string };
   unreadCount: number;

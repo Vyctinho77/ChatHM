@@ -33,6 +33,7 @@ import { buildOutgoing, capabilities, useConversationActions, useMessages, useSe
 import { statusLabel } from "./receipts";
 import { segmentClass, segmentLabel, type Conversation, type Message, type Quoted } from "./types";
 import { SnoozeDialog, SnoozeNotice } from "./SnoozeDialog";
+import { snoozedForAll } from "./snoozeScope";
 import { useTyping } from "./typing";
 import { TypingBubble, TypingIndicator } from "./TypingIndicator";
 
@@ -230,7 +231,9 @@ export function ChatPanel({
   // Encerrar: para todos ou só a própria parte (ver closeOptions e useEndFlow).
   const endFlow = useEndFlow(c, actions, isAdmin);
   const { end, canEnd, startEnd } = endFlow;
-  const showAttendanceStatus = !lockedByOther && !closed && !c.snoozedUntil;
+  // Adiado para todos bloqueia a resposta; adiado só para mim apenas some da minha lista.
+  const snoozedAll = snoozedForAll(c);
+  const showAttendanceStatus = !lockedByOther && !closed && !c.snoozedUntil; // o aviso de adiamento ocupa o lugar do estado
 
   const canTransfer = !closed && (mine || isAdmin || !c.assignee);
   const [transferAt, setTransferAt] = useState<{ x: number; y: number } | null>(null);
@@ -244,7 +247,7 @@ export function ChatPanel({
       ? "Atendimento encerrado."
       : lockedByOther
         ? `${c.assignee?.name} está atendendo esta conversa.`
-        : c.snoozedUntil
+        : snoozedAll
           ? "Atendimento adiado. Retome para responder."
           : !capabilities.media
             ? (capabilities.mediaUnavailableReason ?? "O envio de arquivos está indisponível.")
@@ -416,7 +419,7 @@ export function ChatPanel({
               ))}
             </Menu>
           ))}
-          {canClose && (
+          {!closed && (canClose || !snoozedAll) && (
             <IconButton
               label={c.snoozedUntil ? "Alterar adiamento" : "Adiar atendimento"}
               active={!!c.snoozedUntil || snoozeOpen}
@@ -497,7 +500,7 @@ export function ChatPanel({
       </header>
 
       {c.snoozedUntil && <SnoozeNotice conversation={c} canManage={canClose} onEdit={() => setSnoozeOpen(true)} />}
-      {snoozeOpen && <SnoozeDialog conversation={c} onClose={() => setSnoozeOpen(false)} />}
+      {snoozeOpen && <SnoozeDialog conversation={c} canSnoozeAll={canClose} onClose={() => setSnoozeOpen(false)} />}
 
       {search !== null && (
         <div className="flex items-center gap-2 border-b border-line bg-panel px-4 py-2">
@@ -662,8 +665,8 @@ export function ChatPanel({
       {!DEMO && (
         <AiSuggestions
           conversationId={c.id}
-          canSend={!lockedByOther && !closed && !c.snoozedUntil && capabilities.send}
-          sendBlockedReason={closed ? "Atendimento encerrado." : c.snoozedUntil ? "Atendimento adiado." : lockedByOther ? `${c.assignee?.name} está atendendo.` : capabilities.sendUnavailableReason}
+          canSend={!lockedByOther && !closed && !snoozedAll && capabilities.send}
+          sendBlockedReason={closed ? "Atendimento encerrado." : snoozedAll ? "Atendimento adiado." : lockedByOther ? `${c.assignee?.name} está atendendo.` : capabilities.sendUnavailableReason}
           onUse={(text) => {
             setDraft(c.id, text);
             setComposerKey((k) => k + 1);
@@ -682,7 +685,7 @@ export function ChatPanel({
           await actions.editMessage(c.id, editing.id, t);
           setEditing(null);
         }}
-        disabled={lockedByOther || closed || !!c.snoozedUntil || !capabilities.send}
+        disabled={lockedByOther || closed || snoozedAll || !capabilities.send}
         disabledReason={
           !capabilities.send
             ? capabilities.sendUnavailableReason
@@ -690,7 +693,7 @@ export function ChatPanel({
               ? "Atendimento encerrado. Uma nova mensagem do cliente abre um novo atendimento."
               : lockedByOther
                 ? `${c.assignee?.name} está atendendo esta conversa.${canClose ? "" : ""}`
-                : c.snoozedUntil ? "Atendimento adiado. Retome para responder." : undefined
+                : snoozedAll ? "Atendimento adiado. Retome para responder." : undefined
         }
         mediaDisabledReason={capabilities.media ? undefined : capabilities.mediaUnavailableReason}
         incoming={incoming}

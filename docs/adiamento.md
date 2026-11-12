@@ -8,12 +8,16 @@ A conversa sai de Minhas, Não atribuídos e Todas e fica no filtro **Adiadas**,
 horário de retorno. O chat continua disponível para leitura. Para responder,
 use **Retomar agora**. Também é possível alterar o horário.
 
-- Apenas o responsável ou um administrador pode adiar, reagendar ou retomar.
+- **Só para mim** (padrão) ou **Para todos**: ao adiar, escolha para quem. "Só para mim" tira a conversa
+  apenas da sua lista; as outras pessoas continuam vendo e respondendo, e você mesmo ainda pode responder
+  (responder tira o adiamento). Qualquer pessoa que vê a conversa pode adiar para si. "Para todos" vale para
+  a equipe inteira, bloqueia as respostas até retomar e continua só com o responsável, gestor ou administrador.
+  O adiamento para todos tem prioridade sobre o individual.
 - Equipe, responsável, status do atendimento, mensagens e etiquetas são preservados.
-- Uma mensagem nova do cliente retoma o atendimento imediatamente. Importação de
+- Uma mensagem nova do cliente retoma o atendimento imediatamente, inclusive os adiamentos individuais. Importação de
   histórico, mensagens do próprio escritório e eventos duplicados não cancelam o adiamento.
 - Nenhuma mensagem é enviada ao cliente ao adiar ou retomar.
-- Encerrar um atendimento limpa o adiamento; atendimentos encerrados não podem ser adiados.
+- Encerrar um atendimento limpa os adiamentos (geral e individuais); atendimentos encerrados não podem ser adiados.
 - Datas precisam estar no futuro, dentro de um ano.
 
 O servidor verifica vencimentos a cada 15 segundos e também ao iniciar, recuperando
@@ -28,8 +32,20 @@ Migração: `backend/migrations/00011_conversation_snooze.sql`. Campos novos:
 
 | Rota | Corpo | Efeito |
 |---|---|---|
-| `POST /api/v1/conversations/{id}/snooze` | `{ "until": "2026-11-07T09:00:00-04:00" }` | Adia ou altera o horário |
-| `POST /api/v1/conversations/{id}/resume` | vazio | Retoma agora |
+| `POST /api/v1/conversations/{id}/snooze` | `{ "until": "2026-11-07T09:00:00-04:00", "scope": "me" \| "all" }` | Adia ou altera o horário (`scope` omitido = `all`) |
+| `POST /api/v1/conversations/{id}/resume` | vazio ou `{ "scope": "me" \| "all" }` | Retoma agora |
+
+Na conversa, `snoozedUntil` é o adiamento que vale **para quem está vendo** e `snoozedFor` diz se é `"all"` ou `"me"`.
+As ferramentas MCP `snooze` e `resume` continuam sendo "para todos".
+
+## Não lidas por pessoa
+
+Cada pessoa tem o seu próprio "lido até": abrir a conversa zera só o contador de quem abriu, e o das demais
+continua. Uma mensagem nova conta como não lida para todas as pessoas que veem a conversa. **Responder** ao
+cliente atende a conversa para todos e zera todos os contadores. O estado individual fica em
+`conversation_user_state` (migração `00037`): `read_through` (mensagens do cliente até esse instante já foram lidas) e
+`snoozed_until` (adiamento só dessa pessoa). Sem linha, vale o contador geral da conversa. O WebSocket envia a cada
+pessoa a conversa com o contador e o adiamento dela.
 
 Ações registradas na auditoria: `conversation.snooze` e `conversation.resume`.
 A interface de demonstração também permite adiar e retomar, com dados em memória.

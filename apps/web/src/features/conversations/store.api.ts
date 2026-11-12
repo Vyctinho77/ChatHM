@@ -5,7 +5,7 @@ import { del, get, isRejection, post, put, patch } from "@/lib/api";
 import { useMe } from "@/features/auth/api";
 import { pendingFiles, type Capabilities } from "./store.types";
 import { tagsKey } from "@/features/tags/api";
-import type { Conversation, Message, SearchResult, TagInfo } from "./types";
+import type { Conversation, Message, SearchResult, SnoozeScope, TagInfo } from "./types";
 import { playSentSound } from "@/lib/sounds";
 
 export const capabilities: Capabilities = {
@@ -99,12 +99,12 @@ export function useConversationActions() {
 
     return {
       markRead,
-      async snooze(id: string, until: string) {
-        await post(`/conversations/${id}/snooze`, { until });
+      async snooze(id: string, until: string, scope: SnoozeScope = "all") {
+        await post(`/conversations/${id}/snooze`, { until, scope });
         await resync();
       },
-      async resume(id: string) {
-        await post(`/conversations/${id}/resume`);
+      async resume(id: string, scope: SnoozeScope = "all") {
+        await post(`/conversations/${id}/resume`, { scope });
         await resync();
       },
       markAllRead() {
