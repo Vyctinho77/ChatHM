@@ -110,7 +110,7 @@ func (s *Service) SendAsAttendant(ctx context.Context, a Actor, in AttendInput) 
 	msgID := uuid.NewString()
 	msg, err := s.convs.SendAutomated(ctx, conversations.AutomatedSend{
 		ID: msgID, ContactID: in.ContactID, Author: Author(st.Signature), Text: text, Att: att,
-		Provider: a.Provider, App: a.App, Attend: true,
+		Provider: a.Provider, App: a.App, Attend: true, ActorID: a.UserID,
 	})
 	var blocked *conversations.ErrAutomatedBlocked
 	switch {

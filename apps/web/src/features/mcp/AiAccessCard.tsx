@@ -30,7 +30,7 @@ const settingsKey = ["ai", "settings"] as const;
 const tokensKey = (all: boolean) => ["ai", "tokens", all] as const;
 const date = (iso: string) => new Date(iso).toLocaleDateString("pt-BR");
 
-function Toggle({ checked, onChange, label, hint, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string; disabled?: boolean }) {
+export function Toggle({ checked, onChange, label, hint, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string; disabled?: boolean }) {
   const hintId = useId();
   return (
     <label className={cn("flex items-center justify-between gap-6 py-3", disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer")}>
@@ -48,7 +48,7 @@ function Toggle({ checked, onChange, label, hint, disabled }: { checked: boolean
   );
 }
 
-function CopyButton({ text, label = "Copiar" }: { text: string; label?: string }) {
+export function CopyButton({ text, label = "Copiar" }: { text: string; label?: string }) {
   const [done, setDone] = useState(false);
   return (
     <Button

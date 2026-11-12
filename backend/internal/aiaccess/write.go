@@ -230,6 +230,9 @@ func addWrite[In any](m *MCP, s *mcp.Server, p Principal, name, desc string, ide
 	mcp.AddTool(s, &mcp.Tool{Name: name, Description: desc,
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, DestructiveHint: &no, IdempotentHint: idempotent, OpenWorldHint: &no}},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
+			if err := m.gate(ctx, p, name); err != nil {
+				return nil, nil, err
+			}
 			if !m.svc.AllowWriteCall(p.TokenID) {
 				m.svc.Record(ctx, p, name, map[string]any{"limited": true}, false)
 				return nil, nil, errors.New("limite de alterações por minuto atingido; tente de novo em instantes")
@@ -278,7 +281,7 @@ func (m *MCP) registerSend(s *mcp.Server, p Principal) {
 		return map[string]any{"ok": true, "status": "aguardando_aprovacao", "suggestionId": sg.ID, "conversationId": sg.ConversationID,
 			"aviso": what + " Nada foi enviado ao cliente; a pessoa precisa revisar e aprovar no ChatHM."}
 	}
-	if p.Write {
+	{
 		addWrite(m, s, p, "draft_reply", "Deixa um RASCUNHO de resposta para a pessoa revisar, editar e enviar."+note+writeRule, false,
 			func(ctx context.Context, in draftIn) (any, map[string]any, error) {
 				sg, err := m.svc.CreateSuggestion(ctx, p, in.ConversationID, "draft", in.Text, in.ReplyTo)
@@ -288,7 +291,7 @@ func (m *MCP) registerSend(s *mcp.Server, p Principal) {
 				return respond(sg, "Rascunho salvo."), map[string]any{"conversationId": in.ConversationID, "suggestionId": sg.ID, "intent": "draft"}, nil
 			})
 	}
-	if p.Send {
+	{
 		addWrite(m, s, p, "send_message", "PEDE o envio de uma mensagem ao cliente, que a pessoa precisa aprovar na conversa (botão Enviar)."+note+writeRule, false,
 			func(ctx context.Context, in draftIn) (any, map[string]any, error) {
 				sg, err := m.svc.CreateSuggestion(ctx, p, in.ConversationID, "send", in.Text, in.ReplyTo)

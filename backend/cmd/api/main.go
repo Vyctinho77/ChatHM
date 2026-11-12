@@ -66,6 +66,7 @@ func run() error {
 	go svcs.Auth.RunJanitor(ctx, time.Hour)
 	go svcs.Conversations.RunSnoozeWorker(ctx)
 	go svcs.Conversations.BackfillThumbs(ctx) // miniaturas das fotos antigas (uma vez)
+	go svcs.AI.RunWebhooks(ctx)               // aviso automático (webhook) quando o cliente responde, com reenvio
 	go svcs.Automation.Run(ctx)               // fila persistente: aprovação humana ou autonomia do assunto, no ritmo do escritório
 	if err := svcs.WhatsApp.Start(ctx); err != nil {
 		return err

@@ -182,9 +182,7 @@ func TestAutonomyOAuthConsentRefreshAndDisconnect(t *testing.T) {
 		return pair
 	}
 	read := connect("read")
-	if toolNames(w, read["access_token"].(string))["send_automatic_message"] {
-		t.Fatal("read-only consent gained autonomy")
-	}
+	w.expectDenied(read["access_token"].(string), "send_automatic_message", map[string]any{"contact_id": "x", "category": "das", "reason": "DAS 10/2026", "text": "Olá", "dedupe_key": "k"}, "nunca recebem")
 	pair := connect("automate")
 	tok := pair["access_token"].(string)
 	if !toolNames(w, tok)["send_automatic_message"] {

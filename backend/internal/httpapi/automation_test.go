@@ -165,14 +165,10 @@ func TestAutomationToolsNeedScopeAndSwitch(t *testing.T) {
 		t.Fatal("token automate sem a ferramenta")
 	}
 	plain := w.mkWriteToken(w.admin, "escrita")
-	if toolNames(w, plain)["send_automatic_message"] {
-		t.Fatal("token sem escopo vê a ferramenta")
-	}
+	w.expectDenied(plain, "send_automatic_message", map[string]any{"contact_id": "x", "category": "das", "reason": "DAS 10/2026", "text": "Olá", "dedupe_key": "k"}, "escopo automate")
 	// Chave mestra desligada: o token antigo perde a ferramenta e novos não nascem.
 	expect(t, w.admin.do("PUT", "/api/v1/ai/settings", map[string]any{"enabled": true, "maskDocuments": true, "allowWrite": true, "allowSend": true, "allowAutomation": false}), 200)
-	if toolNames(w, tok)["send_automatic_message"] {
-		t.Fatal("chave mestra desligada e a ferramenta continua")
-	}
+	w.expectDenied(tok, "send_automatic_message", map[string]any{"contact_id": "x", "category": "das", "reason": "DAS 10/2026", "text": "Olá", "dedupe_key": "k"}, "Permitir envios automáticos")
 	expect(t, w.admin.do("POST", "/api/v1/ai/tokens", map[string]any{"name": "n", "scopes": []string{"automate"}, "provider": "claude"}), 422)
 	// Sem provedor, não cria.
 	expect(t, w.admin.do("PUT", "/api/v1/ai/settings", map[string]any{"enabled": true, "maskDocuments": true, "allowWrite": true, "allowSend": true, "allowAutomation": true}), 200)

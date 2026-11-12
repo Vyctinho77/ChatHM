@@ -7,6 +7,49 @@ Status: **etapas 1 a 5 implementadas** (tokens, chave do administrador, `/mcp` c
 **Próximo passo em estudo:** envios automáticos pela IA (cobrança, PDFs), planejados em [mcp-automacao.md](mcp-automacao.md) (fase 6a e cobranças com link de pagamento implementadas; 6b e 6c só no plano).
 Ainda não testado com ChatGPT/claude.ai/Grok reais: os redirecionamentos permitidos por padrão vêm de documentação e podem ser ajustados pelo administrador.
 
+### Melhorias do servidor para agentes (11/2026)
+
+Feitas a partir do retorno de um agente de IA que usou o MCP no dia a dia.
+
+**Lista de ferramentas estável.** Todas as ferramentas existem para **qualquer token** (antes, cada token via um conjunto diferente e
+envio automático, biblioteca de PDFs e diretrizes "sumiam"). O que o token não pode usar é **recusado na chamada**, com o motivo e o caminho
+para liberar (por exemplo: "este token não tem o escopo automate; crie um token pessoal com esse escopo em MCP → Tokens" ou "o administrador
+desligou 'Permitir envios automáticos'"). A regra de cada ferramenta está em um só lugar (`aiaccess/capabilities.go`) e um teste garante que
+nenhuma ferramenta nova nasça sem ela. A biblioteca de PDFs e as diretrizes servem ao envio automático **ou** ao atendente autônomo.
+`my_access` mostra quem é o token, os escopos, cada capacidade (disponível ou não, por quê e como liberar), privacidade e limites.
+
+**Quem falou.** Toda mensagem traz `from`, com identidade estável:
+
+| `from.type` | Quem | Campos |
+|---|---|---|
+| `customer` | o cliente | `id` = o contato (em grupo, também `name`) |
+| `staff` | uma pessoa do escritório | `id`, `name`, `isTokenOwner` (é a dona deste token: um teste dela, por exemplo) |
+| `ai` | uma IA | `id` = `ai:<provedor>`, `provider`, `app`, `mode` (`queue` ou `attend`), `isYou` (foi este mesmo agente: mesma pessoa e mesmo provedor) |
+
+Mensagens de IA enviadas antes desta versão não dizem qual agente falou (sem `isYou`). O campo antigo `direction` continua.
+
+**Respostas pendentes.** `list_pending_replies` lista, por conversa, as respostas de clientes a mensagens que uma IA enviou (nos últimos 30 dias) ainda
+não tratadas por este agente: contato, fila, quantas respostas, a última (com `from`) e se alguém já respondeu depois (`answeredAfter`).
+`mark_replies` marca conversas como `notified` (a pessoa foi avisada) ou `resolved`, com uma anotação de até 300 caracteres. **Nenhuma das duas
+responde ao cliente nem muda a conversa**; `mark_replies` não exige escopo de escrita porque só guarda o que o agente já tratou. O controle é por
+agente (pessoa dona do token + provedor), então renovar o token não perde nada e agentes diferentes não se atrapalham. Se o cliente escrever de
+novo, a conversa volta para a lista.
+
+**Aviso automático (webhook).** O MCP em si não empurra mensagens ao agente. Para ser avisado sem perguntar, o administrador liga em **MCP → Aviso
+automático** um endereço que recebe um POST quando o cliente responde:
+- por padrão só vai **quem respondeu, em qual conversa e fila e quantas respostas**; o texto não sai. Opcionalmente, um trecho de até 160 caracteres
+  com senhas, documentos, telefones e e-mails ocultados. O agente lê o resto pelo MCP (`list_pending_replies`);
+- assinado: `X-ChatHM-Signature: t=<unix>,v1=<hex>` = HMAC-SHA256 do texto `<t>.<corpo exato>` com o segredo (`whsec_…`, gerado pelo servidor,
+  cifrado em repouso e mostrado **uma única vez**; dá para trocar). Recuse se `t` for de mais de 5 minutos atrás. Também vêm `X-ChatHM-Event`
+  (`message.received` ou `webhook.test`) e `X-ChatHM-Delivery` (id, para ignorar repetidos);
+- só **https** e só endereços **públicos**: rede interna, loopback, link-local (inclui a metadata de nuvem) e CGNAT são recusados na hora da conexão
+  (um DNS que aponte para dentro também é barrado), sem seguir redirecionamentos;
+- por padrão só respostas a conversas em que uma IA falou; o administrador pode ampliar para toda mensagem de cliente;
+- respostas em rajada se juntam num só aviso (enviado ~5 s depois da primeira, com a contagem); resposta diferente de 2xx faz o ChatHM tentar de novo
+  (10 s, 1 min, 5 min, 30 min e 2 h); depois de 20 avisos seguidos sem entrega o webhook se desliga sozinho e a tela mostra o motivo;
+- "Enviar teste" confirma o caminho e a assinatura; mudanças e troca de segredo ficam na auditoria.
+Código: `aiaccess/webhook.go` (entrega e proteções), `aiaccess/replies.go`, `aiaccess/agent_tools.go`; migração `00032`.
+
 ### Privacidade das respostas (todas as etapas)
 
 1. **Sempre ligado, para qualquer cliente de IA:** senhas, códigos, tokens e chaves; cartão (Luhn), agência/conta, chave PIX, boleto.
