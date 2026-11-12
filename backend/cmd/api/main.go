@@ -78,7 +78,7 @@ func run() error {
 		Handler: httpapi.NewRouter(httpapi.Deps{
 			Config: cfg, Logger: logger, DB: pool,
 			Auth: svcs.Auth, Users: svcs.Users, Teams: svcs.Teams,
-			Hub: svcs.Hub, Conversations: svcs.Conversations, Segments: svcs.Segments, Tags: svcs.Tags, AI: svcs.AI, Automation: svcs.Automation,
+			Hub: svcs.Hub, Conversations: svcs.Conversations, Segments: svcs.Segments, Tags: svcs.Tags, AI: svcs.AI, Automation: svcs.Automation, InternalChat: svcs.InternalChat,
 			WhatsApp: svcs.WhatsApp, Instance: svcs.Instance, Simulate: svcs.Simulate,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,

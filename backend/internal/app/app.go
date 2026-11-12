@@ -15,6 +15,7 @@ import (
 	"github.com/vyctinho77/chathm/backend/internal/config"
 	"github.com/vyctinho77/chathm/backend/internal/conversations"
 	"github.com/vyctinho77/chathm/backend/internal/instance"
+	"github.com/vyctinho77/chathm/backend/internal/internalchat"
 	"github.com/vyctinho77/chathm/backend/internal/media"
 	"github.com/vyctinho77/chathm/backend/internal/platform/secretbox"
 	"github.com/vyctinho77/chathm/backend/internal/realtime"
@@ -40,6 +41,7 @@ type Services struct {
 	Instance      *instance.Service
 	AI            *aiaccess.Service
 	Automation    *automation.Service
+	InternalChat  *internalchat.Service
 	// Simulate entrega mensagens fictícias (somente provedor fake em development).
 	Simulate func(whatsapp.InboundMessage)
 }
@@ -114,6 +116,8 @@ func NewServices(ctx context.Context, cfg config.Config, db *pgxpool.Pool, opt O
 		Tags:          tags.NewService(db),
 		AI:            aiaccess.NewService(db),
 	}
+	s.InternalChat = internalchat.NewService(db, hub)
+	s.InternalChat.SetMedia(store, mediaSvc)
 	s.AI.Attach(convs, hub)
 	s.AI.SetBox(box)               // segredo do webhook de avisos, cifrado com a ENCRYPTION_KEY
 	convs.SetInboundNotifier(s.AI) // avisa o webhook quando o cliente escreve

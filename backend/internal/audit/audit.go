@@ -51,6 +51,8 @@ const (
 	ConversationClaim    = "conversation.claim"
 	ConversationClose    = "conversation.close"
 	ConversationTransfer = "conversation.transfer"
+	// Gestor/administrador apagou a mensagem de outra pessoa no chat interno (o conteúdo não é registrado).
+	InternalMessageModerate = "internal_chat.message.moderate"
 )
 
 func Record(ctx context.Context, db database.DBTX, e Entry) error {

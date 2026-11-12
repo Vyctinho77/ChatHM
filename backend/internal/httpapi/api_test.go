@@ -118,7 +118,7 @@ func setup(t *testing.T, o ...opts) *env {
 	srv := httptest.NewServer(NewRouter(Deps{
 		Config: cfg, Logger: logger, DB: pool,
 		Auth: svcs.Auth, Users: svcs.Users, Teams: svcs.Teams,
-		Hub: svcs.Hub, Conversations: svcs.Conversations, Segments: svcs.Segments, Tags: svcs.Tags, AI: svcs.AI, Automation: svcs.Automation, WhatsApp: svcs.WhatsApp, Instance: svcs.Instance,
+		Hub: svcs.Hub, Conversations: svcs.Conversations, Segments: svcs.Segments, Tags: svcs.Tags, AI: svcs.AI, Automation: svcs.Automation, InternalChat: svcs.InternalChat, WhatsApp: svcs.WhatsApp, Instance: svcs.Instance,
 	}))
 	t.Cleanup(srv.Close)
 	return &env{t: t, srv: srv, pool: pool, svcs: svcs, wa: wa, storageDir: storageDir}

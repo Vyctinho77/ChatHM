@@ -19,6 +19,7 @@ import (
 	"github.com/vyctinho77/chathm/backend/internal/config"
 	"github.com/vyctinho77/chathm/backend/internal/conversations"
 	"github.com/vyctinho77/chathm/backend/internal/instance"
+	"github.com/vyctinho77/chathm/backend/internal/internalchat"
 	"github.com/vyctinho77/chathm/backend/internal/platform/httpx"
 	"github.com/vyctinho77/chathm/backend/internal/realtime"
 	"github.com/vyctinho77/chathm/backend/internal/segments"
@@ -44,6 +45,7 @@ type Deps struct {
 	Instance      *instance.Service
 	AI            *aiaccess.Service
 	Automation    *automation.Service
+	InternalChat  *internalchat.Service
 	// Simulate habilita POST /dev/whatsapp/inbound (provedor fake em development).
 	Simulate func(whatsapp.InboundMessage)
 }
@@ -99,6 +101,11 @@ func NewRouter(d Deps) http.Handler {
 		autoSvc = automation.NewService(d.DB, d.Conversations, nil, nil, d.Logger)
 	}
 	autoH := automation.NewHandler(autoSvc, d.WhatsApp.Connected)
+	chatSvc := d.InternalChat
+	if chatSvc == nil {
+		chatSvc = internalchat.NewService(d.DB, d.Hub) // sem armazenamento: anexos indisponíveis
+	}
+	chatH := internalchat.NewHandler(chatSvc)
 	oauthH := aiaccess.NewOAuthHandler(aiSvc, baseURL)
 	mcpH := aiaccess.NewMCP(aiSvc, d.Conversations, d.Segments, d.Tags, agendaSvc, d.Teams, d.Users, autoSvc, d.Config.AllowedOrigins, d.Logger)
 
@@ -143,6 +150,7 @@ func NewRouter(d Deps) http.Handler {
 			agendaH.Routes(r)
 			aiH.Routes(r)
 			autoH.Routes(r)
+			chatH.Routes(r)
 			r.Get("/ws", d.Hub.Handler(validateWS))
 
 			r.Group(func(r chi.Router) {
