@@ -261,8 +261,12 @@ func TestActiveConversationKeepsQueue(t *testing.T) {
 	if got["segment"] != "folha" || got["status"] != "in_progress" || got["assignee"].(map[string]any)["id"] != w.users["ana"] {
 		t.Fatalf("conversa ativa mudou: %v", got)
 	}
-	if conv(t, w.bia, "Cliente Fixo") != nil {
-		t.Fatal("bia não deveria ver conversa da Folha")
+	// A fila e o responsável não mudam, mas a equipe do assunto citado (Notas) entra como participante e passa a ver a conversa.
+	if bia := conv(t, w.bia, "Cliente Fixo"); bia == nil || bia["segment"] != "folha" || len(participantIDs(bia)) != 1 || participantIDs(bia)[0] != w.users["bia"] {
+		t.Fatalf("bia deveria ver a conversa só como participante, sem mudar a fila: %v", bia)
+	}
+	if conv(t, w.caio, "Cliente Fixo") != nil {
+		t.Fatal("caio (Clientes) não deveria ver: o orçamento empatou com a nota e não chama ninguém")
 	}
 	if n := len(list(t, w.admin)); n != 1 {
 		t.Fatalf("conversas = %d", n)
@@ -706,7 +710,7 @@ func TestSegmentAdministration(t *testing.T) {
 		t.Fatal("atendente não deveria receber as palavras-chave")
 	}
 	expect(t, w.ana.do("POST", "/api/v1/segments", map[string]string{"name": "X"}), 403)
-	expect(t, w.ana.do("POST", "/api/v1/segments/classify", map[string]string{"text": "x"}), 403)
+	expect(t, w.ana.do("POST", "/api/v1/segments/classify", map[string]string{"text": "x"}), 200) // qualquer pessoa testa uma mensagem
 	expect(t, w.ana.do("PUT", "/api/v1/segments/"+w.segs["folha"]+"/team", map[string]any{"teamId": nil}), 403)
 
 	// Admin vê as palavras-chave padrão e testa uma frase.

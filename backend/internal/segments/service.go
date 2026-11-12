@@ -3,6 +3,7 @@ package segments
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -28,15 +29,21 @@ type KeywordView struct {
 	ID       string `json:"id"`
 	Phrase   string `json:"phrase"`
 	Priority int    `json:"priority"`
+	// SharedWith: outros segmentos que têm a mesma palavra. Mensagens com ela empatam e vão para a fila geral (só aparece ao cadastrar).
+	SharedWith []string `json:"sharedWith,omitempty"`
 }
 
 type Segment struct {
-	ID       string        `json:"id"`
-	Key      string        `json:"key"`
-	Name     string        `json:"name"`
-	TeamID   *string       `json:"teamId"`
-	TeamName string        `json:"teamName,omitempty"`
-	IsActive bool          `json:"isActive"`
+	ID       string  `json:"id"`
+	Key      string  `json:"key"`
+	Name     string  `json:"name"`
+	TeamID   *string `json:"teamId"`
+	TeamName string  `json:"teamName,omitempty"`
+	IsActive bool    `json:"isActive"`
+	// AutoInclude: em conversa já em atendimento, quando o cliente fala do assunto deste segmento a equipe entra como participante.
+	AutoInclude bool `json:"autoInclude"`
+	// CanEdit: quem está vendo pode mexer nas palavras-chave (administrador, ou integrante da equipe do segmento).
+	CanEdit  bool          `json:"canEdit"`
 	Keywords []KeywordView `json:"keywords,omitempty"`
 }
 
@@ -77,7 +84,7 @@ func (s *Service) ClassifyText(ctx context.Context, text string) (Result, error)
 
 func (s *Service) List(ctx context.Context, withKeywords bool) ([]Segment, error) {
 	rows, err := s.db.Query(ctx, `
-		SELECT s.id, s.key, s.name, s.team_id, coalesce(t.name::text, ''), s.is_active
+		SELECT s.id, s.key, s.name, s.team_id, coalesce(t.name::text, ''), s.is_active, s.auto_include
 		  FROM segments s LEFT JOIN teams t ON t.id = s.team_id
 		 ORDER BY s.position, s.name`)
 	if err != nil {
@@ -87,7 +94,7 @@ func (s *Service) List(ctx context.Context, withKeywords bool) ([]Segment, error
 	byID := map[string]int{}
 	for rows.Next() {
 		var sg Segment
-		if err := rows.Scan(&sg.ID, &sg.Key, &sg.Name, &sg.TeamID, &sg.TeamName, &sg.IsActive); err != nil {
+		if err := rows.Scan(&sg.ID, &sg.Key, &sg.Name, &sg.TeamID, &sg.TeamName, &sg.IsActive, &sg.AutoInclude); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -117,6 +124,54 @@ func (s *Service) List(ctx context.Context, withKeywords bool) ([]Segment, error
 		}
 	}
 	return out, krows.Err()
+}
+
+// ListForUser é a lista da tela: o administrador vê as palavras-chave de todos; as demais pessoas veem as dos segmentos
+// da própria equipe (e só nesses podem editar).
+func (s *Service) ListForUser(ctx context.Context, userID string, admin bool) ([]Segment, error) {
+	all, err := s.List(ctx, true)
+	if err != nil {
+		return nil, err
+	}
+	mine := map[string]bool{}
+	if !admin {
+		rows, err := s.db.Query(ctx, `SELECT DISTINCT s.id::text FROM segments s JOIN team_members tm ON tm.team_id = s.team_id WHERE tm.user_id = $1`, userID)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var id string
+			if rows.Scan(&id) == nil {
+				mine[id] = true
+			}
+		}
+		rows.Close()
+	}
+	for i := range all {
+		all[i].CanEdit = admin || mine[all[i].ID]
+		if !all[i].CanEdit {
+			all[i].Keywords = nil
+		}
+	}
+	return all, nil
+}
+
+// CanEditKeywords: administrador, ou integrante da equipe a que o segmento pertence.
+func (s *Service) CanEditKeywords(ctx context.Context, userID string, admin bool, segmentID string) (bool, error) {
+	if !httpx.ValidUUID(segmentID) {
+		return false, ErrNotFound
+	}
+	var exists, member bool
+	err := s.db.QueryRow(ctx, `
+		SELECT true, EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id = s.team_id AND tm.user_id = $2)
+		  FROM segments s WHERE s.id = $1`, segmentID, userID).Scan(&exists, &member)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, ErrNotFound
+	}
+	if err != nil {
+		return false, err
+	}
+	return admin || member, nil
 }
 
 func (s *Service) Get(ctx context.Context, id string) (Segment, error) {
@@ -217,7 +272,7 @@ func (s *Service) Create(ctx context.Context, actorID, ip, name string, teamID *
 	return s.Get(ctx, id)
 }
 
-func (s *Service) Update(ctx context.Context, actorID, ip, id string, name *string, active *bool) (Segment, error) {
+func (s *Service) Update(ctx context.Context, actorID, ip, id string, name *string, active, autoInclude *bool) (Segment, error) {
 	if !httpx.ValidUUID(id) {
 		return Segment{}, ErrNotFound
 	}
@@ -229,7 +284,7 @@ func (s *Service) Update(ctx context.Context, actorID, ip, id string, name *stri
 		}
 	}
 	err := database.InTx(ctx, s.db, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `UPDATE segments SET name = coalesce($2, name), is_active = coalesce($3, is_active) WHERE id = $1`, id, name, active)
+		tag, err := tx.Exec(ctx, `UPDATE segments SET name = coalesce($2, name), is_active = coalesce($3, is_active), auto_include = coalesce($4, auto_include) WHERE id = $1`, id, name, active, autoInclude)
 		if database.IsCode(err, database.UniqueViolation) {
 			return ErrNameTaken
 		}
@@ -245,6 +300,9 @@ func (s *Service) Update(ctx context.Context, actorID, ip, id string, name *stri
 		}
 		if active != nil {
 			meta["isActive"] = *active
+		}
+		if autoInclude != nil {
+			meta["autoInclude"] = *autoInclude
 		}
 		return audit.Record(ctx, tx, audit.Entry{ActorID: actorID, Action: audit.SegmentUpdate, TargetType: "segment", TargetID: id, IP: ip, Metadata: meta})
 	})
@@ -305,10 +363,12 @@ func (s *Service) Delete(ctx context.Context, actorID, ip, id string) error {
 func validatePhrase(phrase string, priority int) (string, string, error) {
 	phrase = strings.TrimSpace(phrase)
 	f := httpx.FieldErrors{}
-	norm := Normalize(phrase)
+	norm := NormalizeKeyword(phrase)
 	switch {
 	case phrase == "" || utf8.RuneCountInString(phrase) > 120:
 		f["phrase"] = "Informe uma palavra ou expressão de até 120 caracteres."
+	case !ValidWildcards(phrase):
+		f["phrase"] = "Use * só no fim de uma palavra e com ao menos 3 letras antes (exemplo: emit*)."
 	case norm == "":
 		f["phrase"] = "Use ao menos uma palavra com significado (palavras como \"de\", \"uma\" e \"para\" são ignoradas)."
 	}
@@ -321,6 +381,12 @@ func validatePhrase(phrase string, priority int) (string, string, error) {
 	return phrase, norm, nil
 }
 
+// MaxKeywords é o limite de palavras-chave por segmento (mantém a lista legível e a classificação rápida).
+const MaxKeywords = 300
+
+// DefaultPriority é a prioridade de uma palavra cadastrada pela equipe. Só o administrador muda.
+const DefaultPriority = 50
+
 func (s *Service) AddKeyword(ctx context.Context, actorID, ip, segmentID, phrase string, priority int) (KeywordView, error) {
 	if !httpx.ValidUUID(segmentID) {
 		return KeywordView{}, ErrNotFound
@@ -331,6 +397,13 @@ func (s *Service) AddKeyword(ctx context.Context, actorID, ip, segmentID, phrase
 	}
 	var k KeywordView
 	err = database.InTx(ctx, s.db, func(tx pgx.Tx) error {
+		var n int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM segment_keywords WHERE segment_id = $1`, segmentID).Scan(&n); err != nil {
+			return err
+		}
+		if n >= MaxKeywords {
+			return httpx.FieldErrors{"phrase": fmt.Sprintf("Este segmento já tem %d palavras-chave (o máximo). Remova as que não servem mais.", MaxKeywords)}
+		}
 		err := tx.QueryRow(ctx, `
 			INSERT INTO segment_keywords (segment_id, phrase, normalized, priority) VALUES ($1, $2, $3, $4)
 			RETURNING id, phrase, priority`, segmentID, phrase, norm, priority).Scan(&k.ID, &k.Phrase, &k.Priority)
@@ -343,10 +416,68 @@ func (s *Service) AddKeyword(ctx context.Context, actorID, ip, segmentID, phrase
 		if err != nil {
 			return err
 		}
+		// Outro segmento com a mesma palavra faz as mensagens empatarem (e irem para a fila geral): avisa quem cadastrou.
+		rows, err := tx.Query(ctx, `SELECT s.name FROM segment_keywords x JOIN segments s ON s.id = x.segment_id
+			WHERE x.normalized = $1 AND x.segment_id <> $2 AND x.priority = $3 AND s.is_active ORDER BY s.name`, norm, segmentID, priority)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var name string
+			if rows.Scan(&name) == nil {
+				k.SharedWith = append(k.SharedWith, name)
+			}
+		}
+		rows.Close()
 		return audit.Record(ctx, tx, audit.Entry{ActorID: actorID, Action: audit.SegmentKeywordAdd, TargetType: "segment", TargetID: segmentID, IP: ip,
 			Metadata: map[string]any{"phrase": phrase, "priority": priority}})
 	})
 	return k, err
+}
+
+// BulkResult: o que aconteceu ao cadastrar várias palavras de uma vez.
+type BulkResult struct {
+	Added   []KeywordView `json:"added"`
+	Skipped []string      `json:"skipped"` // já existiam, inválidas ou acima do limite (com o motivo)
+}
+
+// AddKeywords cadastra várias palavras (colar uma lista, ou aceitar sugestões). Cada uma entra com a prioridade da sugestão
+// correspondente; as demais com `priority`. As que não servem são puladas com o motivo e não impedem as outras.
+func (s *Service) AddKeywords(ctx context.Context, actorID, ip, segmentID string, phrases []string, priority int) (BulkResult, error) {
+	res := BulkResult{Added: []KeywordView{}, Skipped: []string{}}
+	if !httpx.ValidUUID(segmentID) {
+		return res, ErrNotFound
+	}
+	if len(phrases) == 0 || len(phrases) > 100 {
+		return res, httpx.FieldErrors{"phrases": "Informe de 1 a 100 palavras."}
+	}
+	known := map[string]int{} // normalizada → prioridade sugerida
+	if sugs, err := s.Suggestions(ctx, segmentID); err == nil {
+		for _, sg := range sugs {
+			known[NormalizeKeyword(sg.Phrase)] = sg.Priority
+		}
+	}
+	for _, ph := range phrases {
+		pr := priority
+		if p, ok := known[NormalizeKeyword(ph)]; ok {
+			pr = p
+		}
+		k, err := s.AddKeyword(ctx, actorID, ip, segmentID, ph, pr)
+		var fe httpx.FieldErrors
+		switch {
+		case err == nil:
+			res.Added = append(res.Added, k)
+		case errors.Is(err, ErrDuplicate):
+			res.Skipped = append(res.Skipped, strings.TrimSpace(ph)+": já cadastrada")
+		case errors.As(err, &fe):
+			res.Skipped = append(res.Skipped, strings.TrimSpace(ph)+": "+fe["phrase"])
+		case errors.Is(err, ErrNotFound):
+			return res, ErrNotFound
+		default:
+			return res, err
+		}
+	}
+	return res, nil
 }
 
 func (s *Service) UpdateKeywordPriority(ctx context.Context, actorID, ip, segmentID, keywordID string, priority int) error {

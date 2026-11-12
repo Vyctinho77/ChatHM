@@ -1,7 +1,7 @@
 // API simulada em memória para a versão de demonstração (VITE_DEMO=1).
 // Reproduz as regras principais do backend: perfis, visibilidade por equipe,
 // validações e o último admin. Nada é persistido.
-import { classify, normalize, type DemoKeyword } from "./classify";
+import { classify, normalize, normalizeKeyword, validWildcards, type DemoKeyword } from "./classify";
 import type { Theme } from "./theme";
 
 type Role = "admin" | "agent";
@@ -27,10 +27,10 @@ const members = new Set<string>([`${teams[2]!.id}:${users[1]!.id}`, `${teams[1]!
 
 // --- Segmentos e etiquetas (mesmos padrões do backend) ----------------------
 type DKeyword = { id: string; phrase: string; normalized: string; priority: number };
-type DSegment = { id: string; key: string; name: string; teamId: string | null; isActive: boolean; keywords: DKeyword[] };
+type DSegment = { id: string; key: string; name: string; teamId: string | null; isActive: boolean; autoInclude: boolean; keywords: DKeyword[] };
 
 const seg = (key: string, name: string, teamIdx: number, phrases: string[]): DSegment => ({
-  id: uid(), key, name, teamId: teams[teamIdx]!.id, isActive: true,
+  id: uid(), key, name, teamId: teams[teamIdx]!.id, isActive: true, autoInclude: true,
   keywords: phrases.map((phrase) => ({ id: uid(), phrase, normalized: normalize(phrase), priority: 0 })),
 });
 const segmentsDb: DSegment[] = [
@@ -40,10 +40,20 @@ const segmentsDb: DSegment[] = [
 ];
 const tagsDb: { id: string; name: string }[] = ["PENDENTE", "URGENTE", "PGDAS", "CERTIFICADO", "ACOMPANHAMENTO"].map((name) => ({ id: uid(), name }));
 
-const segmentView = (s: DSegment, withKeywords: boolean) => ({
+// Quem pode mexer nas palavras-chave: administrador, ou integrante da equipe do segmento.
+const canEditSegment = (s: DSegment, u: U) => u.role === "admin" || (!!s.teamId && members.has(`${s.teamId}:${u.id}`));
+
+// Sugestões de exemplo para a demonstração (o servidor real tem pacotes maiores): [palavra, prioridade].
+const demoSuggestions: Record<string, [string, number][]> = {
+  notas: [["nota", 40], ["nf", 60], ["danfe", 60], ["emit* nota", 60], ["cancel* nota", 60], ["nota de serviço", 60], ["carta de correção", 60]],
+  folha: [["salário", 40], ["funcionário", 40], ["horas extras", 60], ["aviso prévio", 60], ["vale transporte", 60], ["pró-labore", 60], ["afastamento", 60]],
+  clientes_novos: [["abertura de empresa", 60], ["abrir cnpj", 60], ["migrar contabilidade", 60], ["mudar de contador", 60]],
+};
+
+const segmentView = (s: DSegment, withKeywords: boolean, canEdit = withKeywords) => ({
   id: s.id, key: s.key, name: s.name, teamId: s.teamId,
   teamName: teams.find((t) => t.id === s.teamId)?.name ?? "",
-  isActive: s.isActive,
+  isActive: s.isActive, autoInclude: s.autoInclude, canEdit,
   ...(withKeywords ? { keywords: [...s.keywords].sort((a, b) => b.priority - a.priority || a.phrase.localeCompare(b.phrase)).map(({ id, phrase, priority }) => ({ id, phrase, priority })) } : {}),
 });
 const slug = (n: string) =>
@@ -225,8 +235,8 @@ export async function demoApi(method: string, path: string, body: Body = {}): Pr
       return waView(true);
 
     case "GET /segments": {
-      const admin = requireSession().role === "admin";
-      return { segments: segmentsDb.map((s) => segmentView(s, admin)) };
+      const me = requireSession();
+      return { segments: segmentsDb.map((s) => segmentView(s, canEditSegment(s, me))) };
     }
     case "POST /segments/examples":
       requireAdmin();
@@ -240,12 +250,12 @@ export async function demoApi(method: string, path: string, body: Body = {}): Pr
       if (teamId && !teams.some((t) => t.id === teamId)) throw invalid({ teamId: "Equipe não encontrada." });
       let key = slug(name);
       for (let i = 2; segmentsDb.some((s) => s.key === key); i++) key = `${slug(name)}_${i}`;
-      const s: DSegment = { id: uid(), key, name, teamId, isActive: true, keywords: [] };
+      const s: DSegment = { id: uid(), key, name, teamId, isActive: true, autoInclude: true, keywords: [] };
       segmentsDb.push(s);
       return segmentView(s, true);
     }
     case "POST /segments/classify": {
-      requireAdmin();
+      requireSession(); // qualquer pessoa testa uma mensagem
       const kws: DemoKeyword[] = segmentsDb.filter((s) => s.isActive).flatMap((s) =>
         s.keywords.map((k) => ({ segmentId: s.id, segmentKey: s.key, phrase: k.phrase, normalized: k.normalized, priority: k.priority })),
       );
@@ -261,6 +271,7 @@ export async function demoApi(method: string, path: string, body: Body = {}): Pr
         s.name = name;
       }
       if (typeof body.isActive === "boolean") s.isActive = body.isActive;
+      if (typeof body.autoInclude === "boolean") s.autoInclude = body.autoInclude;
       return segmentView(s, true);
     }
     case "PUT /segments/:id/team": {
@@ -276,13 +287,52 @@ export async function demoApi(method: string, path: string, body: Body = {}): Pr
       segmentsDb.splice(segmentsDb.indexOf(findSegment(id)), 1);
       return undefined;
     }
-    case "POST /segments/:id/keywords": {
-      requireAdmin();
+    case "GET /segments/:id/suggestions": {
+      const me = requireSession();
       const s = findSegment(id);
+      if (!canEditSegment(s, me)) throw new DemoError(403, "forbidden", "Só o administrador ou quem é da equipe deste segmento pode mexer nas palavras-chave.");
+      const have = new Set(s.keywords.map((k) => k.normalized));
+      const label = s.key === "notas" ? "Emissão de notas" : s.key === "folha" ? "Folha de pagamento" : "Clientes novos";
+      return {
+        suggestions: (demoSuggestions[s.key] ?? [])
+          .filter(([phrase]) => !have.has(normalizeKeyword(phrase)))
+          .map(([phrase, priority]) => ({ phrase, priority, pack: label })),
+      };
+    }
+    case "POST /segments/:id/keywords/bulk": {
+      const me = requireSession();
+      const s = findSegment(id);
+      if (!canEditSegment(s, me)) throw new DemoError(403, "forbidden", "Só o administrador ou quem é da equipe deste segmento pode mexer nas palavras-chave.");
+      const phrases = (body.phrases as string[] | undefined) ?? [];
+      if (phrases.length === 0 || phrases.length > 100) throw invalid({ phrases: "Informe de 1 a 100 palavras." });
+      const known = new Map((demoSuggestions[s.key] ?? []).map(([p, pr]) => [normalizeKeyword(p), pr]));
+      const added: { id: string; phrase: string; priority: number; sharedWith?: string[] }[] = [];
+      const skipped: string[] = [];
+      for (const raw of phrases) {
+        const phrase = raw.trim();
+        const norm = normalizeKeyword(phrase);
+        const priority = known.get(norm) ?? (me.role === "admin" ? Number(body.priority ?? 50) : 50);
+        if (!phrase || phrase.length > 120 || !norm) skipped.push(`${phrase}: Informe uma palavra ou expressão de até 120 caracteres.`);
+        else if (!validWildcards(phrase)) skipped.push(`${phrase}: Use * só no fim de uma palavra e com ao menos 3 letras antes (exemplo: emit*).`);
+        else if (s.keywords.some((k) => k.normalized === norm)) skipped.push(`${phrase}: já cadastrada`);
+        else {
+          const k = { id: uid(), phrase, normalized: norm, priority };
+          s.keywords.push(k);
+          const shared = segmentsDb.filter((x) => x.id !== s.id && x.isActive && x.keywords.some((y) => y.normalized === norm && y.priority === priority)).map((x) => x.name);
+          added.push({ id: k.id, phrase, priority, ...(shared.length ? { sharedWith: shared } : {}) });
+        }
+      }
+      return { added, skipped };
+    }
+    case "POST /segments/:id/keywords": {
+      const me = requireSession();
+      const s = findSegment(id);
+      if (!canEditSegment(s, me)) throw new DemoError(403, "forbidden", "Só o administrador ou quem é da equipe deste segmento pode mexer nas palavras-chave.");
       const phrase = String(body.phrase ?? "").trim();
-      const priority = Number(body.priority ?? 0);
-      const norm = normalize(phrase);
+      const priority = me.role === "admin" ? Number(body.priority ?? 0) : 50;
+      const norm = normalizeKeyword(phrase);
       if (!phrase || phrase.length > 120) throw invalid({ phrase: "Informe uma palavra ou expressão de até 120 caracteres." });
+      if (!validWildcards(phrase)) throw invalid({ phrase: "Use * só no fim de uma palavra e com ao menos 3 letras antes (exemplo: emit*)." });
       if (!norm) throw invalid({ phrase: 'Use ao menos uma palavra com significado (palavras como "de", "uma" e "para" são ignoradas).' });
       if (!(priority >= 0 && priority <= 100)) throw invalid({ priority: "Prioridade deve ficar entre 0 e 100." });
       if (s.keywords.some((k) => k.normalized === norm)) throw invalid({ phrase: "Essa palavra já está cadastrada neste segmento." });
@@ -300,8 +350,9 @@ export async function demoApi(method: string, path: string, body: Body = {}): Pr
       return undefined;
     }
     case "DELETE /segments/:id/keywords/:id": {
-      requireAdmin();
+      const me = requireSession();
       const s = findSegment(id);
+      if (!canEditSegment(s, me)) throw new DemoError(403, "forbidden", "Só o administrador ou quem é da equipe deste segmento pode mexer nas palavras-chave.");
       const i = s.keywords.findIndex((x) => x.id === sub);
       if (i < 0) throw new DemoError(404, "keyword_not_found", "Palavra-chave não encontrada.");
       s.keywords.splice(i, 1);

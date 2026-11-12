@@ -19,6 +19,11 @@ Depois que o atendimento é encerrado, uma nova mensagem abre uma nova conversa,
 A comparação é por **palavra inteira**: `folha` não combina com "folheto" nem "folhagem". Uma expressão
 (`nota fiscal`) combina quando as palavras aparecem **juntas e na ordem**.
 
+**Curinga `*`.** Uma palavra-chave pode terminar em `*` para pegar variações: `emit*` combina com emitir, emita,
+emitiu e emitido (o prefixo vale como foi escrito, sem acento nem plural). O `*` só vale no fim de uma palavra e com ao
+menos 3 letras antes dele (`a*`, `*nota` e `no*ta` são recusados). `emit* nota` combina com "emita a nota" e não com
+"nota emitir" (as palavras seguem juntas e em ordem).
+
 **Como decide.** Cada palavra-chave tem uma prioridade (0–100, padrão 0). A pontuação de um segmento é a maior
 prioridade entre as suas palavras que apareceram.
 
@@ -39,6 +44,40 @@ por uma mensagem posterior do cliente. Segmentos desativados não classificam.
 **Configuração (admin, tela Filas / Segmentos).** Segmentos, palavras-chave, prioridades, equipe de cada fila e um
 campo "Testar classificação". Os três segmentos iniciais e suas palavras são criados uma única vez; apagar um
 segmento depois não o recria. Excluir um segmento devolve suas conversas à fila geral.
+
+### Palavras-chave pelas equipes
+
+- **Quem edita.** O administrador, em todos os segmentos; os integrantes de uma equipe, nas palavras dos segmentos
+  **ligados à própria equipe** (tela Filas, seção *Palavras-chave*, ou `/filas/palavras/<fila>`). Quem não é da equipe
+  nem vê as palavras. A prioridade, o vínculo de equipe e a estrutura continuam só do administrador: palavras
+  cadastradas pela equipe entram sempre com prioridade **50**.
+- **Como cadastrar.** Uma por vez ou várias de uma vez (uma por linha, ou separadas por vírgula), com até 300
+  palavras por segmento. Repetidas e inválidas são puladas com o motivo, sem impedir as outras. Se a mesma palavra
+  (com a mesma prioridade) já existe em outra fila ativa, o sistema avisa que as mensagens com ela vão empatar e cair na
+  fila geral.
+- **Sugestões.** Cada segmento recebe sugestões conforme o nome (Folha/DP/Pessoal, Notas/Fiscal, Impostos, Certificado,
+  Clientes novos), sem repetir o que já tem. Termos técnicos e expressões (`nota fiscal`, `holerite`, `fgts`) entram com
+  prioridade 60; palavras soltas e genéricas (`nota`, `folha`) com 40, para que o termo técnico decida quando duas filas
+  combinam na mesma mensagem. Vêm marcadas as de prioridade 60. Código: `segments/suggestions.go`.
+- **Teste.** *Testar uma mensagem* mostra para qual fila ela iria e por qual palavra (qualquer pessoa pode usar).
+- **Auditoria.** Cada palavra adicionada ou removida é registrada com quem fez.
+
+### Conversa em andamento: chamar a equipe do assunto
+
+Regra 5 continua valendo: a conversa **não troca de dono, de fila nem de status** por palavras soltas. Mas quando o
+cliente, numa conversa **já em atendimento** (ou já numa fila), passa a falar do assunto de **outra** equipe ("emite a
+nota fiscal" numa conversa atendida pela Folha), a **equipe do assunto entra como participante** e a conversa aparece em
+**Minhas** de cada integrante, sem tirar nada de quem atende. Detalhes:
+
+- só mensagem do cliente em conversa 1:1 aberta, e só quando **uma** equipe vence a classificação (empate não chama
+  ninguém);
+- o segmento precisa estar ativo, ter equipe e estar com *Chamar a equipe em conversas em andamento* ligado (padrão:
+  ligado; o administrador desliga por segmento);
+- **uma vez por assunto em cada conversa**: citar de novo não repete, e quem tirar a equipe à mão não a vê voltar;
+- o responsável atual nunca vira participante, e quem já participa não é incluído de novo;
+- fica na auditoria como `conversation.team_called` (assunto, palavra que combinou e quantas pessoas);
+- quem entra como participante passa a ver também o histórico da conversa em que participou (como ocorre com
+  participantes incluídos à mão), mas não o dos atendimentos de que não participou.
 
 ## Quem vê cada conversa
 

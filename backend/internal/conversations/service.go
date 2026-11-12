@@ -373,6 +373,10 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 			return err
 		}
 		if curSeg != nil || curStatus != "new" || assignee != nil {
+			// Conversa em andamento: não muda de dono nem de fila, mas a equipe do assunto entra como participante.
+			if !m.IsGroup && curStatus != "closed" {
+				return s.callTopicTeam(ctx, tx, convID, text, curSeg, assignee, &before)
+			}
 			return nil
 		}
 		kws, err := segments.LoadKeywords(ctx, tx)

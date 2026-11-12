@@ -173,17 +173,30 @@ func TestReturningContactSeesOwnTeamHistoryOnly(t *testing.T) {
 
 	// Outro assunto: vai para a fila de Notas; quem atende lá NÃO vê o atendimento anterior da Folha.
 	w.receiveFrom(phone, "Cliente Volta", "e quero emitir uma nota")
-	// (a conversa aberta continua a da Folha: nada muda de fila por palavras isoladas)
-	if conv(t, w.bia, "Cliente Volta") != nil {
-		t.Fatal("conversa ativa não deveria mudar de fila")
+	// (a conversa aberta continua a da Folha, com o mesmo responsável: nada muda de fila por palavras isoladas;
+	// a equipe de Notas só entra como participante)
+	if bia := conv(t, w.bia, "Cliente Volta"); bia == nil || bia["segment"] != "folha" || len(participantIDs(bia)) != 1 {
+		t.Fatalf("conversa ativa deveria seguir na fila da Folha, com bia só como participante: %v", bia)
+	}
+	if got := w.assignee(t, id2); got != nil { // ainda ninguém assumiu: continua sem responsável
+		t.Fatalf("responsável mudou: %v", got)
 	}
 	// Encerra a da Folha e o cliente pede nota: nova conversa, agora na fila de Notas.
 	expect(t, w.send(w.ana2, id2, "ok"), 201)
 	expect(t, w.ana2.do("POST", "/api/v1/conversations/"+id2+"/close", nil), 204)
 	w.receiveFrom(phone, "Cliente Volta", "quero emitir uma nota fiscal")
 	id3 := mustConv(t, w.bia, "Cliente Volta")["id"].(string)
-	if got := texts(w.bia, id3); len(got) != 1 || got[0] != "quero emitir uma nota fiscal" {
-		t.Fatalf("bia (Notas) não deveria ver o histórico da Folha: %v", got)
+	// Ela vê o histórico da conversa em que foi incluída como participante (a segunda), mas não o do primeiro atendimento da Folha.
+	got3 := texts(w.bia, id3)
+	if len(got3) != 4 || got3[0] != "quero tirar mais férias" || got3[3] != "quero emitir uma nota fiscal" {
+		t.Fatalf("bia (Notas) deveria ver só a conversa em que participou e a nova: %v", got3)
+	}
+	for _, hidden := range []string{"preciso das férias", "Resposta do primeiro atendimento."} {
+		for _, m := range got3 {
+			if m == hidden {
+				t.Fatalf("bia (Notas) não deveria ver o primeiro atendimento da Folha, mas viu %q", hidden)
+			}
+		}
 	}
 	if conv(t, w.ana, "Cliente Volta") != nil {
 		t.Fatal("ana (Folha) não deveria ver o pedido de Notas: continua fora da lista dela")

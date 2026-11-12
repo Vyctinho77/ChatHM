@@ -6,6 +6,7 @@ import { AgendaPage } from "@/features/agenda/AgendaPage";
 import { QueuesConfigPage } from "@/features/queues/QueuesConfigPage";
 import { QueuesPage } from "@/features/queues/QueuesPage";
 import { SegmentDetailPage } from "@/features/queues/SegmentDetailPage";
+import { SegmentKeywordsPage } from "@/features/queues/SegmentKeywordsPage";
 import { OAuthConsentPage } from "@/features/settings/OAuthConsentPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { AutomationPage } from "@/features/automation/AutomationPage";
@@ -23,6 +24,7 @@ const routes: RouteObject[] = [
       { index: true, element: <Navigate to="/conversas" replace /> },
       { path: "conversas/:id?", element: <ConversationsPage /> },
       { path: "filas", element: <QueuesPage /> },
+      { path: "filas/palavras/:key", element: <SegmentKeywordsPage /> },
       { path: "agenda", element: <AgendaPage /> },
       { path: "clientes", element: <ContactsPage /> },
       { path: "etiquetas", element: <TagsPage /> },

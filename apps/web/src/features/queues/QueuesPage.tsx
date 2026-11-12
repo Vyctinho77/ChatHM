@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useNavigate } from "react-router";
-import { Layers, SlidersHorizontal } from "lucide-react";
+import { Layers, SlidersHorizontal, Tags } from "lucide-react";
 import { CountBadge, ListRow, Page, PageBody, PageHeader, Section } from "@/components/list";
 import { Alert, IconButton } from "@/components/ui";
 import { ListSkeleton } from "@/components/Skeleton";
@@ -50,6 +50,12 @@ export function QueuesPage() {
     ];
   }, [segments.data, teams.data, isAdmin]);
 
+  // Filas em que esta pessoa pode mexer nas palavras-chave (as da própria equipe; o administrador, em todas).
+  const editable = useMemo(
+    () => (segments.data ?? []).filter((s) => s.canEdit).map((s) => ({ key: s.key, name: s.name, keywords: s.keywords?.length ?? 0 })),
+    [segments.data],
+  );
+
   return (
     <Page>
       <PageHeader
@@ -93,6 +99,23 @@ export function QueuesPage() {
                 />
               );
             })}
+          </Section>
+        )}
+        {!segments.isPending && !segments.isError && editable.length > 0 && (
+          <Section
+            title="Palavras-chave"
+            note="Cada equipe cuida das palavras que levam as conversas para a sua fila. Quanto melhores as palavras, menos conversas ficam em Não atribuídos."
+          >
+            {editable.map((q) => (
+              <ListRow
+                key={q.key}
+                icon={<Tags />}
+                title={q.name}
+                subtitle={`${q.keywords} ${q.keywords === 1 ? "palavra" : "palavras"} · sugestões e teste`}
+                chevron
+                to={`/filas/palavras/${q.key}`}
+              />
+            ))}
           </Section>
         )}
       </PageBody>
