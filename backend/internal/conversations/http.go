@@ -320,15 +320,16 @@ func (h *Handler) close(w http.ResponseWriter, r *http.Request) {
 	httpx.NoContent(w)
 }
 
-// transfer passa o atendimento para outra pessoa do escritório (corpo: {userId}).
+// transfer passa o atendimento para outra pessoa do escritório (corpo: {userId, shareReminder?}).
 func (h *Handler) transfer(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		UserID string `json:"userId"`
+		UserID        string `json:"userId"`
+		ShareReminder bool   `json:"shareReminder"`
 	}
 	if !httpx.Decode(w, r, &in) {
 		return
 	}
-	err := h.svc.Transfer(r.Context(), viewer(r), chi.URLParam(r, "id"), in.UserID)
+	err := h.svc.Transfer(r.Context(), viewer(r), chi.URLParam(r, "id"), in.UserID, in.ShareReminder)
 	var taken *TakenError
 	if errors.As(err, &taken) {
 		msg := "Só quem está atendendo (ou um administrador) pode transferir esta conversa."

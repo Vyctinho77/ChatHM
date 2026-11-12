@@ -1312,7 +1312,11 @@ func (s *Service) Close(ctx context.Context, v Viewer, convID string) error {
 // Quem pode: o responsável atual, um administrador ou, se a conversa ainda não tem
 // responsável, qualquer pessoa que a veja. A nova pessoa passa a enxergar e atender a
 // conversa; o histórico de atribuições registra a transferência.
-func (s *Service) Transfer(ctx context.Context, v Viewer, convID, targetID string) error {
+//
+// Com shareReminder, o lembrete pessoal de quem transfere (só quando é o responsável atual) vai
+// junto: vira o lembrete de quem recebe e fica gravado no novo atendimento. Sem isso, os
+// lembretes continuam privados de cada pessoa.
+func (s *Service) Transfer(ctx context.Context, v Viewer, convID, targetID string, shareReminder bool) error {
 	if !httpx.ValidUUID(convID) {
 		return ErrNotFound
 	}
@@ -1364,6 +1368,16 @@ func (s *Service) Transfer(ctx context.Context, v Viewer, convID, targetID strin
 		if before, err = s.visibleUsers(ctx, tx, convID); err != nil {
 			return err
 		}
+		// Só o lembrete de quem está atendendo é dele para compartilhar; um administrador que
+		// transfere a conversa de outra pessoa nunca lê nem repassa o lembrete dela.
+		var note, noteColor *string
+		if shareReminder && assignee != nil && *assignee == v.ID {
+			err := tx.QueryRow(ctx, `SELECT text, color FROM conversation_reminders WHERE user_id = $1 AND conversation_id = $2`,
+				v.ID, convID).Scan(&note, &noteColor)
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return err
+			}
+		}
 		if _, err := tx.Exec(ctx, `UPDATE conversation_assignments SET ended_at = now(), ended_reason = 'transferred'
 			WHERE conversation_id = $1 AND ended_at IS NULL`, convID); err != nil {
 			return err
@@ -1371,14 +1385,28 @@ func (s *Service) Transfer(ctx context.Context, v Viewer, convID, targetID strin
 		if _, err := tx.Exec(ctx, `UPDATE conversations SET assignee_id = $2, status = 'in_progress' WHERE id = $1`, convID, targetID); err != nil {
 			return err
 		}
+		var handoverBy *string
+		if note != nil {
+			handoverBy = &v.ID
+		}
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO conversation_assignments (conversation_id, user_id, team_id, segment_id) VALUES ($1, $2, $3, $4)`,
-			convID, targetID, teamID, segID); err != nil {
+			INSERT INTO conversation_assignments (conversation_id, user_id, team_id, segment_id, handover_note, handover_color, handover_by)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+			convID, targetID, teamID, segID, note, noteColor, handoverBy); err != nil {
 			return err
+		}
+		if note != nil {
+			// Substitui qualquer lembrete antigo de quem recebe nesta conversa; a cópia de quem transferiu é mantida.
+			if _, err := tx.Exec(ctx, `INSERT INTO conversation_reminders (user_id, conversation_id, text, color)
+				VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, conversation_id)
+				DO UPDATE SET text = EXCLUDED.text, color = EXCLUDED.color, updated_at = now()`,
+				targetID, convID, note, noteColor); err != nil {
+				return err
+			}
 		}
 		changed = true
 		return audit.Record(ctx, tx, audit.Entry{ActorID: v.ID, Action: audit.ConversationTransfer, TargetType: "conversation", TargetID: convID,
-			Metadata: map[string]any{"from": assignee, "to": targetID}})
+			Metadata: map[string]any{"from": assignee, "to": targetID, "reminderShared": note != nil}})
 	})
 	if err != nil {
 		return err

@@ -21,6 +21,7 @@ import { TransferMenu } from "./TransferMenu";
 import { countsByTab, filterConversations, type ConversationFilter as Filter } from "./conversationFilter";
 import { reminderColors, useReminders, type Reminder } from "./reminders";
 import { ReminderEditor } from "./ReminderEditor";
+import { useTransferFlow } from "./transferFlow";
 import { useTyping } from "./typing";
 import { TypingIndicator } from "./TypingIndicator";
 import type { ContactRecord, Conversation, MessageHit, SegmentKey, SegmentOption } from "./types";
@@ -40,6 +41,7 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
   const filter: Filter = requestedFilter === "mine" || requestedFilter === "general" || requestedFilter === "groups" || requestedFilter === "snoozed" ? requestedFilter : "all";
   const reminders = useReminders(filter === "mine");
   const [editingReminder, setEditingReminder] = useState<Conversation | null>(null);
+  const transferFlow = useTransferFlow(actions);
   const setFilter = (nextFilter: Filter) => setParams((p) => {
     const next = new URLSearchParams(p);
     if (nextFilter === "all") next.delete("vista");
@@ -271,10 +273,11 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
           y={ctx.y}
           myId={actions.me.id}
           canTransfer={!ctxConv.assignee || ctxConv.assignee.id === actions.me.id || isAdmin}
-          onPick={(p) => actions.transfer(ctxConv.id, p)}
+          onPick={(p) => transferFlow.request(ctxConv, p)}
           onClose={() => setCtx(null)}
         />
       )}
+      {transferFlow.dialog}
     </section>
   );
 }

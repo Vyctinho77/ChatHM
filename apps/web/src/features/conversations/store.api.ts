@@ -113,9 +113,9 @@ export function useConversationActions() {
         patchConv(id, (x) => ({ ...x, status: "closed" }));
         post(`/conversations/${id}/close`).catch(resync);
       },
-      transfer(id: string, person: { id: string; name: string }) {
+      transfer(id: string, person: { id: string; name: string }, shareReminder = false) {
         patchConv(id, (x) => ({ ...x, status: "in_progress", assignee: { id: person.id, name: person.name } }));
-        post(`/conversations/${id}/transfer`, { userId: person.id }).then(resync, resync);
+        post(`/conversations/${id}/transfer`, { userId: person.id, ...(shareReminder ? { shareReminder: true } : {}) }).then(resync, resync);
       },
       /** Inclui a pessoa no atendimento (vê e responde sem assumir); se já participa, tira. */
       toggleParticipant(id: string, person: { id: string; name: string }) {

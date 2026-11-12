@@ -197,7 +197,7 @@ func (m *MCP) registerWrite(s *mcp.Server, p Principal, v conversations.Viewer) 
 	}
 	addWrite(m, s, p, "transfer", "Transfere o atendimento de uma conversa para outra pessoa da equipe (só o responsável ou um administrador pode). A pessoa recebe a conversa como dela."+writeRule, true,
 		func(ctx context.Context, in transferIn) (any, map[string]any, error) {
-			if err := m.convs.Transfer(ctx, v, in.ConversationID, in.PersonID); err != nil {
+			if err := m.convs.Transfer(ctx, v, in.ConversationID, in.PersonID, false); err != nil {
 				return nil, nil, writeErr(err)
 			}
 			// Depois de transferida, a conversa pode deixar de ser visível a quem transferiu: o nome vem da lista de pessoas.

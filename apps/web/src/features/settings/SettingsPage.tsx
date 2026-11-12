@@ -8,6 +8,7 @@ import { regenerateRecoveryCodes, useMe } from "@/features/auth/api";
 import { ThemeSwitcher } from "@/features/shell/ThemeSwitcher";
 import { HandoverCard } from "./HandoverCard";
 import { SoundSettings } from "./SoundSettings";
+import { TransferSettings } from "./TransferSettings";
 
 function Card({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
   return (
@@ -67,6 +68,10 @@ export function SettingsPage() {
 
         <Card title="Sons e notificações" description="Efeitos de mensagem e avisos sonoros.">
           <SoundSettings />
+        </Card>
+
+        <Card title="Transferências" description="O que acontece com o seu lembrete quando você transfere uma conversa.">
+          <TransferSettings userId={me.user.id} />
         </Card>
 
         <Card title="Sobre o app">

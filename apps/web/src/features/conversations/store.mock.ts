@@ -163,7 +163,8 @@ export function useConversationActions() {
       patchConversation(id, (x) => ({ ...x, status: "closed" }));
       refresh();
     },
-    transfer(id: string, person: { id: string; name: string }) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- a demonstração não tem lembretes de outras pessoas para receber
+    transfer(id: string, person: { id: string; name: string }, _shareReminder = false) {
       patchConversation(id, (x) => ({ ...x, status: "in_progress", assignee: { id: person.id, name: person.name } }));
       refresh();
     },

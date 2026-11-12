@@ -23,6 +23,7 @@ import type { ViewablePdf } from "./PdfViewer";
 // pdf.js é pesado: só é baixado quando alguém abre um PDF.
 const PdfViewer = lazy(() => import("./PdfViewer").then((mod) => ({ default: mod.PdfViewer })));
 import { TransferMenu } from "./TransferMenu";
+import { useTransferFlow } from "./transferFlow";
 import { DEMO } from "@/lib/env";
 import { AiSuggestions } from "./AiSuggestions";
 import { DeleteDialog, ForwardDialog, MessageInfoDialog, MessageMenu } from "./MessageActions";
@@ -228,6 +229,7 @@ export function ChatPanel({
 
   const canTransfer = !closed && (mine || isAdmin || !c.assignee);
   const [transferAt, setTransferAt] = useState<{ x: number; y: number } | null>(null);
+  const transferFlow = useTransferFlow(actions);
   const [participantsAt, setParticipantsAt] = useState<{ x: number; y: number } | null>(null);
   const canManageParticipants = !closed && (mine || participating || isAdmin);
   // Por que não dá para enviar arquivos agora (ou null): o mesmo que o campo de mensagem avisa.
@@ -712,10 +714,11 @@ export function ChatPanel({
           y={transferAt.y}
           myId={actions.me.id}
           canTransfer={canTransfer}
-          onPick={(p) => actions.transfer(c.id, p)}
+          onPick={(p) => transferFlow.request(c, p)}
           onClose={() => setTransferAt(null)}
         />
       )}
+      {transferFlow.dialog}
     </section>
   );
 }
