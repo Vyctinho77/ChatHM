@@ -20,7 +20,7 @@ function singular(w: string): string {
   return w;
 }
 
-export function tokens(text: string): string[] {
+export function tokens(text: string, plural = true): string[] {
   const clean = text
     .toLowerCase()
     .normalize("NFKD")
@@ -29,10 +29,43 @@ export function tokens(text: string): string[] {
   return clean
     .split(" ")
     .filter((w) => w && !STOPWORDS.has(w))
-    .map(singular);
+    .map((w) => (plural ? singular(w) : w));
 }
 
 export const normalize = (text: string) => tokens(text).join(" ");
+
+/** Mínimo de letras antes do "*" (igual ao backend). */
+export const MIN_WILDCARD = 3;
+
+/**
+ * Normaliza uma palavra-chave cadastrada: como `normalize`, mas uma palavra terminada em "*" vira um prefixo
+ * ("emit*" combina com emitir, emita, emitiu). O prefixo vale como foi escrito, sem reduzir o plural.
+ */
+export function normalizeKeyword(phrase: string): string {
+  const out: string[] = [];
+  for (const raw of phrase.split(/\s+/).filter(Boolean)) {
+    if (raw.endsWith("*")) {
+      const t = tokens(raw, false);
+      if (t.length === 1 && [...t[0]!].length >= MIN_WILDCARD) {
+        out.push(`${t[0]}*`);
+        continue;
+      }
+    }
+    out.push(...tokens(raw));
+  }
+  return out.join(" ");
+}
+
+/** "*" só no fim de uma palavra e com 3+ letras antes dele. */
+export function validWildcards(phrase: string): boolean {
+  return phrase.split(/\s+/).every((w) => {
+    const i = w.indexOf("*");
+    if (i < 0) return true;
+    if (i !== w.length - 1 || [...w.slice(0, i)].length < MIN_WILDCARD) return false;
+    const t = tokens(w, false);
+    return t.length === 1 && [...t[0]!].length >= MIN_WILDCARD;
+  });
+}
 
 export type DemoKeyword = { segmentId: string; segmentKey: string; phrase: string; normalized: string; priority: number };
 export type Match = { segmentId: string; segmentKey: string; phrase: string; priority: number };
@@ -43,9 +76,11 @@ export type Classification = {
   matches: Match[];
 };
 
+const tokenMatches = (have: string, want: string) => (want.length > 1 && want.endsWith("*") ? have.startsWith(want.slice(0, -1)) : have === want);
+
 function containsSeq(hay: string[], needle: string[]) {
   for (let i = 0; i + needle.length <= hay.length; i++) {
-    if (needle.every((w, j) => hay[i + j] === w)) return true;
+    if (needle.every((w, j) => tokenMatches(hay[i + j]!, w))) return true;
   }
   return false;
 }

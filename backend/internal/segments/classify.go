@@ -1,6 +1,9 @@
 package segments
 
-import "sort"
+import (
+	"sort"
+	"strings"
+)
 
 // Keyword é uma palavra-chave carregada para classificação.
 type Keyword struct {
@@ -39,7 +42,8 @@ type Result struct {
 // Classify é o motor determinístico de classificação (sem IA):
 //
 //   - uma palavra-chave combina quando todas as suas palavras aparecem juntas e em
-//     ordem no texto (depois da normalização);
+//     ordem no texto (depois da normalização); uma palavra terminada em "*" é um prefixo
+//     ("emit*" combina com emitir, emita, emitiu);
 //   - a pontuação de cada segmento é a maior prioridade entre as suas palavras que combinaram;
 //   - se um único segmento tem a maior pontuação, ele vence; se mais de um empata,
 //     é conflito e a conversa vai para a fila geral; sem nenhuma combinação, também.
@@ -111,7 +115,7 @@ func containsSeq(haystack, needle []string) bool {
 	for i := 0; i+len(needle) <= len(haystack); i++ {
 		ok := true
 		for j, w := range needle {
-			if haystack[i+j] != w {
+			if !tokenMatches(haystack[i+j], w) {
 				ok = false
 				break
 			}
@@ -121,4 +125,12 @@ func containsSeq(haystack, needle []string) bool {
 		}
 	}
 	return false
+}
+
+// tokenMatches: igualdade de palavra inteira, ou prefixo quando a palavra-chave termina em "*".
+func tokenMatches(have, want string) bool {
+	if n := len(want); n > 1 && want[n-1] == '*' {
+		return strings.HasPrefix(have, want[:n-1])
+	}
+	return have == want
 }

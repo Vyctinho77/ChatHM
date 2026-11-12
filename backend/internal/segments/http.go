@@ -14,26 +14,44 @@ type Handler struct{ svc *Service }
 
 func NewHandler(s *Service) *Handler { return &Handler{svc: s} }
 
-// Routes: leitura para qualquer usuário (palavras-chave só para admin); escrita só admin.
+// Routes: qualquer pessoa vê os segmentos e testa uma mensagem; as palavras-chave são do administrador e dos integrantes da equipe
+// do segmento (cada um mexe nas do seu); estrutura, vínculo de equipe e prioridade são só do administrador.
 func (h *Handler) Routes(r chi.Router) {
 	r.Get("/segments", h.list)
+	r.Post("/segments/classify", h.classify)
+	r.Get("/segments/{id}/suggestions", h.suggestions)
+	r.Post("/segments/{id}/keywords", h.addKeyword)
+	r.Post("/segments/{id}/keywords/bulk", h.addKeywords)
+	r.Delete("/segments/{id}/keywords/{kid}", h.deleteKeyword)
 	r.Group(func(r chi.Router) {
 		r.Use(auth.RequireAdmin)
 		r.Post("/segments", h.create)
-		r.Post("/segments/classify", h.classify)
 		r.Post("/segments/examples", h.examples)
 		r.Patch("/segments/{id}", h.update)
 		r.Put("/segments/{id}/team", h.setTeam)
 		r.Delete("/segments/{id}", h.delete)
-		r.Post("/segments/{id}/keywords", h.addKeyword)
 		r.Patch("/segments/{id}/keywords/{kid}", h.updateKeyword)
-		r.Delete("/segments/{id}/keywords/{kid}", h.deleteKeyword)
 	})
 }
 
+// canEdit confere se quem pede pode mexer nas palavras-chave do segmento; responde 403/404 quando não pode.
+func (h *Handler) canEdit(w http.ResponseWriter, r *http.Request) (sess *auth.Session, ok bool) {
+	sess = auth.MustFromContext(r.Context())
+	allowed, err := h.svc.CanEditKeywords(r.Context(), sess.UserID, sess.IsAdmin(), chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, r, err)
+		return sess, false
+	}
+	if !allowed {
+		httpx.Error(w, http.StatusForbidden, "forbidden", "Só o administrador ou quem é da equipe deste segmento pode mexer nas palavras-chave.")
+		return sess, false
+	}
+	return sess, true
+}
+
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
-	admin := auth.MustFromContext(r.Context()).IsAdmin()
-	segs, err := h.svc.List(r.Context(), admin)
+	sess := auth.MustFromContext(r.Context())
+	segs, err := h.svc.ListForUser(r.Context(), sess.UserID, sess.IsAdmin())
 	if err != nil {
 		httpx.Internal(w, r, err)
 		return
@@ -60,14 +78,15 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Name     *string `json:"name"`
-		IsActive *bool   `json:"isActive"`
+		Name        *string `json:"name"`
+		IsActive    *bool   `json:"isActive"`
+		AutoInclude *bool   `json:"autoInclude"`
 	}
 	if !httpx.Decode(w, r, &in) {
 		return
 	}
 	sess := auth.MustFromContext(r.Context())
-	sg, err := h.svc.Update(r.Context(), sess.UserID, httpx.ClientIP(r), chi.URLParam(r, "id"), in.Name, in.IsActive)
+	sg, err := h.svc.Update(r.Context(), sess.UserID, httpx.ClientIP(r), chi.URLParam(r, "id"), in.Name, in.IsActive, in.AutoInclude)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -108,13 +127,54 @@ func (h *Handler) addKeyword(w http.ResponseWriter, r *http.Request) {
 	if !httpx.Decode(w, r, &in) {
 		return
 	}
-	sess := auth.MustFromContext(r.Context())
+	sess, ok := h.canEdit(w, r)
+	if !ok {
+		return
+	}
+	if !sess.IsAdmin() {
+		in.Priority = DefaultPriority // só o administrador escolhe a prioridade
+	}
 	k, err := h.svc.AddKeyword(r.Context(), sess.UserID, httpx.ClientIP(r), chi.URLParam(r, "id"), in.Phrase, in.Priority)
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, k)
+}
+
+func (h *Handler) addKeywords(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Phrases  []string `json:"phrases"`
+		Priority int      `json:"priority"`
+	}
+	if !httpx.Decode(w, r, &in) {
+		return
+	}
+	sess, ok := h.canEdit(w, r)
+	if !ok {
+		return
+	}
+	if !sess.IsAdmin() || in.Priority == 0 {
+		in.Priority = DefaultPriority
+	}
+	res, err := h.svc.AddKeywords(r.Context(), sess.UserID, httpx.ClientIP(r), chi.URLParam(r, "id"), in.Phrases, in.Priority)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, res)
+}
+
+func (h *Handler) suggestions(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.canEdit(w, r); !ok {
+		return
+	}
+	list, err := h.svc.Suggestions(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"suggestions": list})
 }
 
 func (h *Handler) updateKeyword(w http.ResponseWriter, r *http.Request) {
@@ -137,7 +197,10 @@ func (h *Handler) updateKeyword(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) deleteKeyword(w http.ResponseWriter, r *http.Request) {
-	sess := auth.MustFromContext(r.Context())
+	sess, ok := h.canEdit(w, r)
+	if !ok {
+		return
+	}
 	if err := h.svc.DeleteKeyword(r.Context(), sess.UserID, httpx.ClientIP(r), chi.URLParam(r, "id"), chi.URLParam(r, "kid")); err != nil {
 		writeError(w, r, err)
 		return
@@ -145,7 +208,7 @@ func (h *Handler) deleteKeyword(w http.ResponseWriter, r *http.Request) {
 	httpx.NoContent(w)
 }
 
-// classify permite ao admin testar uma frase contra as palavras-chave atuais.
+// classify permite testar uma frase contra as palavras-chave atuais (qualquer pessoa: ajuda a equipe a conferir o que cadastrou).
 func (h *Handler) classify(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Text string `json:"text"`

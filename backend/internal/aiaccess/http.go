@@ -23,6 +23,10 @@ func NewHandler(svc *Service, base BaseURLFunc) *Handler { return &Handler{svc: 
 func (h *Handler) Routes(r chi.Router) {
 	r.Get("/ai/settings", h.getSettings)
 	r.With(auth.RequireAdmin).Put("/ai/settings", h.putSettings)
+	r.With(auth.RequireAdmin).Get("/ai/webhook", h.getWebhook)
+	r.With(auth.RequireAdmin).Put("/ai/webhook", h.putWebhook)
+	r.With(auth.RequireAdmin).Post("/ai/webhook/secret", h.rotateWebhookSecret)
+	r.With(auth.RequireAdmin).Post("/ai/webhook/test", h.testWebhook)
 	r.Get("/ai/tokens", h.listTokens)
 	r.Post("/ai/tokens", h.createToken)
 	r.Delete("/ai/tokens/{id}", h.revokeToken)
@@ -180,4 +184,53 @@ func (h *Handler) discardSuggestion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.NoContent(w)
+}
+
+// --- aviso automático (webhook): só administrador --------------------------------------
+
+func (h *Handler) getWebhook(w http.ResponseWriter, r *http.Request) {
+	c, err := h.svc.Webhook(r.Context())
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, c)
+}
+
+// putWebhook salva a configuração. Na primeira vez devolve também o segredo (uma única vez).
+func (h *Handler) putWebhook(w http.ResponseWriter, r *http.Request) {
+	var in WebhookInput
+	if !httpx.Decode(w, r, &in) {
+		return
+	}
+	sess := auth.MustFromContext(r.Context())
+	c, secret, err := h.svc.SetWebhook(r.Context(), sess.UserID, httpx.ClientIP(r), in)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	out := map[string]any{"webhook": c}
+	if secret != "" {
+		out["secret"] = secret
+	}
+	httpx.JSON(w, http.StatusOK, out)
+}
+
+func (h *Handler) rotateWebhookSecret(w http.ResponseWriter, r *http.Request) {
+	sess := auth.MustFromContext(r.Context())
+	secret, err := h.svc.RotateWebhookSecret(r.Context(), sess.UserID, httpx.ClientIP(r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"secret": secret})
+}
+
+func (h *Handler) testWebhook(w http.ResponseWriter, r *http.Request) {
+	res, err := h.svc.TestWebhook(r.Context())
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, res)
 }

@@ -85,7 +85,5 @@ func TestAttendKeepsOnlyEssentialRails(t *testing.T) {
 	expect(t, w.admin.do("POST", "/api/v1/automation/pause", map[string]any{"paused": false, "reason": ""}), 204)
 	// Chave mestra desligada: a ferramenta some e o envio é recusado.
 	expect(t, w.admin.do("PUT", "/api/v1/ai/settings", map[string]any{"enabled": true, "maskDocuments": true, "allowWrite": true, "allowSend": true, "allowAutomation": false, "allowAttend": false}), 200)
-	if toolNames(w, tok)["send_as_attendant"] {
-		t.Fatal("chave mestra desligada e a ferramenta continua")
-	}
+	w.expectDenied(tok, "send_as_attendant", map[string]any{"conversation_id": pid, "text": "olá"}, "administrador")
 }

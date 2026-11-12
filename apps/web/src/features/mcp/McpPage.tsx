@@ -1,5 +1,6 @@
 import { DEMO } from "@/lib/env";
 import { AiAccessCard } from "./AiAccessCard";
+import { WebhookCard } from "./WebhookCard";
 import { McpHelp } from "./McpHelp";
 import { useMe } from "@/features/auth/api";
 
@@ -16,6 +17,11 @@ export function McpPage() {
       </header>
       <div className="mx-auto max-w-4xl px-4 py-6 sm:px-8 [&>section]:border-t-0 [&>section]:pt-0">
         {DEMO ? <p className="text-sm text-muted">As integrações de IA não estão disponíveis nesta demonstração.</p> : <AiAccessCard />}
+        {!DEMO && me?.user.role === "admin" && (
+          <div className="mt-8 border-t border-line pt-6">
+            <WebhookCard />
+          </div>
+        )}
       </div>
     </div>
   );

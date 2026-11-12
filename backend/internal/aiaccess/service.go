@@ -9,6 +9,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"errors"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/vyctinho77/chathm/backend/internal/conversations"
 	"github.com/vyctinho77/chathm/backend/internal/platform/database"
 	"github.com/vyctinho77/chathm/backend/internal/platform/httpx"
+	"github.com/vyctinho77/chathm/backend/internal/platform/secretbox"
 )
 
 const (
@@ -114,6 +116,10 @@ type Service struct {
 	mu      sync.Mutex
 	buckets map[string]*bucket // limite por token
 	limit   int
+
+	box            *secretbox.Box // segredo do webhook
+	webhookClient  *http.Client
+	webhookPrivate bool // só testes: libera http e endereços internos
 }
 
 type bucket struct {
@@ -122,7 +128,7 @@ type bucket struct {
 }
 
 func NewService(db *pgxpool.Pool) *Service {
-	return &Service{db: db, buckets: map[string]*bucket{}, limit: 60}
+	return &Service{db: db, buckets: map[string]*bucket{}, limit: 60, webhookClient: newWebhookClient(false)}
 }
 
 // --- configuração ----------------------------------------------------------

@@ -129,7 +129,7 @@ func (s *Service) record(ctx context.Context, action, id string, meta map[string
 
 // process reivindica e envia um item. As regras do servidor rodam DE NOVO aqui: o mundo mudou desde que a IA enfileirou.
 func (s *Service) process(ctx context.Context, id string, st Settings) outcome {
-	var contactID, text, category, docID, provider, app, tokenID, chargeID string
+	var contactID, text, category, docID, provider, app, tokenID, chargeID, creator string
 	var manual bool
 	var snapAmount *int64
 	var snapDue *time.Time
@@ -137,8 +137,8 @@ func (s *Service) process(ctx context.Context, id string, st Settings) outcome {
 	err := s.db.QueryRow(ctx, `
 		UPDATE automation_sends SET status = 'sending', attempts = attempts + 1, updated_at = now() WHERE id = $1 AND status = 'approved'
 		RETURNING contact_id::text, text, category, coalesce(document_id::text, ''), provider, app_name, coalesce(token_id::text, ''), approved_by IS NOT NULL,
-		          coalesce(charge_id::text, ''), charge_amount_cents, charge_due_date, attempts`, id).
-		Scan(&contactID, &text, &category, &docID, &provider, &app, &tokenID, &manual, &chargeID, &snapAmount, &snapDue, &attempts)
+		          coalesce(charge_id::text, ''), charge_amount_cents, charge_due_date, attempts, coalesce(created_by::text, '')`, id).
+		Scan(&contactID, &text, &category, &docID, &provider, &app, &tokenID, &manual, &chargeID, &snapAmount, &snapDue, &attempts, &creator)
 	if err != nil {
 		return outcomeSkipped // outro worker pegou, ou foi cancelado
 	}
@@ -239,7 +239,7 @@ func (s *Service) process(ctx context.Context, id string, st Settings) outcome {
 	msgID := uuid.NewString()
 	msg, err := s.convs.SendAutomated(ctx, conversations.AutomatedSend{
 		ID: msgID, ContactID: contactID, Author: Author(st.Signature), Text: RenderCharge(text, info.Name, st.OfficeFields, cv, false),
-		Att: att, Provider: provider, App: app, SendID: id,
+		Att: att, Provider: provider, App: app, SendID: id, ActorID: creator,
 	})
 	var blocked *conversations.ErrAutomatedBlocked
 	switch {

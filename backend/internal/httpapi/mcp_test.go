@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"io"
 	"net/http"
@@ -15,6 +16,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/vyctinho77/chathm/backend/internal/aiaccess"
 )
 
 // mcpCall envia uma requisição JSON-RPC ao /mcp com o token (vazio = sem cabeçalho).
@@ -315,12 +318,22 @@ func TestAIAccessWithRealMCPClient(t *testing.T) {
 	defer session.Close()
 
 	tools, err := session.ListTools(ctx, nil)
-	if err != nil || len(tools.Tools) != 11 {
-		t.Fatalf("ferramentas: %v %v", err, tools)
+	caps := aiaccess.ToolCapabilities()
+	if err != nil || len(tools.Tools) != len(caps) {
+		t.Fatalf("a lista deveria ter as %d ferramentas do mapa de capacidades: %v %d", len(caps), err, len(tools.Tools))
 	}
 	for _, tl := range tools.Tools {
-		if tl.Annotations == nil || !tl.Annotations.ReadOnlyHint || tl.Description == "" {
-			t.Fatalf("ferramenta sem descrição/readOnly: %+v", tl)
+		_, known := caps[tl.Name]
+		if !known || tl.Description == "" || tl.Annotations == nil {
+			t.Fatalf("ferramenta sem regra de acesso, descrição ou anotações: %+v", tl)
+		}
+		// Ferramentas que ALTERAM algo (inclusive mark_replies, que guarda o que o agente já tratou) não são somente-leitura; as demais são,
+		// mesmo quando exigem uma permissão (listar cobranças e envios automáticos só lê).
+		mutating := map[string]bool{"add_tag": true, "remove_tag": true, "append_note": true, "rename_contact": true, "snooze": true, "resume": true,
+			"transfer": true, "set_reminder": true, "create_agenda_event": true, "draft_reply": true, "send_message": true, "send_as_attendant": true,
+			"send_automatic_message": true, "cancel_automatic_send": true, "mark_replies": true}
+		if mutating[tl.Name] == tl.Annotations.ReadOnlyHint {
+			t.Fatalf("anotação readOnly errada em %s (altera=%v, readOnly=%v)", tl.Name, mutating[tl.Name], tl.Annotations.ReadOnlyHint)
 		}
 	}
 	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "list_conversations", Arguments: map[string]any{"filter": "all"}})
@@ -438,6 +451,39 @@ func (w *world) mkWriteToken(c *client, name string) string {
 	return r.body["token"].(string)
 }
 
+// toolCall chama uma ferramenta e devolve se a chamada foi recusada ou falhou (isError, ou erro de protocolo) e o texto do erro.
+func (w *world) toolCall(tok, name string, args map[string]any) (bool, string) {
+	w.e.t.Helper()
+	_, out := w.mcpCall(tok, "tools/call", map[string]any{"name": name, "arguments": args})
+	if e, ok := out["error"]; ok && e != nil {
+		return true, fmt.Sprint(e)
+	}
+	res, _ := out["result"].(map[string]any)
+	isErr, _ := res["isError"].(bool)
+	text := ""
+	if c, ok := res["content"].([]any); ok && len(c) > 0 {
+		text, _ = c[0].(map[string]any)["text"].(string)
+	}
+	return isErr, text
+}
+
+// expectDenied: a ferramenta EXISTE para este token (a lista é a mesma para todos), mas a chamada é recusada com o motivo.
+func (w *world) expectDenied(tok, name string, args map[string]any, wantInText ...string) {
+	w.e.t.Helper()
+	if !toolNames(w, tok)[name] {
+		w.e.t.Fatalf("a ferramenta %s deveria estar na lista de qualquer token", name)
+	}
+	isErr, text := w.toolCall(tok, name, args)
+	if !isErr {
+		w.e.t.Fatalf("%s deveria ser recusada para este token: %q", name, text)
+	}
+	for _, want := range wantInText {
+		if !strings.Contains(text, want) {
+			w.e.t.Fatalf("recusa de %s sem %q: %q", name, want, text)
+		}
+	}
+}
+
 func toolNames(w *world, tok string) map[string]bool {
 	w.e.t.Helper()
 	_, out := w.mcpCall(tok, "tools/list", nil)
@@ -461,20 +507,17 @@ func TestAIAccessWriteScopeAndTools(t *testing.T) {
 	anaTok := w.mkWriteToken(w.ana, "escrita")
 	biaTok := w.mkWriteToken(w.bia, "bia escrita")
 	writeTools := []string{"add_tag", "remove_tag", "append_note", "rename_contact", "snooze", "resume", "set_reminder", "create_agenda_event", "transfer"}
+	// A lista é a mesma para qualquer token; o que o token de leitura não pode alterar é recusado, com o motivo.
 	ro, rw := toolNames(w, readTok), toolNames(w, anaTok)
+	if len(ro) != len(rw) || len(ro) != len(aiaccess.ToolCapabilities()) {
+		t.Fatalf("a lista de ferramentas deveria ser igual: leitura=%d escrita=%d", len(ro), len(rw))
+	}
 	for _, n := range writeTools {
-		if ro[n] || !rw[n] {
+		if !ro[n] || !rw[n] {
 			t.Fatalf("ferramenta %s: leitura=%v escrita=%v", n, ro[n], rw[n])
 		}
 	}
-	if !ro["list_people"] || len(ro) != 11 {
-		t.Fatalf("token de leitura deveria ter 11 ferramentas: %d", len(ro))
-	}
-	// Token de leitura chamando uma ferramenta de escrita: não existe.
-	_, out := w.mcpCall(readTok, "tools/call", map[string]any{"name": "add_tag", "arguments": map[string]any{"conversation_id": "x", "tag": "y"}})
-	if out["error"] == nil {
-		t.Fatalf("token só de leitura não pode alterar: %v", out)
-	}
+	w.expectDenied(readTok, "add_tag", map[string]any{"conversation_id": "x", "tag": "y"}, "escopo de escrita", "my_access")
 
 	// Conversa da ana (assumida ao responder) + etiqueta criada pelo administrador.
 	w.receive("Cliente Escrita", "Preciso do DAS")
@@ -617,9 +660,7 @@ func TestAIAccessWriteRateLimitAndSwitchOff(t *testing.T) {
 	// O administrador retira a permissão: as ferramentas de escrita somem na hora, mesmo com o token antigo.
 	w.e.svcs.AI.SetRateLimit(1000)
 	expect(t, w.admin.do("PUT", "/api/v1/ai/settings", map[string]any{"enabled": true, "maskDocuments": true, "allowWrite": false}), 200)
-	if toolNames(w, tok)["add_tag"] {
-		t.Fatal("com allowWrite desligado o token antigo não pode mais alterar")
-	}
+	w.expectDenied(tok, "add_tag", map[string]any{"conversation_id": cid, "tag": "t1"}, "Permitir alterações") // com allowWrite desligado o token antigo não altera mais
 }
 
 func mustJSON(v any) []byte { b, _ := json.Marshal(v); return b }
@@ -644,9 +685,10 @@ func TestAIAccessDraftAndSendNeedHumanApproval(t *testing.T) {
 	sendTok := w.mkScopedToken(w.ana, "envio", "send")
 	biaTok := w.mkWriteToken(w.bia, "bia")
 
-	rw, rs := toolNames(w, writeTok), toolNames(w, sendTok)
-	if !rw["draft_reply"] || rw["send_message"] || !rs["draft_reply"] || !rs["send_message"] {
-		t.Fatalf("ferramentas: escrita=%v envio=%v", rw["send_message"], rs["draft_reply"])
+	// Mesma lista para os dois tokens; o de rascunho não pede envio (recusado, com o motivo).
+	w.expectDenied(writeTok, "send_message", map[string]any{"conversation_id": "x", "text": "oi"}, "escopo send")
+	if rw, rs := toolNames(w, writeTok), toolNames(w, sendTok); !rw["draft_reply"] || !rw["send_message"] || !rs["draft_reply"] || !rs["send_message"] {
+		t.Fatalf("a lista deveria ser igual para os dois tokens: %v %v", rw, rs)
 	}
 
 	w.receive("Cliente Aprovação", "Pode me mandar o DAS de outubro?")
@@ -1008,9 +1050,10 @@ func TestOAuthFullFlowWithPKCEAndPrivacy(t *testing.T) {
 	w.receive("Marlon Contador Silva", "Meu CPF é 123.456.789-01, e-mail marlon@empresa.com, ligue (92) 98800-1111. senha: Abc12345!")
 	cidConv := mustConv(t, w.ana, "Marlon Contador Silva")["id"].(string)
 	names := toolNames(w, access)
-	if !names["read_messages"] || names["add_tag"] || names["draft_reply"] {
-		t.Fatalf("ferramentas do token OAuth de leitura: %v", names)
+	if !names["read_messages"] || !names["add_tag"] || !names["draft_reply"] {
+		t.Fatalf("a lista é a mesma para o token OAuth: %v", names)
 	}
+	w.expectDenied(access, "add_tag", map[string]any{"conversation_id": cidConv, "tag": "x"}, "escopo de escrita")
 	out, isErr := w.tool(access, "read_messages", map[string]any{"conversation_id": cidConv})
 	if isErr {
 		t.Fatalf("read_messages OAuth: %v", out)

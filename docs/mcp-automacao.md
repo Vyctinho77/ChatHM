@@ -198,7 +198,7 @@ dados sigilosos (senhas, códigos, chave PIX, cartão) já nunca chegam à IA pe
 **Rastro:** a mensagem leva `automated`, `aiMode=attend`, `aiProvider` e `aiApp` (a tela mostra a logo e "atendimento por IA"), a assinatura "Assistente do escritório" vai em
 negrito no WhatsApp, e cada envio entra na auditoria (`automation.attend.send`) e no registro de uso do MCP. Não assume a conversa nem muda responsável.
 
-**Limites a saber:** o MCP não avisa a IA quando um cliente escreve; ela precisa consultar as conversas (por exemplo, rodando de tempos em tempos).
+**Limites a saber:** o canal MCP não empurra mensagens para a IA. Para saber que o cliente respondeu, use `list_pending_replies` (de tempos em tempos) e, se o agente roda fora de uma conversa, o **aviso automático por webhook** (ver `docs/mcp.md`).
 Quem usa um número pelo protocolo não oficial do WhatsApp assume o risco de bloqueio; o limite de velocidade reduz, não elimina.
 
 ## 15. Cobranças com link de pagamento (implementada)

@@ -1,23 +1,13 @@
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { Check, Plus } from "lucide-react";
+import { Check } from "lucide-react";
 import { ListRow, Page, PageBody, PageHeader, Section } from "@/components/list";
 import { Alert, Button, Field, Modal } from "@/components/ui";
 import { DetailSkeleton } from "@/components/Skeleton";
-import { cn } from "@/lib/cn";
 import { errorMessage, fieldErrors } from "@/lib/api";
 import { useTeams, type Team } from "@/features/team/api";
-import {
-  useAddKeyword,
-  useDeleteKeyword,
-  useDeleteSegment,
-  useSegments,
-  useSetSegmentTeam,
-  useUpdateKeyword,
-  useUpdateSegment,
-  type Keyword,
-  type Segment,
-} from "./api";
+import { useDeleteSegment, useSegments, useSetSegmentTeam, useUpdateSegment, type Segment } from "./api";
+import { KeywordsSections } from "./KeywordsEditor";
 
 /** Escolha de equipe em uma lista simples (uma seleção por vez). */
 export function TeamPicker({
@@ -87,14 +77,13 @@ export function SegmentDetailPage() {
   return <Detail segment={segment} teams={teams.data ?? []} onBack={back} />;
 }
 
-type Dialog = "rename" | "team" | "delete" | "add" | { keyword: Keyword } | null;
+type Dialog = "rename" | "team" | "delete" | null;
 
 function Detail({ segment: s, teams, onBack }: { segment: Segment; teams: Team[]; onBack: () => void }) {
   const update = useUpdateSegment();
   const setTeam = useSetSegmentTeam();
   const [dialog, setDialog] = useState<Dialog>(null);
   const close = () => setDialog(null);
-  const keywords = s.keywords ?? [];
 
   return (
     <Page>
@@ -120,22 +109,15 @@ function Detail({ segment: s, teams, onBack }: { segment: Segment; teams: Team[]
             switchValue={s.isActive}
             onClick={() => update.mutate({ id: s.id, isActive: !s.isActive })}
           />
+          <ListRow
+            title="Chamar a equipe em conversas em andamento"
+            subtitle="Em conversa já atendida por outra pessoa, a equipe entra como participante"
+            switchValue={s.autoInclude}
+            onClick={() => update.mutate({ id: s.id, autoInclude: !s.autoInclude })}
+          />
         </Section>
 
-        <Section
-          title={`Palavras e expressões${keywords.length ? ` · ${keywords.length}` : ""}`}
-          note="Acentos, maiúsculas e plural não importam, mas a palavra precisa aparecer inteira. Se duas filas combinam, vence a de maior prioridade."
-        >
-          {keywords.map((k) => (
-            <ListRow
-              key={k.id}
-              title={k.phrase}
-              value={k.priority > 0 ? `prioridade ${k.priority}` : undefined}
-              onClick={() => setDialog({ keyword: k })}
-            />
-          ))}
-          <ListRow icon={<Plus />} title="Adicionar palavra" tone="brand" onClick={() => setDialog("add")} />
-        </Section>
+        <KeywordsSections segment={s} isAdmin />
 
         <Section>
           <ListRow title="Excluir segmento" tone="danger" onClick={() => setDialog("delete")} />
@@ -153,8 +135,6 @@ function Detail({ segment: s, teams, onBack }: { segment: Segment; teams: Team[]
           close();
         }}
       />
-      <AddKeywordModal open={dialog === "add"} segmentId={s.id} onClose={close} />
-      {typeof dialog === "object" && dialog && <KeywordModal segmentId={s.id} k={dialog.keyword} onClose={close} />}
       <DeleteModal open={dialog === "delete"} segment={s} onClose={close} onDeleted={onBack} />
     </Page>
   );
@@ -181,103 +161,6 @@ function RenameModal({ open, segment, onClose }: { open: boolean; segment: Segme
           <Button type="submit" loading={update.isPending}>
             Salvar
           </Button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
-function PriorityField({ value, onChange, error }: { value: number; onChange: (n: number) => void; error?: string }) {
-  return (
-    <Field
-      label="Prioridade"
-      type="number"
-      min={0}
-      max={100}
-      value={value}
-      error={error}
-      hint="De 0 a 100. A maior vence quando duas filas combinam."
-      onChange={(e) => onChange(Number(e.target.value))}
-    />
-  );
-}
-
-function AddKeywordModal({ open, segmentId, onClose }: { open: boolean; segmentId: string; onClose: () => void }) {
-  const add = useAddKeyword();
-  const [phrase, setPhrase] = useState("");
-  const [priority, setPriority] = useState(0);
-  const fields = fieldErrors(add.error);
-
-  function close() {
-    add.reset();
-    setPhrase("");
-    setPriority(0);
-    onClose();
-  }
-  function submit(e: FormEvent) {
-    e.preventDefault();
-    add.mutateAsync({ segmentId, phrase, priority }).then(close, () => undefined);
-  }
-
-  return (
-    <Modal open={open} onClose={close} title="Adicionar palavra">
-      <form onSubmit={submit} className="flex flex-col gap-4">
-        <Field
-          label="Palavra ou expressão"
-          placeholder="ex.: nota fiscal"
-          value={phrase}
-          error={fields.phrase}
-          autoFocus
-          onChange={(e) => setPhrase(e.target.value)}
-        />
-        <PriorityField value={priority} onChange={setPriority} error={fields.priority} />
-        {add.isError && !fields.phrase && !fields.priority && <Alert>{errorMessage(add.error)}</Alert>}
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="secondary" onClick={close}>
-            Cancelar
-          </Button>
-          <Button type="submit" loading={add.isPending} disabled={!phrase.trim()}>
-            Adicionar
-          </Button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
-function KeywordModal({ segmentId, k, onClose }: { segmentId: string; k: Keyword; onClose: () => void }) {
-  const update = useUpdateKeyword();
-  const remove = useDeleteKeyword();
-  const [priority, setPriority] = useState(k.priority);
-  const fields = fieldErrors(update.error);
-  return (
-    <Modal open onClose={onClose} title={k.phrase}>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          update.mutateAsync({ segmentId, id: k.id, priority }).then(onClose, () => undefined);
-        }}
-        className="flex flex-col gap-4"
-      >
-        <PriorityField value={priority} onChange={setPriority} error={fields.priority} />
-        {remove.error && <Alert>{errorMessage(remove.error)}</Alert>}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            disabled={remove.isPending}
-            onClick={() => remove.mutate({ segmentId, id: k.id }, { onSuccess: onClose })}
-            className={cn("rounded-lg px-2 py-1.5 text-[13.5px] text-danger hover:bg-hover disabled:opacity-60")}
-          >
-            Remover
-          </button>
-          <span className="ml-auto flex gap-2">
-            <Button type="button" variant="secondary" onClick={onClose}>
-              Cancelar
-            </Button>
-            <Button type="submit" loading={update.isPending}>
-              Salvar
-            </Button>
-          </span>
         </div>
       </form>
     </Modal>

@@ -115,6 +115,8 @@ func NewServices(ctx context.Context, cfg config.Config, db *pgxpool.Pool, opt O
 		AI:            aiaccess.NewService(db),
 	}
 	s.AI.Attach(convs, hub)
+	s.AI.SetBox(box)               // segredo do webhook de avisos, cifrado com a ENCRYPTION_KEY
+	convs.SetInboundNotifier(s.AI) // avisa o webhook quando o cliente escreve
 	s.Automation = automation.NewService(db, convs, store, mediaSvc, opt.Logger)
 	s.Automation.SetBilling(box) // chaves de API dos gateways de cobrança, cifradas com a ENCRYPTION_KEY
 	if cfg.SeedExampleData {

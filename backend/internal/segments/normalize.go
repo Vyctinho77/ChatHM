@@ -27,7 +27,10 @@ var stopwords = map[string]struct{}{
 //     aplicado igualmente às palavras-chave, então a comparação é sempre consistente.
 //
 // A comparação posterior é por palavra inteira: "folha" não combina com "folhagem".
-func Tokens(s string) []string {
+func Tokens(s string) []string { return tokenize(s, true) }
+
+// tokenize é Tokens com a opção de não reduzir o plural (usada nos prefixos com curinga, que valem como foram escritos).
+func tokenize(s string, plural bool) []string {
 	decomposed := norm.NFKD.String(strings.ToLower(s))
 	var b strings.Builder
 	b.Grow(len(decomposed))
@@ -46,13 +49,54 @@ func Tokens(s string) []string {
 		if _, skip := stopwords[w]; skip {
 			continue
 		}
-		out = append(out, singular(w))
+		if plural {
+			w = singular(w)
+		}
+		out = append(out, w)
 	}
 	return out
 }
 
 // Normalize devolve os tokens unidos por espaço (forma gravada no banco).
 func Normalize(s string) string { return strings.Join(Tokens(s), " ") }
+
+// MinWildcard é o mínimo de letras antes do "*" (com menos, o curinga combinaria com palavras demais).
+const MinWildcard = 3
+
+// NormalizeKeyword normaliza uma palavra-chave cadastrada. Igual a Normalize, mas uma palavra terminada em "*"
+// vira um prefixo: "emit*" combina com emitir, emita, emitiu, emitido e emissão não (outro radical: use "emiss*").
+// O prefixo vale como foi escrito (sem acento, caixa ou plural). Palavras com curinga curto demais ficam sem ele;
+// ValidPhrase recusa esse caso antes de gravar.
+func NormalizeKeyword(s string) string {
+	var out []string
+	for _, raw := range strings.Fields(s) {
+		if strings.HasSuffix(raw, "*") {
+			if t := tokenize(raw, false); len(t) == 1 && len([]rune(t[0])) >= MinWildcard {
+				out = append(out, t[0]+"*")
+				continue
+			}
+		}
+		out = append(out, Tokens(raw)...)
+	}
+	return strings.Join(out, " ")
+}
+
+// ValidWildcards confere o uso do "*": só no fim de uma palavra e com letras suficientes antes dele.
+func ValidWildcards(phrase string) bool {
+	for _, w := range strings.Fields(phrase) {
+		i := strings.Index(w, "*")
+		if i < 0 {
+			continue
+		}
+		if i != len(w)-1 || len([]rune(strings.TrimSuffix(w, "*"))) < MinWildcard {
+			return false
+		}
+		if t := tokenize(w, false); len(t) != 1 || len([]rune(t[0])) < MinWildcard {
+			return false
+		}
+	}
+	return true
+}
 
 // singular reduz os plurais mais comuns do português à forma singular. Não é um
 // stemmer completo: o objetivo é só que "nota/notas", "fiscal/fiscais", "valor/valores"

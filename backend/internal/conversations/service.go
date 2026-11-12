@@ -64,6 +64,22 @@ type Publisher interface {
 	Publish(typ string, data any, filter realtime.Filter)
 }
 
+// InboundEvent: uma mensagem de cliente acabou de ser gravada.
+type InboundEvent struct {
+	ConversationID string
+	MessageID      string
+	Group          bool
+}
+
+// InboundNotifier recebe o aviso de cada mensagem nova de cliente (satisfeito pelo serviço de acesso por IA, para o webhook).
+// Quem implementa não pode devolver erro nem demorar: o recebimento de mensagens não espera por ele.
+type InboundNotifier interface {
+	OnInbound(ctx context.Context, ev InboundEvent)
+}
+
+// SetInboundNotifier liga o aviso de mensagens novas.
+func (s *Service) SetInboundNotifier(n InboundNotifier) { s.inbound = n }
+
 // Sender envia mensagens pelo WhatsApp (satisfeito por *whatsapp.Manager).
 type Sender interface {
 	Connected() bool
@@ -99,6 +115,7 @@ type Service struct {
 	db         *pgxpool.Pool
 	pub        Publisher
 	sender     Sender
+	inbound    InboundNotifier
 }
 
 func NewService(db *pgxpool.Pool, pub Publisher) *Service {
@@ -373,6 +390,10 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 			return err
 		}
 		if curSeg != nil || curStatus != "new" || assignee != nil {
+			// Conversa em andamento: não muda de dono nem de fila, mas a equipe do assunto entra como participante.
+			if !m.IsGroup && curStatus != "closed" {
+				return s.callTopicTeam(ctx, tx, convID, text, curSeg, assignee, &before)
+			}
 			return nil
 		}
 		kws, err := segments.LoadKeywords(ctx, tx)
@@ -415,6 +436,9 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 		s.publishMessage(ctx, EventMessageCreated, msgID, after)
 		if !m.FromMe {
 			s.publishTyping(convID, m.SenderID, false, after)
+			if s.inbound != nil {
+				s.inbound.OnInbound(context.WithoutCancel(ctx), InboundEvent{ConversationID: convID, MessageID: msgID, Group: m.IsGroup})
+			}
 		}
 	}
 	if m.Download != nil && s.store != nil && s.media != nil {
@@ -512,7 +536,7 @@ type Conversation struct {
 
 const messageCols = `m.id, m.conversation_id, m.direction, m.kind, m.body, m.payload, m.status,
 	m.sent_at, m.sender_name, m.delivered_at, m.read_at, m.played_at,
-	(SELECT a.id::text FROM attachments a WHERE a.message_id = m.id), m.edited_at, m.deleted_at`
+	(SELECT a.id::text FROM attachments a WHERE a.message_id = m.id), m.edited_at, m.deleted_at, m.sender_user_id::text`
 
 type msgRow struct {
 	id, convID, dir, kind, body, sender string
@@ -522,10 +546,11 @@ type msgRow struct {
 	deliveredAt, readAt, playedAt       *time.Time
 	attachmentID                        *string
 	editedAt, deletedAt                 *time.Time
+	senderID                            *string // quem enviou (pessoa do escritório); vazio em mensagens do cliente e da IA
 }
 
 func (r *msgRow) dest() []any {
-	return []any{&r.id, &r.convID, &r.dir, &r.kind, &r.body, &r.payload, &r.status, &r.sentAt, &r.sender, &r.deliveredAt, &r.readAt, &r.playedAt, &r.attachmentID, &r.editedAt, &r.deletedAt}
+	return []any{&r.id, &r.convID, &r.dir, &r.kind, &r.body, &r.payload, &r.status, &r.sentAt, &r.sender, &r.deliveredAt, &r.readAt, &r.playedAt, &r.attachmentID, &r.editedAt, &r.deletedAt, &r.senderID}
 }
 
 func (r msgRow) message() Message {
@@ -541,6 +566,9 @@ func (r msgRow) message() Message {
 	}
 	if r.readAt != nil {
 		m["readAt"] = r.readAt.UTC().Format(time.RFC3339Nano)
+	}
+	if r.senderID != nil && r.dir == "out" {
+		m["authorId"] = *r.senderID // identidade estável de quem enviou (o nome pode mudar)
 	}
 	if r.playedAt != nil {
 		m["playedAt"] = r.playedAt.UTC().Format(time.RFC3339Nano)
@@ -599,7 +627,7 @@ const listQuery = `
 	       coalesce((SELECT array_agg(t.name::text ORDER BY t.name) FROM conversation_tags cg
 	                  JOIN tags t ON t.id = cg.tag_id WHERE cg.conversation_id = c.id), '{}'),
 	       lm.id, lm.conversation_id, lm.direction, lm.kind, lm.body, lm.payload, lm.status,
-	       lm.sent_at, lm.sender_name, lm.delivered_at, lm.read_at, lm.edited_at, lm.deleted_at,
+	       lm.sent_at, lm.sender_name, lm.delivered_at, lm.read_at, lm.edited_at, lm.deleted_at, lm.sender_user_id::text,
 	       coalesce((SELECT json_agg(json_build_object('id', pu.id, 'name', pu.name) ORDER BY cp.created_at)
 	                  FROM conversation_participants cp JOIN users pu ON pu.id = cp.user_id WHERE cp.conversation_id = c.id), '[]'::json)
 	  FROM conversations c
@@ -625,12 +653,13 @@ func scanConversation(row pgx.Row) (Conversation, error) {
 			status                              *string
 			sentAt, deliveredAt, readAt         *time.Time
 			editedAt, deletedAt                 *time.Time
+			senderID                            *string
 		}
 	)
 	err := row.Scan(&c.ID, &c.Status, &c.UnreadCount, &c.UpdatedAt, &c.Classification, &c.SnoozedUntil,
 		&c.Contact.ID, &name, &phone, &waID, &c.Contact.Company, &c.Contact.Note, &kind, &avatarVer, &c.Contact.Saved,
 		&uID, &uName, &segKey, &segName, &c.Tags,
-		&lm.id, &lm.convID, &lm.dir, &lm.kind, &lm.body, &lm.payload, &lm.status, &lm.sentAt, &lm.sender, &lm.deliveredAt, &lm.readAt, &lm.editedAt, &lm.deletedAt, &parts)
+		&lm.id, &lm.convID, &lm.dir, &lm.kind, &lm.body, &lm.payload, &lm.status, &lm.sentAt, &lm.sender, &lm.deliveredAt, &lm.readAt, &lm.editedAt, &lm.deletedAt, &lm.senderID, &parts)
 	if err != nil {
 		return c, err
 	}
@@ -654,7 +683,7 @@ func scanConversation(row pgx.Row) (Conversation, error) {
 		c.LastMessage = msgRow{
 			id: *lm.id, convID: *lm.convID, dir: *lm.dir, kind: *lm.kind, body: *lm.body, sender: *lm.sender,
 			payload: lm.payload, status: lm.status, sentAt: *lm.sentAt, deliveredAt: lm.deliveredAt, readAt: lm.readAt,
-			editedAt: lm.editedAt, deletedAt: lm.deletedAt,
+			editedAt: lm.editedAt, deletedAt: lm.deletedAt, senderID: lm.senderID,
 		}.message()
 	}
 	return c, nil

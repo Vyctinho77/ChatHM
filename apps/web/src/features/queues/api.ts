@@ -2,7 +2,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, del, get, patch, post } from "@/lib/api";
 import type { SegmentOption } from "@/features/conversations/types";
 
-export type Keyword = { id: string; phrase: string; priority: number };
+export type Keyword = {
+  id: string;
+  phrase: string;
+  priority: number;
+  /** Só ao cadastrar: outros segmentos com a mesma palavra (as mensagens com ela empatam e vão para a fila geral). */
+  sharedWith?: string[];
+};
 
 export type Segment = {
   id: string;
@@ -11,9 +17,17 @@ export type Segment = {
   teamId: string | null;
   teamName?: string;
   isActive: boolean;
-  /** Só para administradores. */
+  /** Em conversa já em atendimento, quando o cliente fala deste assunto a equipe entra como participante. */
+  autoInclude: boolean;
+  /** Administrador, ou integrante da equipe do segmento: pode mexer nas palavras-chave. */
+  canEdit: boolean;
+  /** Só de quem pode editar o segmento. */
   keywords?: Keyword[];
 };
+
+/** Palavra sugerida para o segmento (vocabulário comum do assunto). `priority` é a que entra ao aceitar. */
+export type Suggestion = { phrase: string; priority: number; pack: string };
+export type BulkResult = { added: Keyword[]; skipped: string[] };
 
 export type ClassifyResult = {
   segmentId?: string;
@@ -57,7 +71,9 @@ export const useImportExamples = () => useSegmentMutation(() => post<void>("/seg
 export const useCreateSegment = () =>
   useSegmentMutation((v: { name: string; teamId: string | null }) => post<Segment>("/segments", v));
 export const useUpdateSegment = () =>
-  useSegmentMutation(({ id, ...body }: { id: string; name?: string; isActive?: boolean }) => patch<Segment>(`/segments/${id}`, body));
+  useSegmentMutation(({ id, ...body }: { id: string; name?: string; isActive?: boolean; autoInclude?: boolean }) =>
+    patch<Segment>(`/segments/${id}`, body),
+  );
 export const useSetSegmentTeam = () =>
   useSegmentMutation(({ id, teamId }: { id: string; teamId: string | null }) =>
     api<Segment>("PUT", `/segments/${id}/team`, { teamId }),
@@ -67,6 +83,18 @@ export const useAddKeyword = () =>
   useSegmentMutation(({ segmentId, ...body }: { segmentId: string; phrase: string; priority: number }) =>
     post<Keyword>(`/segments/${segmentId}/keywords`, body),
   );
+/** Várias palavras de uma vez (lista colada ou sugestões aceitas). As repetidas ou inválidas voltam em `skipped`, com o motivo. */
+export const useAddKeywords = () =>
+  useSegmentMutation(({ segmentId, ...body }: { segmentId: string; phrases: string[]; priority?: number }) =>
+    post<BulkResult>(`/segments/${segmentId}/keywords/bulk`, body),
+  );
+export function useSuggestions(segmentId: string, enabled = true) {
+  return useQuery({
+    queryKey: [...segmentsKey, segmentId, "suggestions"],
+    queryFn: async () => (await get<{ suggestions: Suggestion[] }>(`/segments/${segmentId}/suggestions`)).suggestions,
+    enabled,
+  });
+}
 export const useUpdateKeyword = () =>
   useSegmentMutation(({ segmentId, id, priority }: { segmentId: string; id: string; priority: number }) =>
     patch<void>(`/segments/${segmentId}/keywords/${id}`, { priority }),
