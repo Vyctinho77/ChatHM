@@ -33,7 +33,7 @@ func (m *MCP) server(p Principal) *mcp.Server {
 	v := conversations.Viewer{ID: p.UserID, Name: p.Name, Admin: p.Admin, Supervisor: p.Manager}
 
 	type listConvs struct {
-		Filter string `json:"filter,omitempty" jsonschema:"all (padrão), mine (minhas), unassigned (sem responsável) ou snoozed (adiadas)"`
+		Filter string `json:"filter,omitempty" jsonschema:"all (padrão), mine (minhas), unassigned (sem responsável), snoozed (adiadas) ou awaiting (aguardando resposta nossa: a última mensagem é do cliente; vem da que espera há mais tempo, com waitingMinutes)"`
 		Queue  string `json:"queue,omitempty" jsonschema:"chave da fila, como em list_queues (opcional)"`
 		Limit  int    `json:"limit,omitempty" jsonschema:"máximo de itens (padrão 30, até 100)"`
 		Offset int    `json:"offset,omitempty" jsonschema:"quantos itens pular (paginação)"`
@@ -46,6 +46,13 @@ func (m *MCP) server(p Principal) *mcp.Server {
 			}
 			out := []any{}
 			total := 0
+			awaiting := strings.HasPrefix(strings.ToLower(in.Filter), "awaiting")
+			if awaiting { // a que espera há mais tempo primeiro
+				sort.SliceStable(all, func(i, j int) bool {
+					a, b := awaitingSince(all[i]), awaitingSince(all[j])
+					return a != nil && b != nil && a.Before(*b)
+				})
+			}
 			for _, c := range all {
 				if c.Status == "closed" || !matchFilter(c, in.Filter, p.UserID) {
 					continue
@@ -57,7 +64,13 @@ func (m *MCP) server(p Principal) *mcp.Server {
 				if total <= in.Offset || len(out) >= clampLimit(in.Limit, 30, 100) {
 					continue
 				}
-				out = append(out, convView(c, p))
+				view := convView(c, p)
+				if at := awaitingSince(c); awaiting && at != nil {
+					if mv, ok := view.(map[string]any); ok {
+						mv["waitingMinutes"] = int(time.Since(*at).Minutes())
+					}
+				}
+				out = append(out, view)
 			}
 			return map[string]any{"total": total, "conversations": out}, nil
 		})
@@ -445,6 +458,18 @@ func msgView(m conversations.Message, p Principal, contactID string) any {
 	return v
 }
 
+// awaitingSince: quando o cliente escreveu a última mensagem (a conversa espera resposta nossa); nil se a última foi nossa.
+func awaitingSince(c conversations.Conversation) *time.Time {
+	if len(c.LastMessage) == 0 || str(c.LastMessage["direction"]) != "in" {
+		return nil
+	}
+	at, err := time.Parse(time.RFC3339Nano, str(c.LastMessage["sentAt"]))
+	if err != nil {
+		return nil
+	}
+	return &at
+}
+
 func matchFilter(c conversations.Conversation, filter, userID string) bool {
 	snoozed := c.SnoozedUntil != nil
 	switch strings.ToLower(filter) {
@@ -456,6 +481,8 @@ func matchFilter(c conversations.Conversation, filter, userID string) bool {
 		return !snoozed && c.Assignee == nil
 	case "snoozed":
 		return snoozed
+	case "awaiting", "awaiting_reply":
+		return !snoozed && awaitingSince(c) != nil
 	}
 	return false
 }

@@ -157,7 +157,7 @@ Poucas e compactas: alguns clientes (Grok) injetam **todas** as definições no 
 (`snake_case`), descrições em português objetivas. Todas aceitam `allowed_tools` do cliente para reduzir ainda mais.
 
 **Fase 1 — leitura**
-`list_conversations(filter, queue, assignee, limit, cursor)` · `get_conversation(id)` · `read_messages(conversation_id, limit, before)`
+`list_conversations(filter, queue, assignee, limit, cursor)` · `get_conversation(id)` · `read_messages(conversation_id, limit, before)` — `filter`: `all`, `mine`, `unassigned`, `snoozed` ou `awaiting` (aguardando resposta nossa, da que espera há mais tempo, com `waitingMinutes`)
 · `search(q)` · `list_contacts(q, kind)` · `get_contact(id)` · `list_queues()` · `list_tags()` · `list_agenda(from, to)`
 
 **Fase 2 — escrita (escopo `escrita`)**
