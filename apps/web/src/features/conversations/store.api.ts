@@ -38,12 +38,15 @@ export function useMessages(conversationId: string | undefined) {
   });
 }
 
-/** Começa a baixar as mensagens de uma conversa antes do clique (passar o mouse, focar, tocar), para abrir sem espera. */
+/**
+ * Começa a baixar as mensagens de uma conversa antes do clique (passar o mouse, focar, tocar), para abrir sem espera.
+ * Devolve uma promessa, para quem pré-carrega várias poder fazer uma de cada vez.
+ */
 export function usePrefetchMessages() {
   const qc = useQueryClient();
   return useMemo(
     () => (conversationId: string) =>
-      void qc.prefetchQuery({ queryKey: conversationKeys.messages(conversationId), queryFn: () => fetchMessages(conversationId), staleTime: 20_000, gcTime: 30 * 60_000 }),
+      qc.prefetchQuery({ queryKey: conversationKeys.messages(conversationId), queryFn: () => fetchMessages(conversationId), staleTime: 20_000, gcTime: 30 * 60_000 }),
     [qc],
   );
 }

@@ -37,6 +37,11 @@ variáveis do `deploy/docker-compose.yml` (`DATABASE_URL`, `ENCRYPTION_KEY`, `AL
 O Supabase entrega o **Postgres** (o app conecta direto, como usuário `postgres`); ele **não hospeda** o servidor Go, que precisa rodar
 em um servidor/PaaS (um container). Use `deploy/docker-compose.supabase.yml` e a **Session pooler** (IPv4, porta 5432, usuário `postgres.<ref>`)
 em `DATABASE_URL`.
+- **Limite de conexões (pooler Session = 15).** O pooler aceita no máximo 15 conexões ao mesmo tempo para todo o projeto. Acima disso ele
+  recusa (`EMAXCONNSESSION`) ou segura a conexão, e as requisições esperam dezenas de segundos antes de falhar (e o `/readyz` dá 503).
+  O app usa no máximo **10** conexões por padrão (`DB_MAX_CONNS`, mínimo `DB_MIN_CONNS`=2), deixando folga para a troca de versão
+  (o container novo sobe enquanto o antigo fecha), migrações e ferramentas de administração. Só aumente `DB_MAX_CONNS` se o plano do
+  Supabase aumentar o `pool_size`, e nunca acima dele. Para investigar: Supabase → Logs → Supavisor, procurando `EMAXCONNSESSION`.
 - **Só uma instância por banco.** O banco guarda a sessão do WhatsApp: se o app rodar no servidor e também na sua máquina apontando para o
   mesmo banco, os dois disputam a sessão ("aberta em outro local") e a conexão cai. Pare o local antes de subir o servidor.
 - **Ative o RLS** nas tabelas do app (sem políticas): o app não usa a API REST do Supabase, e assim a chave `anon` não lê nada.
