@@ -26,7 +26,7 @@ var toolCapabilities = map[string]capability{
 	// leitura
 	"list_conversations": capRead, "get_conversation": capRead, "read_messages": capRead, "search": capRead, "list_contacts": capRead,
 	"get_contact": capRead, "list_queues": capRead, "queue_overview": capRead, "list_tags": capRead, "list_agenda": capRead, "list_people": capRead,
-	"my_access": capRead, "list_pending_replies": capRead,
+	"my_access": capRead, "list_pending_replies": capRead, "wait_for_replies": capRead,
 	// controle do próprio agente (o que ele já tratou); não altera nada do cliente nem da conversa
 	"mark_replies": capRead,
 	// alterações
