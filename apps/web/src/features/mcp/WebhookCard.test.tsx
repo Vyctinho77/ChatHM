@@ -27,7 +27,8 @@ describe("Aviso automático (webhook)", () => {
     expect(html).toContain("Enviar teste");
     expect(html).toContain("Trocar segredo");
     expect(html).toContain("2 aguardando envio");
-    expect(html).toContain("X-ChatHM-Signature");
+    expect(html).toContain("Saiba mais: Como funciona o aviso automático");
+    expect(html).not.toContain("X-ChatHM-Signature"); // explicações ficam no balão "i", fora da tela
     expect(html).not.toContain("whsec_");
   });
 
@@ -36,7 +37,7 @@ describe("Aviso automático (webhook)", () => {
     expect(html).not.toContain("Enviar teste");
     expect(html).not.toContain("Trocar segredo");
     expect(html).toContain("Incluir um trecho da mensagem");
-    expect(html).toContain("o texto da mensagem não vai");
+    expect(html).toContain("Saiba mais: Incluir um trecho da mensagem");
   });
 
   it("avisa quando o acesso por IA está desligado e quando o webhook se desligou sozinho", () => {

@@ -48,6 +48,8 @@ automático** um endereço que recebe um POST quando o cliente responde:
 - respostas em rajada se juntam num só aviso (enviado ~5 s depois da primeira, com a contagem); resposta diferente de 2xx faz o ChatHM tentar de novo
   (10 s, 1 min, 5 min, 30 min e 2 h); depois de 20 avisos seguidos sem entrega o webhook se desliga sozinho e a tela mostra o motivo;
 - "Enviar teste" confirma o caminho e a assinatura; mudanças e troca de segredo ficam na auditoria.
+**Sem endereço público (app no computador).** Use `wait_for_replies`: fica esperando até 30 s (`timeout_seconds`, padrão 25) e responde assim que há resposta
+de cliente ainda não tratada; se nada chegar, volta com `timedOut: true`. Chame em laço e dê baixa com `mark_replies`. Devolve o mesmo que `list_pending_replies`.
 Código: `aiaccess/webhook.go` (entrega e proteções), `aiaccess/replies.go`, `aiaccess/agent_tools.go`; migração `00032`.
 
 ### Privacidade das respostas (todas as etapas)
@@ -157,7 +159,7 @@ Poucas e compactas: alguns clientes (Grok) injetam **todas** as definições no 
 (`snake_case`), descrições em português objetivas. Todas aceitam `allowed_tools` do cliente para reduzir ainda mais.
 
 **Fase 1 — leitura**
-`list_conversations(filter, queue, assignee, limit, cursor)` · `get_conversation(id)` · `read_messages(conversation_id, limit, before)`
+`list_conversations(filter, queue, assignee, limit, cursor)` · `get_conversation(id)` · `read_messages(conversation_id, limit, before)` — `filter`: `all`, `mine`, `unassigned`, `snoozed` ou `awaiting` (aguardando resposta nossa, da que espera há mais tempo, com `waitingMinutes`)
 · `search(q)` · `list_contacts(q, kind)` · `get_contact(id)` · `list_queues()` · `list_tags()` · `list_agenda(from, to)`
 
 **Fase 2 — escrita (escopo `escrita`)**

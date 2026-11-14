@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { TriangleAlert } from "lucide-react";
 import { Alert, Button, Field, Modal } from "@/components/ui";
+import { InfoTip } from "@/components/InfoTip";
 import { errorMessage, fieldErrors, post } from "@/lib/api";
 import { useMe, useSetMe } from "@/features/auth/api";
 import { CodeInput } from "@/features/auth/CodeInput";
@@ -44,20 +45,22 @@ export function HandoverCard() {
 
   return (
     <section className="border-t border-line py-6">
-      <h2 className="flex items-center gap-2 font-semibold text-danger">
-        <TriangleAlert className="size-4" /> Entregar instância
-      </h2>
-      <p className="mt-0.5 text-sm text-muted">
-        Para passar este sistema a um novo cliente: desconecta o WhatsApp atual, apaga todos os dados e gera um código de instalação de
-        uso único. Quem receber o endereço e o código vira o administrador do próprio escritório.
-      </p>
+      <div className="flex items-center gap-1.5">
+        <h2 className="flex items-center gap-2 font-semibold text-danger">
+          <TriangleAlert className="size-4" /> Entregar instância
+        </h2>
+        <InfoTip title="Entregar instância">
+          Para passar este sistema a um novo cliente: desconecta o WhatsApp atual, apaga <strong>todos</strong> os dados e gera um código de instalação de uso único.
+          Quem receber o endereço e o código vira o administrador do próprio escritório.
+        </InfoTip>
+      </div>
       <div className="mt-4">
         {me?.user.mfaEnabled ? (
           <Button variant="danger" onClick={() => setOpen(true)}>
             Entregar instância…
           </Button>
         ) : (
-          <p className="text-sm text-muted">Ative o autenticador na sua conta para poder entregar a instância.</p>
+          <p className="text-sm text-muted">Requer o autenticador ativo na sua conta.</p>
         )}
       </div>
 
