@@ -462,8 +462,8 @@ export function MessageBubble({
           <>
         {out && m.automated && (
           <p className="mb-0.5 flex items-center gap-1.5 text-[12.5px] font-semibold">
-            <ProviderLogo provider={m.aiProvider} title={`Enviado por ${m.aiApp || providerLabel(m.aiProvider)}`} />
-            {m.aiApp || providerLabel(m.aiProvider)}
+            <ProviderLogo provider={m.aiProvider} title={`Enviado por ${m.aiAgent ? `${m.aiAgent} (${m.aiApp || providerLabel(m.aiProvider)})` : m.aiApp || providerLabel(m.aiProvider)}`} />
+            {m.aiAgent || m.aiApp || providerLabel(m.aiProvider)}
             <span className="font-normal opacity-70">{m.aiMode === "attend" ? "· atendimento por IA" : "· envio automático"}</span>
           </p>
         )}

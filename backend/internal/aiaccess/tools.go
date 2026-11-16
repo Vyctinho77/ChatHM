@@ -397,8 +397,13 @@ func authorOf(m conversations.Message, p Principal, contactID string) map[string
 		if app := str(m["aiApp"]); app != "" {
 			a["app"] = app
 		}
+		agent := str(m["aiAgent"])
+		if agent != "" {
+			a["agent"] = agent
+		}
 		if owner := str(m["aiUserId"]); owner != "" { // mensagens antigas não dizem qual agente falou
-			a["isYou"] = owner == p.UserID && (prov == "" || p.Provider == "" || prov == p.Provider)
+			a["isYou"] = owner == p.UserID && (prov == "" || p.Provider == "" || prov == p.Provider) &&
+				(agent == "" || p.Agent == "" || agentSlug(agent) == agentSlug(p.Agent)) // agentes diferentes da mesma pessoa e provedor não se confundem
 		}
 		return a
 	}

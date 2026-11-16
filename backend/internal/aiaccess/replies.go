@@ -5,11 +5,13 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"golang.org/x/text/unicode/norm"
 
 	"github.com/vyctinho77/chathm/backend/internal/conversations"
 )
@@ -35,7 +37,31 @@ func agentKey(p Principal) string {
 	if prov == "" {
 		prov = "other"
 	}
+	// Dois agentes da mesma pessoa e do mesmo provedor (ex.: "Chefão" e "HM Financeiro", ambos Claude) têm filas de pendentes separadas.
+	// O nome vem do token e não muda ao renová-lo, desde que o novo token tenha o mesmo nome.
+	if a := agentSlug(p.Agent); a != "" {
+		return p.UserID + ":" + prov + ":" + a
+	}
 	return p.UserID + ":" + prov
+}
+
+// agentSlug: o nome do agente em minúsculas, sem acento nem símbolos (até 40 caracteres), para compor a chave.
+func agentSlug(name string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(norm.NFD.String(strings.TrimSpace(name))) {
+		switch {
+		case unicode.Is(unicode.Mn, r):
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
+			b.WriteRune(r)
+		case b.Len() > 0 && !strings.HasSuffix(b.String(), "-"):
+			b.WriteByte('-')
+		}
+	}
+	out := strings.TrimSuffix(b.String(), "-")
+	if len(out) > 40 {
+		out = out[:40]
+	}
+	return out
 }
 
 type pendingRow struct {

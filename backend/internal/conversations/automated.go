@@ -36,6 +36,7 @@ type AutomatedSend struct {
 	Att       *media.Processed // PDF opcional (da biblioteca)
 	Provider  string           // claude | chatgpt | grok | gemini | other: aparece como logo na conversa
 	App       string           // nome do aplicativo de IA
+	Agent     string           // nome do agente (ex.: "HM Financeiro"): distingue vários agentes do mesmo provedor
 	SendID    string           // id do envio na fila (rastreio)
 	ActorID   string           // pessoa dona do token que pediu o envio: identifica QUAL agente falou (aiUserId na mensagem)
 	// Attend: atendente autônomo (a IA age como um atendente). Aceita conversa em andamento, de outra pessoa ou adiada;
@@ -82,6 +83,9 @@ func (s *Service) SendAutomated(ctx context.Context, in AutomatedSend) (Message,
 	}
 	if in.ActorID != "" {
 		payload["aiUserId"] = in.ActorID
+	}
+	if in.Agent != "" {
+		payload["aiAgent"] = in.Agent
 	}
 	var attKey string
 	attID := uuid.NewString()

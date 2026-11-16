@@ -106,6 +106,8 @@ type Principal struct {
 	// Provider e App identificam a IA (a tela mostra a logo do provedor nas mensagens automáticas).
 	Provider string
 	App      string
+	// Agent: o nome deste agente (o nome dado ao token, ex.: "HM Financeiro"; em conexões por login, o aplicativo). Distingue vários agentes da mesma pessoa e do mesmo provedor.
+	Agent string
 }
 
 type Service struct {
@@ -343,13 +345,13 @@ func (s *Service) Authenticate(ctx context.Context, raw string) (Principal, erro
 	)
 	err := s.db.QueryRow(ctx, `
 		SELECT t.id::text, t.prefix, t.scopes, t.token_hash, t.last_used_at, u.id::text, u.name, u.role = 'admin', u.role = 'manager',
-		       t.kind, t.grant_id::text, c.name, t.provider
+		       t.kind, t.grant_id::text, c.name, t.provider, t.name
 		  FROM api_tokens t JOIN users u ON u.id = t.user_id
 		  LEFT JOIN oauth_grants g ON g.id = t.grant_id AND g.revoked_at IS NULL
 		  LEFT JOIN oauth_clients c ON c.client_id = g.client_id
 		 WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND t.expires_at > now() AND u.is_active
 		   AND (t.kind = 'personal' OR g.id IS NOT NULL)`, hashToken(raw)).
-		Scan(&p.TokenID, &p.Prefix, &p.Scopes, &hash, &last, &p.UserID, &p.Name, &p.Admin, &p.Manager, &kind, &grantID, &client, &p.Provider)
+		Scan(&p.TokenID, &p.Prefix, &p.Scopes, &hash, &last, &p.UserID, &p.Name, &p.Admin, &p.Manager, &kind, &grantID, &client, &p.Provider, &p.Agent)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Principal{}, ErrBadToken
 	}
@@ -396,6 +398,9 @@ func (s *Service) Authenticate(ctx context.Context, raw string) (Principal, erro
 		p.Provider = providerOf(p.ClientName)
 	}
 	p.App = appName(p.Provider, p.ClientName)
+	if p.OAuth {
+		p.Agent = p.App // conexão por login: o nome do token é técnico; vale o aplicativo
+	}
 	if last == nil || time.Since(*last) > time.Minute {
 		_, _ = s.db.Exec(ctx, `UPDATE api_tokens SET last_used_at = now() WHERE id = $1`, p.TokenID)
 	}

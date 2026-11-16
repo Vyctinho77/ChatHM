@@ -59,6 +59,14 @@ Código: `aiaccess/webhook.go` (entrega e proteções), `aiaccess/replies.go`, `
 - `list_conversations` com `filter: awaiting` agora vem de fato da que espera há mais tempo para a mais nova (a ordenação anterior se perdia quando havia conversas que não aguardam resposta).
 Código: `aiaccess/delivery_tools.go`, `automation/preflight.go`.
 
+**Um token por agente.** O nome do token é o **nome do agente** ("Chefão", "HM Financeiro", "ECAC"; em conexão por login, o aplicativo). Ele aparece
+(1) no cartão da mensagem no ChatHM ("HM Financeiro" no lugar do provedor, com a logo), (2) em `from.agent` e em `my_access.agent.name` e
+(3) separa as respostas pendentes: a fila de `list_pending_replies`/`mark_replies` passa a ser **por agente** (pessoa + provedor + nome), então dois
+agentes da mesma pessoa e do mesmo provedor não se atrapalham, e `isYou` só vale para o próprio agente. Cada token já tem escopos próprios
+(leitura, alterações, pedir envios, atendente, automático): crie um por agente com só o que ele precisa. Renovar o token com o **mesmo nome** mantém a
+identidade. Ao atualizar para esta versão, as conversas que um agente já tinha marcado como tratadas voltam uma vez à lista de pendentes (a chave mudou);
+mensagens antigas continuam sem o nome do agente e seguem a regra anterior.
+
 ### Privacidade das respostas (todas as etapas)
 
 1. **Sempre ligado, para qualquer cliente de IA:** senhas, códigos, tokens e chaves; cartão (Luhn), agência/conta, chave PIX, boleto.

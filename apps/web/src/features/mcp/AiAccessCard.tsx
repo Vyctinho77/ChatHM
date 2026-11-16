@@ -223,7 +223,8 @@ function NewToken({ onClose, allowWrite, allowSend, allowAutomation, allowAttend
         </div>
       ) : (
         <form onSubmit={submit} className="flex flex-col gap-4">
-          <Field label="Nome do token" placeholder="Ex.: Claude no meu notebook" value={name} maxLength={80} autoFocus error={nameError} onChange={(e) => setName(e.target.value)} />
+          <Field label="Nome do agente" placeholder="Ex.: HM Financeiro" value={name} maxLength={80} autoFocus error={nameError} onChange={(e) => setName(e.target.value)} />
+          <p className="-mt-2 text-xs text-muted">É o nome que aparece nas mensagens que este agente envia e que separa as respostas pendentes de cada agente. Crie um token para cada agente (Chefão, HM Financeiro, ECAC…), cada um só com o acesso de que precisa. Ao renovar, use o mesmo nome.</p>
           <label className="flex flex-col gap-1.5 text-sm">
             <span className="font-medium">Validade</span>
             <select value={days} onChange={(e) => setDays(Number(e.target.value))} className="h-10 rounded-lg border border-line bg-elevated px-3 text-sm outline-none focus:border-accent">

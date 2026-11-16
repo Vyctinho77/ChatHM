@@ -45,6 +45,7 @@ type Base = {
   aiProvider?: string; // claude | chatgpt | grok | gemini | other
   aiMode?: string; // attend: a IA atendeu como um atendente
   aiApp?: string; // nome do aplicativo de IA
+  aiAgent?: string; // nome do agente (ex.: HM Financeiro): quando há vários agentes do mesmo provedor
   group?: boolean; // mensagem de grupo: mostra o autor também nas recebidas
   quoted?: Quoted; // esta mensagem responde a outra
   editedAt?: string; // texto editado depois de enviado

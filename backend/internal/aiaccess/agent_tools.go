@@ -42,7 +42,7 @@ func (m *MCP) registerAgent(s *mcp.Server, p Principal, v conversations.Viewer) 
 				"serverVersion":    serverVersion,
 				"toolListIsStable": true,
 				"user":             map[string]any{"id": p.UserID, "name": p.Name, "role": role, "note": "Você age como esta pessoa: só vê o que ela vê."},
-				"agent":            map[string]any{"tokenKind": kind, "provider": p.Provider, "app": p.App, "client": p.ClientName, "scopes": p.Scopes},
+				"agent":            map[string]any{"name": p.Agent, "tokenKind": kind, "provider": p.Provider, "app": p.App, "client": p.ClientName, "scopes": p.Scopes},
 				"capabilities":     access,
 				"privacy": map[string]any{
 					"alwaysHidden":  "senhas, códigos, tokens, chaves, cartão, conta bancária, PIX e boleto",

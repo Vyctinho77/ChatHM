@@ -239,7 +239,7 @@ func (s *Service) process(ctx context.Context, id string, st Settings) outcome {
 	msgID := uuid.NewString()
 	msg, err := s.convs.SendAutomated(ctx, conversations.AutomatedSend{
 		ID: msgID, ContactID: contactID, Author: Author(st.Signature), Text: RenderCharge(text, info.Name, st.OfficeFields, cv, false),
-		Att: att, Provider: provider, App: app, SendID: id, ActorID: creator,
+		Att: att, Provider: provider, App: app, Agent: s.agentName(ctx, tokenID), SendID: id, ActorID: creator,
 	})
 	var blocked *conversations.ErrAutomatedBlocked
 	switch {

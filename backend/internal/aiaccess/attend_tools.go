@@ -13,7 +13,7 @@ import (
 // registerAttend: o atendente autônomo. A IA envia e responde como um atendente, na hora, com texto livre.
 // Só vê e fala com quem a pessoa dona do token enxerga; as proteções que sobram (PARAR, grupos, velocidade, pausa) são do servidor.
 func (m *MCP) registerAttend(s *mcp.Server, p Principal, v conversations.Viewer) {
-	actor := automation.Actor{UserID: p.UserID, TokenID: p.TokenID, Provider: p.Provider, App: p.App}
+	actor := automation.Actor{UserID: p.UserID, TokenID: p.TokenID, Provider: p.Provider, App: p.App, Agent: p.Agent}
 	type in struct {
 		ConversationID string `json:"conversation_id,omitempty" jsonschema:"id da conversa aberta a que você está respondendo (list_conversations). Use este OU contact_id"`
 		ContactID      string `json:"contact_id,omitempty" jsonschema:"id do contato (list_contacts ou search) para escrever a um cliente sem conversa aberta; o atendimento é aberto sozinho"`

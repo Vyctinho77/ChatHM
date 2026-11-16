@@ -71,6 +71,7 @@ type Actor struct {
 	TokenID  string
 	Provider string // claude | chatgpt | grok | gemini | other
 	App      string
+	Agent    string // nome do agente (nome do token)
 }
 
 // --- configurações ---------------------------------------------------------

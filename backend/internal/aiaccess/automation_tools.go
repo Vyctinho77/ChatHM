@@ -15,7 +15,7 @@ const automationRule = " Só envie algo por iniciativa sua, sobre os assuntos li
 // registerAutomation: mensagens que a IA INICIA por conta própria (DAS, cobrança, prazos), sem esperar resposta.
 // O pedido entra na fila persistente. A política do assunto decide se exige aprovação ou segue automaticamente.
 func (m *MCP) registerAutomation(s *mcp.Server, p Principal) {
-	actor := automation.Actor{UserID: p.UserID, TokenID: p.TokenID, Provider: p.Provider, App: p.App}
+	actor := automation.Actor{UserID: p.UserID, TokenID: p.TokenID, Provider: p.Provider, App: p.App, Agent: p.Agent}
 
 	type sendIn struct {
 		ContactID  string `json:"contact_id" jsonschema:"id de um contato do ChatHM (list_contacts ou search). Só contatos já cadastrados"`
