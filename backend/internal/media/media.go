@@ -156,13 +156,7 @@ func (s *Service) Process(ctx context.Context, kind Kind, data []byte, fileName 
 		p.Data, p.MimeType, p.DurationSec = ogg, "audio/ogg; codecs=opus", dur
 		p.FileName = "audio.ogg"
 	case Document:
-		p.MimeType = strings.SplitN(sniffed, ";", 2)[0]
-		if p.MimeType == "application/octet-stream" || strings.HasPrefix(p.MimeType, "text/plain") {
-			// O sniffing é genérico demais para estes; a extensão só orienta o download.
-			if t := extMime[strings.ToLower(filepath.Ext(name))]; t != "" {
-				p.MimeType = t
-			}
-		}
+		p.MimeType = documentMime(sniffed, name)
 	default:
 		return Processed{}, reject("Tipo de anexo inválido.")
 	}
@@ -212,9 +206,7 @@ func (s *Service) ProcessInbound(ctx context.Context, kind Kind, data []byte, fi
 			return Processed{}, reject("Áudio recebido inválido.")
 		}
 	default:
-		if t := extMime[strings.ToLower(filepath.Ext(name))]; t != "" && (p.MimeType == "application/octet-stream" || strings.HasPrefix(p.MimeType, "text/plain")) {
-			p.MimeType = t
-		}
+		p.MimeType = documentMime(p.MimeType, name)
 	}
 	p.ScanStatus = "skipped"
 	if s.Scanner != nil {
@@ -227,11 +219,31 @@ func (s *Service) ProcessInbound(ctx context.Context, kind Kind, data []byte, fi
 }
 
 var extMime = map[string]string{
-	".pdf": "application/pdf", ".txt": "text/plain", ".csv": "text/csv", ".xml": "application/xml",
+	".pdf": "application/pdf", ".txt": "text/plain", ".csv": "text/csv", ".xml": "application/xml", ".rtf": "application/rtf",
 	".doc": "application/msword", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-	".xls": "application/vnd.ms-excel", ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	".docm": "application/vnd.ms-word.document.macroEnabled.12",
+	".xls":  "application/vnd.ms-excel", ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	".xlsm": "application/vnd.ms-excel.sheet.macroEnabled.12", ".xlsb": "application/vnd.ms-excel.sheet.binary.macroEnabled.12",
 	".ppt": "application/vnd.ms-powerpoint", ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+	".odt": "application/vnd.oasis.opendocument.text", ".ods": "application/vnd.oasis.opendocument.spreadsheet", ".odp": "application/vnd.oasis.opendocument.presentation",
 	".zip": "application/zip", ".ofx": "application/x-ofx", ".json": "application/json",
+	// Certificados digitais (e-CPF, e-CNPJ) e cadeias de certificação.
+	".pfx": "application/x-pkcs12", ".p12": "application/x-pkcs12",
+	".cer": "application/x-x509-ca-cert", ".crt": "application/x-x509-ca-cert", ".der": "application/x-x509-ca-cert",
+	".pem": "application/x-pem-file", ".p7b": "application/x-pkcs7-certificates", ".p7c": "application/x-pkcs7-certificates", ".p7s": "application/pkcs7-signature",
+}
+
+// documentMime escolhe o tipo de um documento. O conteúdo manda, exceto quando ele é genérico demais para dizer o que o
+// arquivo é: texto puro, binário qualquer e ZIP (Word, Excel, PowerPoint e LibreOffice são ZIPs por dentro; sem a
+// extensão, o contato receberia um "arquivo zip"). Nesses casos vale a extensão, se for conhecida.
+func documentMime(sniffed, name string) string {
+	t := strings.SplitN(sniffed, ";", 2)[0]
+	if t == "application/octet-stream" || t == "application/zip" || strings.HasPrefix(t, "text/plain") {
+		if e := extMime[strings.ToLower(filepath.Ext(name))]; e != "" {
+			return e
+		}
+	}
+	return t
 }
 
 func isWebP(b []byte) bool {

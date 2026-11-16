@@ -1,8 +1,8 @@
-import { FileText } from "lucide-react";
+import { FileText, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/cn";
 import type { DocKind } from "./docKind";
 
-const style: Record<Exclude<DocKind, "other">, { bg: string; mark: string }> = {
+const style: Record<Exclude<DocKind, "other" | "certificate">, { bg: string; mark: string }> = {
   pdf: { bg: "bg-red-600", mark: "PDF" },
   word: { bg: "bg-[#2b579a]", mark: "W" },
   excel: { bg: "bg-[#217346]", mark: "X" },
@@ -20,6 +20,13 @@ export function DocBadge({ kind, size = "md", className }: { kind: DocKind; size
     return (
       <span aria-hidden className={cn("inline-flex shrink-0 items-center justify-center rounded-md bg-slate-500 text-white", box[size], className)}>
         <FileText className={icon[size]} />
+      </span>
+    );
+  }
+  if (kind === "certificate") {
+    return (
+      <span aria-hidden className={cn("inline-flex shrink-0 items-center justify-center rounded-md bg-teal-700 text-white", box[size], className)}>
+        <ShieldCheck className={icon[size]} />
       </span>
     );
   }

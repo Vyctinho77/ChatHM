@@ -1,6 +1,7 @@
 package media
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -117,5 +118,42 @@ func TestProcessRunsScanner(t *testing.T) {
 	p, err := s.Process(context.Background(), Document, []byte("%PDF-1.4"), "a.pdf", false)
 	if err != nil || p.ScanStatus != "clean" {
 		t.Fatalf("%v %+v", err, p.ScanStatus)
+	}
+}
+
+// Word e Excel são ZIPs por dentro: o tipo tem de vir da extensão, senão o contato recebe um "arquivo zip".
+func TestDocumentMimeFromExtension(t *testing.T) {
+	var zipped bytes.Buffer
+	zw := zip.NewWriter(&zipped)
+	f, _ := zw.Create("[Content_Types].xml")
+	_, _ = f.Write([]byte("<Types/>"))
+	_ = zw.Close()
+	pfx := append([]byte{0x30, 0x82, 0x0a, 0x1c, 0x02, 0x01, 0x03}, bytes.Repeat([]byte{0x9a}, 64)...) // DER qualquer
+
+	cases := []struct {
+		name, want string
+		data       []byte
+	}{
+		{"relatorio.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", zipped.Bytes()},
+		{"BALANCO.XLSX", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", zipped.Bytes()},
+		{"slides.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", zipped.Bytes()},
+		{"planilha.ods", "application/vnd.oasis.opendocument.spreadsheet", zipped.Bytes()},
+		{"pacote.zip", "application/zip", zipped.Bytes()},
+		{"semextensao", "application/zip", zipped.Bytes()},
+		{"empresa.pfx", "application/x-pkcs12", pfx},
+		{"empresa.P12", "application/x-pkcs12", pfx},
+		{"cadeia.cer", "application/x-x509-ca-cert", pfx},
+		{"guia.pdf", "application/pdf", []byte("%PDF-1.4 x")},
+	}
+	s := NewService(1<<20, nil)
+	for _, c := range cases {
+		out, err := s.Process(context.Background(), Document, c.data, c.name, false)
+		if err != nil || out.MimeType != c.want {
+			t.Errorf("envio %s: %q (%v), esperava %q", c.name, out.MimeType, err, c.want)
+		}
+		in, err := s.ProcessInbound(context.Background(), Document, c.data, c.name, "")
+		if err != nil || in.MimeType != c.want {
+			t.Errorf("recebido %s: %q (%v), esperava %q", c.name, in.MimeType, err, c.want)
+		}
 	}
 }

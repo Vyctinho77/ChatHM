@@ -229,7 +229,8 @@ function DocumentCard({ m, onOpen, term }: { m: Extract<Message, { kind: "docume
   const app = officeApp[kind];
   const ext = m.fileName?.includes(".") ? m.fileName.split(".").pop()!.toUpperCase() : "ARQ";
   // PDF abre no visualizador do app; Word/Excel/PowerPoint baixam e abrem no próprio Office do computador.
-  const action = m.url ? (isPdf && onOpen ? () => onOpen(m.id) : app ? () => saveFile(m.url!, fileName) : null) : null;
+  const isCert = kind === "certificate";
+  const action = m.url ? (isPdf && onOpen ? () => onOpen(m.id) : app || isCert ? () => saveFile(m.url!, fileName) : null) : null;
   return (
     <div
       className={cn(
@@ -239,7 +240,7 @@ function DocumentCard({ m, onOpen, term }: { m: Extract<Message, { kind: "docume
       {...(action && {
         role: "button",
         tabIndex: 0,
-        title: isPdf ? "Abrir PDF" : `Abrir no ${app}`,
+        title: isPdf ? "Abrir PDF" : isCert ? "Baixar certificado" : `Abrir no ${app}`,
         onClick: action,
         onKeyDown: (e: React.KeyboardEvent) => {
           if (e.key === "Enter" || e.key === " ") {

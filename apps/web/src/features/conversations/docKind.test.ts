@@ -25,8 +25,15 @@ describe("tipo de documento", () => {
     expect(docKind("termina.", "")).toBe("other");
   });
 
+  it("reconhece certificados digitais pela extensão ou pelo tipo MIME", () => {
+    for (const n of ["empresa.pfx", "ECPF.P12", "cadeia.cer", "raiz.crt", "chave.pem", "pacote.p7b"]) expect(docKind(n)).toBe("certificate");
+    expect(docKind("certificado", "application/x-pkcs12")).toBe("certificate");
+    expect(docKind("certificado", "application/x-x509-ca-cert")).toBe("certificate");
+    expect(docKindLabel("certificate", "pfx")).toBe("Certificado digital");
+  });
+
   it("só Word, Excel e PowerPoint abrem no aplicativo do computador; PDF abre no visualizador do app", () => {
-    expect(officeApp).toEqual({ pdf: null, word: "Word", excel: "Excel", powerpoint: "PowerPoint", other: null });
+    expect(officeApp).toEqual({ pdf: null, word: "Word", excel: "Excel", powerpoint: "PowerPoint", certificate: null, other: null });
     expect(docKindLabel("word")).toBe("Word");
     expect(docKindLabel("other", "txt")).toBe("TXT");
     expect(docKindLabel("other")).toBe("Arquivo");
