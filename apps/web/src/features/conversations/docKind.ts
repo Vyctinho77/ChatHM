@@ -10,7 +10,8 @@ const EXT: Record<string, DocKind> = {
   ppt: "powerpoint", pptx: "powerpoint", pptm: "powerpoint", pps: "powerpoint", ppsx: "powerpoint", odp: "powerpoint",
 };
 
-export function docKind(fileName: string | undefined, mimeType = ""): DocKind {
+export function docKind(fileName: string | undefined, mimeType = "", docType?: string): DocKind {
+  if (docType && invoiceLabel[docType]) return "xml"; // o servidor leu o XML: vale mais que o nome
   fileName ??= ""; // documentos sem nome também chegam do WhatsApp
   const ext = fileName.includes(".") ? fileName.split(".").pop()!.toLowerCase() : "";
   if (EXT[ext]) return EXT[ext];
@@ -24,7 +25,12 @@ export function docKind(fileName: string | undefined, mimeType = ""): DocKind {
   return "other";
 }
 
-/** XML de nota fiscal eletrônica (NF-e, NFC-e, CT-e, NFS-e): pelo nome do arquivo, que costuma levar a chave de 44 dígitos ou "nfe". */
+/** Documento fiscal que o servidor reconheceu pelo conteúdo do XML (`docType`), qualquer que seja o nome do arquivo. */
+export const invoiceLabel: Record<string, string> = {
+  nfe: "NF-e (XML)", nfce: "NFC-e (XML)", cte: "CT-e (XML)", mdfe: "MDF-e (XML)", nfse: "NFS-e (XML)", evento: "Evento fiscal (XML)",
+};
+
+/** XML de nota fiscal eletrônica (só para mensagens antigas, sem o tipo do servidor) (NF-e, NFC-e, CT-e, NFS-e): pelo nome do arquivo, que costuma levar a chave de 44 dígitos ou "nfe". */
 export const isInvoiceXml = (fileName: string | undefined) => !!fileName && /\.xml$/i.test(fileName) && /\d{44}|nf-?s?-?e|nfce|(^|[^a-z])cte([^a-z]|$)/i.test(fileName);
 
 /** Aplicativo que abre o arquivo no computador (Office), ou null para PDF/outros. */

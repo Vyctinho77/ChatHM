@@ -8,7 +8,7 @@ import { previewUrl } from "@/lib/media";
 import { formatBytes, formatTime } from "@/lib/format";
 import { AudioPlayer } from "./AudioPlayer";
 import { DocBadge } from "./DocBadge";
-import { docKind, docKindLabel, isInvoiceXml, officeApp } from "./docKind";
+import { docKind, docKindLabel, invoiceLabel, isInvoiceXml, officeApp } from "./docKind";
 import { receiptDetails } from "./receipts";
 import { Highlight } from "@/components/Highlight";
 import { RichText } from "@/components/RichText";
@@ -224,7 +224,7 @@ function Pop({ animate, children, ...rest }: { animate?: boolean; children: Reac
 
 function DocumentCard({ m, onOpen, term }: { m: Extract<Message, { kind: "document" }>; onOpen?: (id: string) => void; term?: string }) {
   const fileName = m.fileName || "Documento";
-  const kind = docKind(m.fileName, m.mimeType);
+  const kind = docKind(m.fileName, m.mimeType, m.docType);
   const isPdf = kind === "pdf";
   const app = officeApp[kind];
   const ext = m.fileName?.includes(".") ? m.fileName.split(".").pop()!.toUpperCase() : "ARQ";
@@ -256,7 +256,7 @@ function DocumentCard({ m, onOpen, term }: { m: Extract<Message, { kind: "docume
           <Highlight text={fileName} term={term} />
         </p>
         <p className="text-[11px] opacity-70">
-          {kind === "xml" && isInvoiceXml(m.fileName) ? "Nota fiscal (XML)" : docKindLabel(kind, ext)}{m.sizeBytes ? ` • ${formatBytes(m.sizeBytes)}` : ""}
+          {(m.docType && invoiceLabel[m.docType]) || (kind === "xml" && isInvoiceXml(m.fileName) ? "Nota fiscal (XML)" : docKindLabel(kind, ext))}{m.sizeBytes ? ` • ${formatBytes(m.sizeBytes)}` : ""}
           {!m.url && ` • ${historicalDocLabel(m)}`}
         </p>
       </div>

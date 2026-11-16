@@ -56,6 +56,7 @@ type Processed struct {
 	Height      int
 	DurationSec int
 	ScanStatus  string // clean | skipped
+	DocType     string // documento fiscal reconhecido pelo conteúdo do XML (nfe, nfce, cte, mdfe, nfse, evento); vazio se não for
 }
 
 type Service struct {
@@ -157,6 +158,7 @@ func (s *Service) Process(ctx context.Context, kind Kind, data []byte, fileName 
 		p.FileName = "audio.ogg"
 	case Document:
 		p.MimeType = documentMime(sniffed, name)
+		markInvoice(&p)
 	default:
 		return Processed{}, reject("Tipo de anexo inválido.")
 	}
@@ -207,6 +209,7 @@ func (s *Service) ProcessInbound(ctx context.Context, kind Kind, data []byte, fi
 		}
 	default:
 		p.MimeType = documentMime(p.MimeType, name)
+		markInvoice(&p)
 	}
 	p.ScanStatus = "skipped"
 	if s.Scanner != nil {
@@ -244,6 +247,16 @@ func documentMime(sniffed, name string) string {
 		}
 	}
 	return t
+}
+
+// markInvoice reconhece XML fiscal pelo conteúdo. Vale mesmo que o arquivo tenha um nome qualquer (ou nenhum): o tipo passa a ser XML.
+func markInvoice(p *Processed) {
+	if p.MimeType != "application/xml" && p.MimeType != "text/xml" && !strings.HasPrefix(p.MimeType, "text/plain") && p.MimeType != "application/octet-stream" {
+		return
+	}
+	if d := DetectInvoice(p.Data); d != "" {
+		p.DocType, p.MimeType = d, "application/xml"
+	}
 }
 
 func isWebP(b []byte) bool {

@@ -941,6 +941,9 @@ func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInpu
 			return nil, false, httpx.FieldErrors{"text": fmt.Sprintf("A legenda pode ter até %d caracteres.", maxCaptionRunes)}
 		}
 		payload["mimeType"], payload["sizeBytes"] = in.Att.MimeType, len(in.Att.Data)
+		if in.Att.DocType != "" {
+			payload["docType"] = in.Att.DocType
+		}
 		switch kind {
 		case "image", "sticker":
 			payload["width"], payload["height"], payload["hd"] = in.Att.Width, in.Att.Height, in.HD
@@ -1704,6 +1707,9 @@ func (s *Service) fetchMedia(msgID, convID string, m whatsapp.InboundMessage) {
 		msgID, key, p.MimeType, len(p.Data), hex.EncodeToString(sum[:]), p.FileName, p.ScanStatus); err != nil {
 		_ = s.store.Delete(ctx, key)
 		return
+	}
+	if p.DocType != "" {
+		_, _ = s.db.Exec(ctx, `UPDATE messages SET payload = payload || jsonb_build_object('docType', $2::text) WHERE id = $1`, msgID, p.DocType)
 	}
 	if m.Kind == whatsapp.KindImage {
 		thumb, _ := media.Thumb(p.Data)

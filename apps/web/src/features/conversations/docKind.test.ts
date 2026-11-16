@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { IMAGE_TYPES, docKind, docKindLabel, isInvoiceXml, officeApp } from "./docKind";
+import { IMAGE_TYPES, docKind, docKindLabel, invoiceLabel, isInvoiceXml, officeApp } from "./docKind";
 
 describe("tipo de documento", () => {
   it("reconhece Word, Excel, PowerPoint e PDF pela extensão, sem depender de maiúsculas", () => {
@@ -42,6 +42,14 @@ describe("tipo de documento", () => {
     expect(isInvoiceXml("configuracoes.xml")).toBe(false);
     expect(isInvoiceXml("nota.pdf")).toBe(false);
     expect(isInvoiceXml(undefined)).toBe(false);
+  });
+
+  it("confia no tipo fiscal que o servidor leu no XML, qualquer que seja o nome", () => {
+    expect(docKind("nota", "application/xml", "nfe")).toBe("xml");
+    expect(docKind("arquivo.dat", "", "cte")).toBe("xml");
+    expect(docKind("planilha.xlsx", "", undefined)).toBe("excel");
+    expect(invoiceLabel.nfce).toBe("NFC-e (XML)");
+    expect(docKind("x", "", "desconhecido")).toBe("other");
   });
 
   it("só Word, Excel e PowerPoint abrem no aplicativo do computador; PDF abre no visualizador do app", () => {

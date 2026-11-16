@@ -375,6 +375,9 @@ func (s *Service) Send(ctx context.Context, v Viewer, in SendInput) (Message, bo
 			return nil, false, httpx.FieldErrors{"text": fmt.Sprintf("A legenda pode ter até %d caracteres.", maxCaptionRunes)}
 		}
 		payload["mimeType"], payload["sizeBytes"] = in.Att.MimeType, len(in.Att.Data)
+		if in.Att.DocType != "" {
+			payload["docType"] = in.Att.DocType
+		}
 		switch kind {
 		case "image":
 			payload["width"], payload["height"], payload["hd"] = in.Att.Width, in.Att.Height, in.HD
