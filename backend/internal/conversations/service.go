@@ -492,6 +492,9 @@ type Contact struct {
 	Name    string `json:"name"`
 	Phone   string `json:"phone"`
 	Company string `json:"company,omitempty"`
+	// TaxID: CPF ou CNPJ (só dígitos); AsaasID: id do cliente no Asaas (cus_...). Ligam o contato ao cadastro financeiro.
+	TaxID   string `json:"taxId,omitempty"`
+	AsaasID string `json:"asaasId,omitempty"`
 	Note    string `json:"note"`
 	Saved   bool   `json:"saved"`
 	// Kind: "person" ou "group". Avatar: URL da foto de perfil (vazio = iniciais).
@@ -625,7 +628,7 @@ func displayName(name, phone, waID string) string {
 
 const listQuery = `
 	SELECT c.id, c.status, c.unread_count, c.last_message_at, c.classification, c.snoozed_until,
-	       ct.id, ct.name, ct.phone, ct.wa_id, ct.company, ct.note, ct.kind, (CASE WHEN ct.avatar IS NULL THEN 0 ELSE ct.avatar_version END), (ct.name_edited OR ct.whatsapp_saved),
+	       ct.id, ct.name, ct.phone, ct.wa_id, ct.company, ct.tax_id, ct.asaas_id, ct.note, ct.kind, (CASE WHEN ct.avatar IS NULL THEN 0 ELSE ct.avatar_version END), (ct.name_edited OR ct.whatsapp_saved),
 	       u.id, u.name,
 	       s.key, s.name::text,
 	       coalesce((SELECT array_agg(t.name::text ORDER BY t.name) FROM conversation_tags cg
@@ -661,7 +664,7 @@ func scanConversation(row pgx.Row) (Conversation, error) {
 		}
 	)
 	err := row.Scan(&c.ID, &c.Status, &c.UnreadCount, &c.UpdatedAt, &c.Classification, &c.SnoozedUntil,
-		&c.Contact.ID, &name, &phone, &waID, &c.Contact.Company, &c.Contact.Note, &kind, &avatarVer, &c.Contact.Saved,
+		&c.Contact.ID, &name, &phone, &waID, &c.Contact.Company, &c.Contact.TaxID, &c.Contact.AsaasID, &c.Contact.Note, &kind, &avatarVer, &c.Contact.Saved,
 		&uID, &uName, &segKey, &segName, &c.Tags,
 		&lm.id, &lm.convID, &lm.dir, &lm.kind, &lm.body, &lm.payload, &lm.status, &lm.sentAt, &lm.sender, &lm.deliveredAt, &lm.readAt, &lm.editedAt, &lm.deletedAt, &lm.senderID, &parts)
 	if err != nil {
@@ -830,6 +833,9 @@ type ContactInput struct {
 	Name    *string `json:"name"`
 	Company *string `json:"company"`
 	Note    *string `json:"note"`
+	// TaxID (CPF/CNPJ) e AsaasID (cus_...): vazio apaga; ausente não muda.
+	TaxID   *string `json:"taxId"`
+	AsaasID *string `json:"asaasId"`
 }
 
 func (s *Service) UpdateContact(ctx context.Context, v Viewer, contactID string, in ContactInput) error {
@@ -876,15 +882,34 @@ func (s *Service) UpdateContact(ctx context.Context, v Viewer, contactID string,
 	if in.Note != nil && utf8.RuneCountInString(*in.Note) > 2000 {
 		f["note"] = "Observação deve ter até 2000 caracteres."
 	}
+	if in.TaxID != nil {
+		d, err := NormalizeTaxID(*in.TaxID)
+		if err != nil {
+			f["taxId"] = err.(httpx.FieldErrors)["taxId"]
+		}
+		in.TaxID = &d
+	}
+	if in.AsaasID != nil {
+		a, err := NormalizeAsaasID(*in.AsaasID)
+		if err != nil {
+			f["asaasId"] = err.(httpx.FieldErrors)["asaasId"]
+		}
+		in.AsaasID = &a
+	}
 	if err := f.Err(); err != nil {
 		return err
 	}
 	if _, err := s.db.Exec(ctx, `
 		UPDATE contacts SET name = coalesce($2, name), company = coalesce($3, company), note = coalesce($4, note),
+		       tax_id = coalesce($5, tax_id), asaas_id = coalesce($6, asaas_id),
 		       -- nome apagado = volta a seguir o nome do WhatsApp; nome digitado fica fixo
 		       name_edited = CASE WHEN $2::text IS NULL THEN name_edited ELSE $2::text <> '' END
-		 WHERE id = $1`, contactID, in.Name, in.Company, in.Note); err != nil {
+		 WHERE id = $1`, contactID, in.Name, in.Company, in.Note, in.TaxID, in.AsaasID); err != nil {
 		return err
+	}
+	// Cobranças do Asaas que ainda não tinham cliente e são deste cadastro passam a ser dele (a equipe nunca perde o vínculo que escolheu à mão).
+	if in.AsaasID != nil && *in.AsaasID != "" {
+		_, _ = s.db.Exec(ctx, `UPDATE billing_charges SET contact_id = $1 WHERE provider = 'asaas' AND customer_ref = $2 AND contact_id IS NULL`, contactID, *in.AsaasID)
 	}
 	if convID != "" {
 		s.publishState(ctx, convID, nil)

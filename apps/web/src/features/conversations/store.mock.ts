@@ -210,6 +210,10 @@ export function useConversationActions() {
       patchConversation(id, (x) => ({ ...x, contact: { ...x.contact, note } }));
       refresh();
     },
+    async setReferences(id: string, refs: { taxId?: string; asaasId?: string }) {
+      patchConversation(id, (x) => ({ ...x, contact: { ...x.contact, ...refs } }));
+      refresh();
+    },
     async loadAllMessages(id: string) {
       return [...(getDB(who.id, who.name).messages[id] ?? [])];
     },

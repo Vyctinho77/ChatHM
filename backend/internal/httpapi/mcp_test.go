@@ -331,7 +331,7 @@ func TestAIAccessWithRealMCPClient(t *testing.T) {
 		// mesmo quando exigem uma permissão (listar cobranças e envios automáticos só lê).
 		mutating := map[string]bool{"add_tag": true, "remove_tag": true, "append_note": true, "rename_contact": true, "snooze": true, "resume": true,
 			"transfer": true, "set_reminder": true, "create_agenda_event": true, "draft_reply": true, "send_message": true, "send_as_attendant": true,
-			"send_automatic_message": true, "cancel_automatic_send": true, "mark_replies": true}
+			"send_automatic_message": true, "cancel_automatic_send": true, "mark_replies": true, "set_contact_reference": true}
 		if mutating[tl.Name] == tl.Annotations.ReadOnlyHint {
 			t.Fatalf("anotação readOnly errada em %s (altera=%v, readOnly=%v)", tl.Name, mutating[tl.Name], tl.Annotations.ReadOnlyHint)
 		}

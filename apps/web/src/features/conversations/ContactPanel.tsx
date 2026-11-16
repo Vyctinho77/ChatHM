@@ -3,7 +3,9 @@ import { Building2, Phone, Plus, UserRound, X } from "lucide-react";
 import { ViewableAvatar } from "@/components/AvatarViewer";
 import { Menu, MenuItem } from "@/components/Menu";
 import { EditableName } from "@/components/EditableName";
-import { IconButton } from "@/components/ui";
+import { Field, IconButton } from "@/components/ui";
+import { fieldErrors } from "@/lib/api";
+import { formatTaxId } from "@/lib/taxId";
 import { cn } from "@/lib/cn";
 import { capabilities, useConversationActions, useTagCatalog } from "./store";
 import { AutomationOptOut } from "./AutomationOptOut";
@@ -55,6 +57,8 @@ export function ContactPanel({ conversation: c, onClose }: { conversation: Conve
             value={`${c.snoozedUntil ? "Adiado" : statusLabel[c.status]}${c.assignee ? ` · ${c.assignee.name}` : ""}`}
           />
         </dl>
+
+        {c.contact.kind !== "group" && <FinancialRefs conversation={c} />}
 
         <AutomationOptOut contactId={c.contact.id} />
 
@@ -120,6 +124,53 @@ export function ContactPanel({ conversation: c, onClose }: { conversation: Conve
         </section>
       </div>
     </aside>
+  );
+}
+
+/** Cadastro financeiro do cliente: CNPJ/CPF e id no Asaas. Os agentes de cobrança acham o contato por eles, sem casar por telefone. */
+function FinancialRefs({ conversation: c }: { conversation: Conversation }) {
+  const actions = useConversationActions();
+  const [taxId, setTaxId] = useState(formatTaxId(c.contact.taxId));
+  const [asaasId, setAsaasId] = useState(c.contact.asaasId ?? "");
+  const [errors, setErrors] = useState<{ taxId?: string; asaasId?: string }>({});
+  const [saved, setSaved] = useState(false);
+
+  async function save(refs: { taxId?: string; asaasId?: string }) {
+    setSaved(false);
+    try {
+      await actions.setReferences(c.id, refs);
+      setErrors((e) => ({ ...e, ...Object.fromEntries(Object.keys(refs).map((k) => [k, undefined])) }));
+      setSaved(true);
+    } catch (err) {
+      const f = fieldErrors(err);
+      setErrors((e) => ({ ...e, taxId: refs.taxId !== undefined ? (f.taxId ?? "Não foi possível salvar.") : e.taxId, asaasId: refs.asaasId !== undefined ? (f.asaasId ?? "Não foi possível salvar.") : e.asaasId }));
+    }
+  }
+
+  return (
+    <section aria-label="Cadastro financeiro" className="flex flex-col gap-3 border-b border-line px-5 py-4">
+      <h3 className="text-xs text-muted">Cadastro financeiro</h3>
+      <Field
+        label="CNPJ ou CPF"
+        inputMode="numeric"
+        autoComplete="off"
+        placeholder="00.000.000/0000-00"
+        value={taxId}
+        error={errors.taxId}
+        onChange={(e) => (setTaxId(e.target.value), setSaved(false))}
+        onBlur={() => taxId.replace(/\D/g, "") !== (c.contact.taxId ?? "") && void save({ taxId })}
+      />
+      <Field
+        label="ID do cliente no Asaas"
+        autoComplete="off"
+        placeholder="cus_000005401844"
+        value={asaasId}
+        error={errors.asaasId}
+        hint={saved ? "Salvo." : "Liga as cobranças do Asaas a este contato."}
+        onChange={(e) => (setAsaasId(e.target.value), setSaved(false))}
+        onBlur={() => asaasId.trim() !== (c.contact.asaasId ?? "") && void save({ asaasId })}
+      />
+    </section>
   );
 }
 

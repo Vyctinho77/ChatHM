@@ -108,6 +108,22 @@ func (m *MCP) registerWrite(s *mcp.Server, p Principal, v conversations.Viewer) 
 			return map[string]any{"ok": true, "contactId": in.ContactID, "name": name}, map[string]any{"contactId": in.ContactID}, nil
 		})
 
+	type refIn struct {
+		ContactID string  `json:"contact_id" jsonschema:"id do contato (find_contact, list_contacts ou get_conversation)"`
+		TaxID     *string `json:"tax_id,omitempty" jsonschema:"CPF ou CNPJ, com ou sem pontuação (os dígitos verificadores são conferidos); vazio apaga"`
+		AsaasID   *string `json:"asaas_id,omitempty" jsonschema:"id do cliente no Asaas (cus_...); vazio apaga"`
+	}
+	addWrite(m, s, p, "set_contact_reference", "Liga um contato ao cadastro financeiro: grava o CNPJ/CPF e/ou o id do cliente no Asaas. Depois, find_contact acha o contato por eles, e as cobranças do Asaas desse cliente passam a ser dele."+writeRule, true,
+		func(ctx context.Context, in refIn) (any, map[string]any, error) {
+			if in.TaxID == nil && in.AsaasID == nil {
+				return nil, nil, errors.New("informe tax_id e/ou asaas_id")
+			}
+			if err := m.convs.UpdateContact(ctx, v, in.ContactID, conversations.ContactInput{TaxID: in.TaxID, AsaasID: in.AsaasID}); err != nil {
+				return nil, nil, writeErr(err)
+			}
+			return map[string]any{"ok": true, "contactId": in.ContactID}, map[string]any{"contactId": in.ContactID}, nil
+		})
+
 	type snoozeIn struct {
 		ConversationID string `json:"conversation_id" jsonschema:"id da conversa"`
 		Until          string `json:"until" jsonschema:"quando voltar à fila, ISO 8601 com fuso (ex.: 2026-11-10T09:00:00-04:00); até 1 ano"`

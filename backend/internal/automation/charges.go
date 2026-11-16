@@ -419,6 +419,20 @@ func (s *Service) upsertCharge(ctx context.Context, provider string, g GatewayCh
 	if err != nil {
 		return false, false, err
 	}
+	// O cadastro do cliente no Asaas (id cus_...) vale mais que o telefone: se um contato foi ligado a ele, a cobrança é dele.
+	if contactID == "" && provider == "asaas" && g.CustomerRef != "" {
+		var m string
+		if err := s.db.QueryRow(ctx, `SELECT id::text FROM contacts WHERE asaas_id = $1 AND kind <> 'group' LIMIT 2`, g.CustomerRef).Scan(&m); err == nil && m != "" {
+			var n int
+			_ = s.db.QueryRow(ctx, `SELECT count(*) FROM contacts WHERE asaas_id = $1 AND kind <> 'group'`, g.CustomerRef).Scan(&n)
+			if n == 1 {
+				if _, err := s.db.Exec(ctx, `UPDATE billing_charges SET contact_id = $2 WHERE id = $1 AND contact_id IS NULL`, id, m); err != nil {
+					return inserted, false, err
+				}
+				return inserted, true, nil
+			}
+		}
+	}
 	if contactID == "" && phone != "" {
 		if m := s.matchContact(ctx, phone); m != "" {
 			if _, err := s.db.Exec(ctx, `UPDATE billing_charges SET contact_id = $2 WHERE id = $1 AND contact_id IS NULL`, id, m); err != nil {

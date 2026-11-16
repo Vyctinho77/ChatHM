@@ -228,7 +228,7 @@ func (s *Service) Search(ctx context.Context, v Viewer, q string) (SearchResult,
 	}
 	res := SearchResult{Contacts: []ContactRecord{}, Messages: []MessageHit{}}
 
-	crows, err := s.db.Query(ctx, `SELECT ct.id, ct.name, ct.phone, ct.wa_id, ct.company, ct.note, ct.kind, (CASE WHEN ct.avatar IS NULL THEN 0 ELSE ct.avatar_version END), (ct.name_edited OR ct.whatsapp_saved), lc.id::text
+	crows, err := s.db.Query(ctx, `SELECT ct.id, ct.name, ct.phone, ct.wa_id, ct.company, ct.tax_id, ct.asaas_id, ct.note, ct.kind, (CASE WHEN ct.avatar IS NULL THEN 0 ELSE ct.avatar_version END), (ct.name_edited OR ct.whatsapp_saved), lc.id::text
 		FROM contacts ct LEFT JOIN LATERAL (
 		  SELECT c.id FROM conversations c LEFT JOIN segments s ON s.id = c.segment_id
 		   WHERE c.contact_id = ct.id AND c.status <> 'closed' AND `+forViewer+`
@@ -237,8 +237,8 @@ func (s *Service) Search(ctx context.Context, v Viewer, q string) (SearchResult,
 		  SELECT c.id FROM conversations c LEFT JOIN segments s ON s.id = c.segment_id
 		   WHERE c.contact_id = ct.id AND `+forViewer+` LIMIT 1) la ON true
 		WHERE ($2::boolean OR la.id IS NOT NULL)
-		  AND (unaccent(lower(ct.name || ' ' || ct.company)) LIKE $3 ESCAPE '\'
-		       OR ($4 <> '%%' AND regexp_replace(ct.phone || ct.wa_id, '\D', '', 'g') LIKE $4))
+		  AND (unaccent(lower(ct.name || ' ' || ct.company || ' ' || ct.asaas_id)) LIKE $3 ESCAPE '\'
+		       OR ($4 <> '%%' AND regexp_replace(ct.phone || ct.wa_id || ct.tax_id, '\D', '', 'g') LIKE $4))
 		ORDER BY lower(coalesce(nullif(ct.name, ''), nullif(ct.phone, ''), ct.wa_id)) LIMIT 20`,
 		v.ID, v.Admin, pattern, digitsPattern)
 	if err != nil {
@@ -249,7 +249,7 @@ func (s *Service) Search(ctx context.Context, v Viewer, q string) (SearchResult,
 		var c ContactRecord
 		var name, phone, waID, kind string
 		var ver int64
-		if err := crows.Scan(&c.ID, &name, &phone, &waID, &c.Company, &c.Note, &kind, &ver, &c.Saved, &c.ConversationID); err != nil {
+		if err := crows.Scan(&c.ID, &name, &phone, &waID, &c.Company, &c.TaxID, &c.AsaasID, &c.Note, &kind, &ver, &c.Saved, &c.ConversationID); err != nil {
 			return res, err
 		}
 		c.finish(name, phone, waID, kind, ver)

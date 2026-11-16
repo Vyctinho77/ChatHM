@@ -75,6 +75,9 @@ export type Contact = {
   saved?: boolean;
   phone: string;
   company?: string;
+  /** CPF ou CNPJ (só dígitos) e id do cliente no Asaas (cus_...): ligam o contato ao cadastro financeiro. */
+  taxId?: string;
+  asaasId?: string;
   avatarUrl?: string;
   /** "group" = grupo do WhatsApp (o nome é o assunto). */
   kind?: "person" | "group";

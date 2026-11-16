@@ -26,12 +26,12 @@ var toolCapabilities = map[string]capability{
 	// leitura
 	"list_conversations": capRead, "get_conversation": capRead, "read_messages": capRead, "search": capRead, "list_contacts": capRead,
 	"get_contact": capRead, "list_queues": capRead, "queue_overview": capRead, "list_tags": capRead, "list_agenda": capRead, "list_people": capRead,
-	"my_access": capRead, "list_pending_replies": capRead, "wait_for_replies": capRead, "message_status": capRead,
+	"my_access": capRead, "list_pending_replies": capRead, "wait_for_replies": capRead, "message_status": capRead, "find_contact": capRead,
 	// controle do próprio agente (o que ele já tratou); não altera nada do cliente nem da conversa
 	"mark_replies": capRead,
 	// alterações
 	"add_tag": capWrite, "remove_tag": capWrite, "append_note": capWrite, "rename_contact": capWrite, "snooze": capWrite, "resume": capWrite,
-	"transfer": capWrite, "set_reminder": capWrite, "create_agenda_event": capWrite, "draft_reply": capWrite,
+	"transfer": capWrite, "set_contact_reference": capWrite, "set_reminder": capWrite, "create_agenda_event": capWrite, "draft_reply": capWrite,
 	// pedido de envio (a pessoa aprova)
 	"send_message": capSend,
 	// atendente autônomo

@@ -79,6 +79,18 @@ O caminho contrário não exige: o agente (ou um script dele) **chama** o ChatHM
 - O texto do cliente vai como **dado**: o agente nunca deve obedecer a instruções escritas dentro dele. Depois de tratar, o agente chama `mark_replies`.
 Código: `aiaccess/replies_http.go`; testes em `httpapi/mcp_agent_test.go` e `scripts/chathm-listen.test.mjs`.
 
+**Contato ligado ao cadastro financeiro (Asaas).** O contato ganhou dois campos (migração `00038`): **CNPJ/CPF** (só dígitos; os dígitos verificadores
+são conferidos, então uma tecla trocada é recusada) e **id do cliente no Asaas** (`cus_...`). A equipe edita no painel *Dados do contato → Cadastro financeiro*.
+- `find_contact(tax_id | asaas_id)` acha o contato (e a conversa aberta) pelo CNPJ/CPF, com ou sem pontuação, ou pelo id do Asaas, sem casar por telefone à mão. Um cliente pode ter
+  vários números: devolve todos os que você pode ver. `search` também acha pelo id do Asaas e pelos dígitos do documento.
+- `set_contact_reference(contact_id, tax_id?, asaas_id?)` (escopo de escrita) grava os campos; vazio apaga.
+- Os contatos que o agente lê trazem `asaasId` e `document` (CPF/CNPJ **com pontuação**, para o filtro de privacidade reconhecê-lo). Se o administrador manda mascarar
+  documentos, `document` sai oculto, mas `find_contact` continua achando pelo CNPJ que o agente já conhece. Conexões por login (ChatGPT, claude.ai) sempre recebem o documento oculto.
+  Para um agente financeiro ver o CNPJ, desligue o mascaramento de documentos em *MCP → Privacidade* (vale para todos os tokens pessoais).
+- **Cobranças do Asaas:** ao sincronizar, uma cobrança cujo cliente (`cus_...`) já está ligado a um contato é vinculada a ele **antes** de tentar o telefone; e, ao gravar o
+  id do Asaas num contato, as cobranças dele que estavam sem vínculo passam a ser dele. O vínculo que a equipe escolheu à mão nunca é trocado.
+Código: `conversations/taxid.go`, `aiaccess/tools.go` (`find_contact`), `aiaccess/write.go` (`set_contact_reference`), `automation/charges.go` (vínculo pelo id).
+
 ### Privacidade das respostas (todas as etapas)
 
 1. **Sempre ligado, para qualquer cliente de IA:** senhas, códigos, tokens e chaves; cartão (Luhn), agência/conta, chave PIX, boleto.

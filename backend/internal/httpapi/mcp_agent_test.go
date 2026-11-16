@@ -499,3 +499,80 @@ func TestTwoAgentsOfTheSamePersonStaySeparate(t *testing.T) {
 		t.Fatalf("a baixa do fin não pode apagar a do Chefão: %v", o)
 	}
 }
+
+// Contato ligado ao cadastro financeiro: CNPJ/CPF e id do Asaas, achados sem casar por telefone.
+func TestContactReferencesFindAndLinkCharges(t *testing.T) {
+	w, toks := agentTokens(t)
+	// Para o agente financeiro ver o CNPJ, o administrador não mascara documentos.
+	expect(t, w.admin.do("PUT", "/api/v1/ai/settings", map[string]any{"enabled": true, "maskDocuments": false, "allowWrite": true, "allowSend": true, "allowAutomation": true, "allowAttend": true}), 200)
+	w.receive("Cliente Financeiro", "Oi")
+	conv := mustConv(t, w.admin, "Cliente Financeiro")
+	cid := conv["contact"].(map[string]any)["id"].(string)
+
+	// Pela tela (equipe): valida e guarda só os dígitos.
+	expect(t, w.admin.do("PATCH", "/api/v1/contacts/"+cid, map[string]any{"taxId": "11.222.333/0001-82"}), 422) // dígito verificador errado
+	expect(t, w.admin.do("PATCH", "/api/v1/contacts/"+cid, map[string]any{"asaasId": "000005401844"}), 422)     // sem cus_
+	// Uma cobrança do Asaas sem cliente ligado (vinda da sincronização).
+	if _, err := w.e.pool.Exec(t.Context(), `INSERT INTO billing_charges (provider, external_id, customer_ref, customer_name, description, amount_cents, due_date, status)
+		VALUES ('asaas', 'pay_1', 'cus_000005401844', 'Financeiro Ltda', 'Honorários', 15000, current_date, 'open')`); err != nil {
+		t.Fatal(err)
+	}
+	expect(t, w.admin.do("PATCH", "/api/v1/contacts/"+cid, map[string]any{"taxId": "11.222.333/0001-81", "asaasId": "cus_000005401844"}), 204)
+	var linked *string
+	if err := w.e.pool.QueryRow(t.Context(), `SELECT contact_id::text FROM billing_charges WHERE external_id = 'pay_1'`).Scan(&linked); err != nil || linked == nil || *linked != cid {
+		t.Fatalf("a cobrança do Asaas deveria ter sido ligada ao contato: %v %v", linked, err)
+	}
+	got := mustConv(t, w.admin, "Cliente Financeiro")["contact"].(map[string]any)
+	if got["taxId"] != "11222333000181" || got["asaasId"] != "cus_000005401844" {
+		t.Fatalf("a tela recebe os campos: %v", got)
+	}
+
+	// O agente acha o contato pelo CNPJ (com pontuação) ou pelo id do Asaas, e vê as referências.
+	for _, args := range []map[string]any{{"tax_id": "11.222.333/0001-81"}, {"asaas_id": "cus_000005401844"}} {
+		o, isErr := w.tool(toks["read"], "find_contact", args)
+		if isErr || o["total"] != float64(1) {
+			t.Fatalf("find_contact %v: %v", args, o)
+		}
+		c := o["contacts"].([]any)[0].(map[string]any)
+		if c["id"] != cid || c["asaasId"] != "cus_000005401844" || c["document"] != "11.222.333/0001-81" {
+			t.Fatalf("contato achado: %v", c)
+		}
+	}
+	if o, _ := w.tool(toks["read"], "find_contact", map[string]any{"asaas_id": "cus_999999999999"}); o["total"] != float64(0) {
+		t.Fatalf("id desconhecido: %v", o)
+	}
+	for _, bad := range []map[string]any{{}, {"tax_id": "123"}, {"tax_id": "11222333000182"}, {"asaas_id": "xyz"}, {"tax_id": "11222333000181", "asaas_id": "cus_000005401844"}} {
+		if isErr, _ := w.toolCall(toks["read"], "find_contact", bad); !isErr {
+			t.Fatalf("%v deveria ser recusado", bad)
+		}
+	}
+	// A busca geral também acha pelo id do Asaas.
+	if o, _ := w.tool(toks["read"], "search", map[string]any{"q": "cus_000005401844"}); len(o["contacts"].([]any)) != 1 {
+		t.Fatalf("search pelo id do Asaas: %v", o)
+	}
+
+	// Quem não pode alterar não grava; quem pode, grava e apaga.
+	if isErr, _ := w.toolCall(toks["read"], "set_contact_reference", map[string]any{"contact_id": cid, "tax_id": "52998224725"}); !isErr {
+		t.Fatal("token só de leitura não grava referências")
+	}
+	o, isErr := w.tool(toks["write"], "set_contact_reference", map[string]any{"contact_id": cid, "tax_id": "529.982.247-25", "asaas_id": ""})
+	if isErr || o["ok"] != true {
+		t.Fatalf("set_contact_reference: %v", o)
+	}
+	if o, _ := w.tool(toks["read"], "find_contact", map[string]any{"tax_id": "52998224725"}); o["total"] != float64(1) {
+		t.Fatalf("CPF novo: %v", o)
+	}
+	if o, _ := w.tool(toks["read"], "find_contact", map[string]any{"asaas_id": "cus_000005401844"}); o["total"] != float64(0) {
+		t.Fatalf("asaas_id apagado não deveria achar: %v", o)
+	}
+
+	// Com documentos mascarados, o valor não aparece para o agente, mas ele ainda acha o contato pelo CNPJ que já conhece.
+	expect(t, w.admin.do("PUT", "/api/v1/ai/settings", map[string]any{"enabled": true, "maskDocuments": true, "allowWrite": true, "allowSend": true, "allowAutomation": true, "allowAttend": true}), 200)
+	o, _ = w.tool(toks["read"], "find_contact", map[string]any{"tax_id": "52998224725"})
+	if o["total"] != float64(1) {
+		t.Fatalf("achar por CNPJ continua funcionando: %v", o)
+	}
+	if c := o["contacts"].([]any)[0].(map[string]any); c["document"] == "529.982.247-25" {
+		t.Fatalf("o documento deveria sair mascarado: %v", c)
+	}
+}

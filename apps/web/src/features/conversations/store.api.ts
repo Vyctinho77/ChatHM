@@ -186,6 +186,13 @@ export function useConversationActions() {
         patchConv(id, (x) => ({ ...x, contact: { ...x.contact, note } }));
         patch(`/contacts/${c.contact.id}`, { note }).catch(resync);
       },
+      /** Grava o CNPJ/CPF e/ou o id do Asaas do contato. Falha com os erros de campo da API (documento inválido, id fora do formato). */
+      async setReferences(id: string, refs: { taxId?: string; asaasId?: string }) {
+        const c = list().find((x) => x.id === id);
+        if (!c) return;
+        await patch(`/contacts/${c.contact.id}`, refs);
+        void qc.invalidateQueries({ queryKey: conversationKeys.list });
+      },
       /** Carrega o histórico completo (a busca pode apontar para mensagens além das 300 mais recentes). */
       async loadAllMessages(id: string) {
         const all = (await get<{ messages: Message[] }>(`/conversations/${id}/messages?limit=5000`)).messages;

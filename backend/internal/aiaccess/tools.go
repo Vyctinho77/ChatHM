@@ -197,6 +197,37 @@ func (m *MCP) server(p Principal) *mcp.Server {
 			return nil, errors.New("contato não encontrado (ou você não tem acesso a ele)")
 		})
 
+	type findIn struct {
+		TaxID   string `json:"tax_id,omitempty" jsonschema:"CPF ou CNPJ do cliente, com ou sem pontuação"`
+		AsaasID string `json:"asaas_id,omitempty" jsonschema:"id do cliente no Asaas (cus_...)"`
+	}
+	addTool(m, s, p, "find_contact", "Acha o contato do ChatHM pelo CNPJ/CPF ou pelo id do cliente no Asaas (use o que o cadastro financeiro já tem, sem casar por telefone). Devolve os contatos que você pode ver com essa referência (um cliente pode ter vários números) e a conversa aberta de cada um. Se nada vier, o vínculo ainda não existe: ache o contato por search/list_contacts e grave com set_contact_reference.",
+		func(ctx context.Context, in findIn) (any, error) {
+			if (in.TaxID == "") == (in.AsaasID == "") {
+				return nil, errors.New("informe tax_id OU asaas_id")
+			}
+			var tax, asaas string
+			var err error
+			if in.TaxID != "" {
+				if tax, err = conversations.NormalizeTaxID(in.TaxID); err != nil || tax == "" {
+					return nil, errors.New("tax_id inválido: informe um CPF (11 números) ou um CNPJ (14 números) correto")
+				}
+			} else if asaas, err = conversations.NormalizeAsaasID(in.AsaasID); err != nil || asaas == "" {
+				return nil, errors.New("asaas_id inválido: começa com cus_ (ex.: cus_000005401844)")
+			}
+			all, err := m.convs.ListContacts(ctx, v)
+			if err != nil {
+				return nil, err
+			}
+			out := []any{}
+			for _, c := range all {
+				if (tax != "" && c.TaxID == tax) || (asaas != "" && c.AsaasID == asaas) {
+					out = append(out, contactView(c.Contact, c.ConversationID))
+				}
+			}
+			return map[string]any{"total": len(out), "contacts": out}, nil
+		})
+
 	type none struct{}
 	addTool(m, s, p, "list_queues", "Filas (segmentos) do escritório, com a equipe responsável.",
 		func(ctx context.Context, _ none) (any, error) {
@@ -355,6 +386,12 @@ func convView(c conversations.Conversation, p Principal) any {
 
 func contactView(c conversations.Contact, openConversationID *string) any {
 	v := map[string]any{"id": c.ID, "name": c.Name, "phone": c.Phone, "kind": c.Kind}
+	if c.TaxID != "" {
+		v["document"] = conversations.FormatTaxID(c.TaxID) // CPF/CNPJ com pontuação (sem pontuação, 11 dígitos podem parecer um celular para o filtro de privacidade). Não se chama "...Id" de propósito: assim o filtro de privacidade o oculta quando o administrador manda mascarar documentos
+	}
+	if c.AsaasID != "" {
+		v["asaasId"] = c.AsaasID
+	}
 	if openConversationID != nil {
 		v["openConversationId"] = *openConversationID
 	}
