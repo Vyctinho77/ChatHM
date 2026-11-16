@@ -38,8 +38,8 @@ describe("InternalChatPanel", () => {
     const html = wrap(seeded(0, conversation), <InternalChatPanel />);
     expect(html).toContain("Chat interno");
     expect(html).toContain("Alguém sabe o prazo da DCTF?");
-    expect(html).toContain("Gestor");
-    expect(html).toContain("Atendente");
+    expect(html).toContain('aria-label="Gestor"'); // o perfil vira selo de verificado, com o nome na dica
+    expect(html).toContain('aria-label="Atendente"');
     expect(html).toContain("Obrigado, Caio!");
     expect(html).toContain("Esta mensagem foi apagada");
     // Duas mensagens seguidas da mesma pessoa: o nome dela aparece uma vez só.
