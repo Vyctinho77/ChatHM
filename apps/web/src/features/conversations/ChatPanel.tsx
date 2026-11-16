@@ -72,6 +72,8 @@ export function ChatPanel({
   // Posição escolhida na lista de ocorrências; vale só para o termo atual (ao digitar de novo volta para a mais recente).
   const [nav, setNav] = useState<{ term: string; idx: number }>({ term: "", idx: -1 });
   const [flashDone, setFlashDone] = useState<string | null>(null);
+  const [jumpFlash, setJumpFlash] = useState<string | null>(null); // destaque rápido ao chegar numa mensagem citada
+  const jumpFlashTimer = useRef<number | undefined>(undefined);
   const [params] = useSearchParams();
   const targetMsg = params.get("msg");
   const handledTarget = useRef<string | null>(null);
@@ -292,6 +294,11 @@ export function ChatPanel({
       await new Promise<void>((r) => requestAnimationFrame(() => r()));
     }
     scrollToMessage(id);
+    // Apaga e acende de novo, para o destaque repetir mesmo num segundo clique na mesma mensagem.
+    setJumpFlash(null);
+    requestAnimationFrame(() => setJumpFlash(id));
+    window.clearTimeout(jumpFlashTimer.current);
+    jumpFlashTimer.current = window.setTimeout(() => setJumpFlash((cur) => (cur === id ? null : cur)), 1800);
   }
 
   // Vários anexos de uma vez: só o primeiro leva a citação.
@@ -578,7 +585,7 @@ export function ChatPanel({
                     </span>
                   </div>
                 )}
-                <div id={`msg-${m.id}`} className={cn(startsGroup && "mt-2")}>
+                <div id={`msg-${m.id}`} className={cn(startsGroup && "mt-2", (m.id === flashId || m.id === jumpFlash) && "msg-flash")}>
                   <MessageBubble
                     m={m}
                     contact={c.contact}
@@ -587,7 +594,7 @@ export function ChatPanel({
                     startsGroup={startsGroup}
                     animateIn={new Date(m.sentAt).getTime() > openedAt}
                     term={term}
-                    emphasis={m.id === flashId || m.id === currentMatch}
+                    emphasis={m.id === currentMatch}
                     onOpenImage={setViewerId}
                     onOpenPdf={setPdfId}
                     onMenu={openMenu}
