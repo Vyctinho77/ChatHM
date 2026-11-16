@@ -177,3 +177,22 @@ Botão direito numa mensagem (no celular e no tablet: clicar e segurar): **Dados
 - Quem pode editar/apagar para todos: quem enviou a mensagem, o administrador ou, para mensagens enviadas pelo celular, o responsável.
 
 Telefones, e-mails e sites no texto viram links azuis (telefone abre a conversa com aquele número). A foto de perfil abre em tela cheia ao clicar.
+
+## Mídia do histórico e reenvio pelo celular (11/2026)
+
+O histórico que o WhatsApp entrega ao conectar traz o texto e os dados de cada mensagem, mas **não os arquivos**: só a *referência* de cada um (endereço, chave e hashes).
+Antes, só os PDFs eram baixados na hora, e a maioria falhava porque o WhatsApp já tinha apagado o arquivo ("arquivo não importado"). Agora:
+
+- **Referência guardada.** Toda mídia do histórico (imagem, áudio, documento, figurinha) entra com a referência guardada na tabela `media_refs` (migração `00039`), **cifrada**
+  (a referência tem a chave do arquivo; `ENCRYPTION_KEY`). Mídias recebidas ao vivo cujo download falhou também guardam a referência, para tentar de novo.
+- **Importador em segundo plano** (`conversations/media_import.go`): com o WhatsApp conectado, baixa **um arquivo a cada 3 segundos**, dos mais recentes aos mais antigos, dentro do teto de espaço
+  (`HISTORY_MEDIA_BUDGET_MB`, 2 GB) e de um limite por arquivo (imagem 12 MB, áudio 10 MB, documento 15 MB, figurinha 2 MB). Falha passageira (rede): tenta de novo em 5 min, 30 min, 3 h e 12 h, e depois desiste.
+- **Pedido de reenvio ao celular (arquivo apagado no WhatsApp).** Se o servidor do WhatsApp já não tem o arquivo (erro 404/410/403), o sistema pede ao **celular** que o envie de novo
+  (`SendMediaRetryReceipt`), **uma vez por mensagem**, no máximo **120 pedidos por hora** (devagar, para não parecer abuso). A mensagem mostra "pedindo o arquivo ao celular…". Quando o celular responde, o arquivo
+  é baixado e guardado; se ele também não tem mais, ou não responde em **24 horas**, a mensagem fica "o arquivo não está mais disponível".
+  Isso só funciona se o celular ainda tiver o arquivo e estiver ligado e com internet.
+- **Nova sincronização recupera o que já existia.** As mensagens importadas **antes** desta versão não têm referência (não dá para recuperá-las sozinho). Se o histórico for entregue de novo (desvincular e vincular o
+  número outra vez, ou o pedido de histórico do administrador), as mensagens que já existiam **sem arquivo ganham a referência** e entram na fila do importador.
+- Estados na mensagem (`mediaState`): `retrying`, `expired`, `skipped`, `blocked`, `failed`. Código: `whatsapp/media_ref.go` (tipos), `whatsapp/wameow/media.go` (baixar e pedir reenvio), `conversations/media_import.go`.
+- **Não testado com o WhatsApp real** (só com o provedor simulado e testes com banco real): validar com um número de teste antes de contar com isso.
+

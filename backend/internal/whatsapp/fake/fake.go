@@ -27,6 +27,7 @@ type Provider struct {
 	sendErr error
 	// connected espelha o estado do "celular": só envia depois de conectado.
 	connected bool
+	ms        *mediaSim // mídia simulada (media.go)
 }
 
 // Sent é uma mensagem de texto enviada pelo sistema (para asserções em testes).

@@ -89,7 +89,8 @@ func TestHistoryBatchReportsImportedDuplicatesAndFailures(t *testing.T) {
 	}
 }
 
-func TestHistoryKeepsDownloadOnlyForSmallPDFs(t *testing.T) {
+// O histórico não baixa nada na hora (seriam milhares de arquivos): toda mídia entra com a REFERÊNCIA guardada para o servidor baixar depois.
+func TestHistoryKeepsMediaReferenceInsteadOfDownloading(t *testing.T) {
 	own := types.NewJID("5592111111111", types.DefaultUserServer)
 	cli := whatsmeow.NewClient(&store.Device{ID: &own, LID: types.NewJID("99999", types.HiddenUserServer)}, nil)
 	web := func(id string, m *waE2E.Message) *waHistorySync.HistorySyncMsg {
@@ -97,30 +98,48 @@ func TestHistoryKeepsDownloadOnlyForSmallPDFs(t *testing.T) {
 			Key: &waCommon.MessageKey{ID: proto.String(id)}, MessageTimestamp: proto.Uint64(100), Message: m,
 		}}
 	}
-	doc := func(name, mime string, size uint64) *waE2E.Message {
-		return &waE2E.Message{DocumentMessage: &waE2E.DocumentMessage{FileName: proto.String(name), Mimetype: proto.String(mime), FileLength: proto.Uint64(size)}}
-	}
+	key := []byte("0123456789abcdef0123456789abcdef")
 	conv := &waHistorySync.Conversation{ID: proto.String("5592999999999@s.whatsapp.net"), Messages: []*waHistorySync.HistorySyncMsg{
-		web("pdf-ok", doc("guia.pdf", "application/pdf", 200<<10)),
-		web("pdf-sem-mime", doc("Extrato.PDF", "application/octet-stream", 50<<10)),
-		web("pdf-grande", doc("livro.pdf", "application/pdf", maxHistoricalPDF+1)),
-		web("pdf-vazio", doc("vazio.pdf", "application/pdf", 0)),
-		web("planilha", doc("balanco.xlsx", "application/vnd.ms-excel", 10<<10)),
-		web("imagem", &waE2E.Message{ImageMessage: &waE2E.ImageMessage{Mimetype: proto.String("image/jpeg"), FileLength: proto.Uint64(10 << 10)}}),
-		web("audio", &waE2E.Message{AudioMessage: &waE2E.AudioMessage{Mimetype: proto.String("audio/ogg"), FileLength: proto.Uint64(10 << 10)}}),
+		web("pdf", &waE2E.Message{DocumentMessage: &waE2E.DocumentMessage{FileName: proto.String("guia.pdf"), Mimetype: proto.String("application/pdf"), FileLength: proto.Uint64(200 << 10), MediaKey: key, DirectPath: proto.String("/v/t62/x"), JPEGThumbnail: []byte("miniatura")}}),
+		web("imagem", &waE2E.Message{ImageMessage: &waE2E.ImageMessage{Mimetype: proto.String("image/jpeg"), FileLength: proto.Uint64(10 << 10), MediaKey: key, DirectPath: proto.String("/v/t62/y"), JPEGThumbnail: []byte("miniatura")}}),
+		web("audio", &waE2E.Message{AudioMessage: &waE2E.AudioMessage{Mimetype: proto.String("audio/ogg"), FileLength: proto.Uint64(10 << 10), MediaKey: key, DirectPath: proto.String("/v/t62/z")}}),
+		web("figurinha", &waE2E.Message{StickerMessage: &waE2E.StickerMessage{Mimetype: proto.String("image/webp"), FileLength: proto.Uint64(5 << 10), MediaKey: key, DirectPath: proto.String("/v/t62/w")}}),
+		web("texto", &waE2E.Message{Conversation: proto.String("oi")}),
 	}}
-	want := map[string]bool{"pdf-ok": true, "pdf-sem-mime": true}
-	got := map[string]bool{}
+	kinds := map[string]whatsapp.Kind{"pdf": whatsapp.KindDocument, "imagem": whatsapp.KindImage, "audio": whatsapp.KindAudio, "figurinha": whatsapp.KindSticker}
+	n := 0
 	for _, m := range historyMessages(cli, conv, nil) {
-		got[m.ExternalID] = m.Download != nil
-		if m.Download != nil != want[m.ExternalID] {
-			t.Errorf("%s: download mantido = %v, esperado %v", m.ExternalID, m.Download != nil, want[m.ExternalID])
-		}
+		n++
 		if !m.Historical {
 			t.Errorf("%s deveria ser marcada como histórico", m.ExternalID)
 		}
+		if m.Download != nil {
+			t.Errorf("%s: o histórico não baixa na hora", m.ExternalID)
+		}
+		want, isMedia := kinds[m.ExternalID]
+		if !isMedia {
+			if m.MediaRef != nil {
+				t.Errorf("%s: texto não tem referência de mídia", m.ExternalID)
+			}
+			continue
+		}
+		if m.MediaRef == nil || m.MediaRef.Kind != want || len(m.MediaRef.Proto) == 0 {
+			t.Fatalf("%s: faltou a referência de mídia: %+v", m.ExternalID, m.MediaRef)
+		}
+		// A referência volta a ser a mensagem de mídia, com a chave e o endereço, e sem a miniatura.
+		dm, gotKey, _, err := downloadable(*m.MediaRef)
+		if err != nil || dm == nil || string(gotKey) != string(key) {
+			t.Errorf("%s: referência não reconstrói a mídia: %v", m.ExternalID, err)
+		}
+		var back waE2E.Message
+		if err := proto.Unmarshal(m.MediaRef.Proto, &back); err != nil {
+			t.Fatal(err)
+		}
+		if back.GetImageMessage().GetJPEGThumbnail() != nil || back.GetDocumentMessage().GetJPEGThumbnail() != nil {
+			t.Errorf("%s: a miniatura só pesaria na referência", m.ExternalID)
+		}
 	}
-	if len(got) != 7 {
-		t.Fatalf("mensagens importadas = %d, esperado 7 (a mensagem sempre entra, só o arquivo é seletivo)", len(got))
+	if n != 5 {
+		t.Fatalf("mensagens importadas = %d, esperado 5 (a mensagem sempre entra)", n)
 	}
 }

@@ -106,6 +106,7 @@ func NewServices(ctx context.Context, cfg config.Config, db *pgxpool.Pool, opt O
 		mediaSvc.FFprobe = cfg.FFprobeBin
 	}
 	convs.SetMedia(store, mediaSvc)
+	convs.SetBox(box) // referências de mídia do histórico (cifradas)
 	if t := transcribe.New(transcribe.Config{Bin: cfg.WhisperBin, Model: cfg.WhisperModel, FFmpeg: cfg.FFmpegBin, Lang: cfg.WhisperLang, Threads: cfg.WhisperThreads, MaxSeconds: cfg.WhisperMaxSeconds, MinFreeMB: cfg.WhisperMinFreeMB}); t != nil {
 		convs.SetTranscriber(t)
 		opt.Logger.Info("transcrição de áudios ligada", "model", cfg.WhisperModel)
@@ -155,6 +156,7 @@ func NewServices(ctx context.Context, cfg config.Config, db *pgxpool.Pool, opt O
 	}
 	s.WhatsApp = whatsapp.NewManager(db, hub, convs.Ingest, factory, opt.Logger)
 	s.WhatsApp.SetReceiptHandler(convs.ApplyReceipt)
+	s.WhatsApp.SetMediaRetryHandler(convs.OnMediaRetry) // o celular reenviando uma mídia que o WhatsApp já apagou
 	s.WhatsApp.SetTypingHandler(convs.ApplyTyping)
 	s.WhatsApp.SetHistoryContactHandler(convs.ImportContact)
 	convs.SetSender(s.WhatsApp)

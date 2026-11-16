@@ -78,6 +78,8 @@ function MetaOverlay({ m }: { m: Message }) {
 /** Situação de um documento sem arquivo: histórico antigo (só metadados), limite de espaço, apagado no WhatsApp, bloqueado ou baixando. */
 function historicalDocLabel(m: Message) {
   if (m.mediaState === "blocked") return "bloqueado por segurança";
+  if (m.mediaState === "retrying") return "pedindo o arquivo ao celular…";
+  if (m.mediaState === "expired") return "o arquivo não está mais disponível";
   if (m.historical && m.mediaState === "failed") return "o WhatsApp não tem mais o arquivo";
   if (m.historical && m.mediaState === "skipped") return "histórico · não importado (limite de espaço)";
   if (m.historical) return "arquivo do histórico não importado";
@@ -87,6 +89,8 @@ function historicalDocLabel(m: Message) {
 /** Texto do espaço de uma mídia cujo arquivo ainda não chegou ou não pode ser exibido. */
 function mediaStateLabel(m: Message, what: string) {
   if (m.mediaState === "blocked") return `${what} bloqueada por segurança`;
+  if (m.mediaState === "retrying") return `${what} · pedindo o arquivo ao celular…`;
+  if (m.mediaState === "expired") return `${what} · o arquivo não está mais disponível (nem no celular)`;
   if (m.historical && m.mediaState === "failed") return `${what} do histórico · o WhatsApp não tem mais o arquivo`;
   if (m.historical && m.mediaState === "skipped") return `${what} do histórico · não importado (limite de espaço)`;
   if (m.historical) return `${what} do histórico · arquivo não importado`;
@@ -503,7 +507,7 @@ export function MessageBubble({
               group={!out && m.group && !m.authorName}
               metadata={<Meta m={m} />}
             />
-          {m.historical && !m.url && <p className="mt-1 text-[11px] opacity-70">Áudio do histórico · arquivo não importado</p>}
+          {!m.url && (m.historical || m.mediaState) && <p className="mt-1 text-[11px] opacity-70">{mediaStateLabel(m, "Áudio")}</p>}
           </div>
         )}
 

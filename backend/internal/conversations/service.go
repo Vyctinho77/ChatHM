@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -37,6 +38,7 @@ import (
 	"github.com/vyctinho77/chathm/backend/internal/media"
 	"github.com/vyctinho77/chathm/backend/internal/platform/database"
 	"github.com/vyctinho77/chathm/backend/internal/platform/httpx"
+	"github.com/vyctinho77/chathm/backend/internal/platform/secretbox"
 	"github.com/vyctinho77/chathm/backend/internal/realtime"
 	"github.com/vyctinho77/chathm/backend/internal/segments"
 	"github.com/vyctinho77/chathm/backend/internal/storage"
@@ -112,7 +114,10 @@ type Service struct {
 	// PDFs do histórico têm fila própria (poucos de cada vez) para nunca atrasar a mídia das conversas ao vivo.
 	histSlots   chan struct{}
 	transcriber Transcriber
-	histBudget  int64 // bytes máximos de anexos antes de parar de baixar PDFs do histórico (<= 0 desliga)
+	box         *secretbox.Box // cifra as referências de mídia
+	retryMu     sync.Mutex
+	retrySent   []time.Time // pedidos de reenvio de mídia na última hora
+	histBudget  int64       // bytes máximos de anexos antes de parar de baixar PDFs do histórico (<= 0 desliga)
 	db          *pgxpool.Pool
 	pub         Publisher
 	sender      Sender
@@ -264,6 +269,7 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 
 	var convID, msgID string
 	var retryID, retryConv string // PDF de histórico já importado, mas ainda sem arquivo
+	var wasDup bool               // a mensagem já existia (histórico entregue de novo)
 	var before userSet
 	err := database.InTx(ctx, s.db, func(tx pgx.Tx) error {
 		var dup bool
@@ -273,6 +279,7 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 			return err
 		}
 		if dup {
+			wasDup = true
 			// PDF de histórico reentregue (o administrador pediu o histórico de novo) cuja mensagem já existia sem o arquivo:
 			// tenta baixar agora. Nada mais da mensagem muda.
 			if m.Historical && m.Download != nil && m.Kind == whatsapp.KindDocument {
@@ -433,6 +440,9 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 	if err == nil && retryID != "" {
 		s.queueHistoricalPDF(retryID, retryConv, m)
 	}
+	if err == nil && wasDup && m.Historical && m.MediaRef != nil {
+		s.registerDupRef(ctx, m) // nova sincronização: as mensagens antigas sem arquivo ganham a referência
+	}
 	// "PARAR": o cliente não quer avisos automáticos. Vale na hora e é auditado; a mensagem segue o fluxo normal.
 	if err == nil && msgID != "" && !m.FromMe && !m.Historical && m.Kind == whatsapp.KindText && IsOptOut(m.Body) {
 		s.optOut(ctx, m.ContactWAID)
@@ -454,9 +464,11 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 			}
 		}
 	}
-	if m.Download != nil && s.store != nil && s.media != nil {
+	if m.Historical && m.MediaRef != nil && s.box != nil {
+		s.saveMediaRef(ctx, msgID, m.MediaRef, 0) // o importador baixa em segundo plano, devagar e dentro do teto de espaço
+	} else if m.Download != nil && s.store != nil && s.media != nil {
 		if m.Historical {
-			s.queueHistoricalPDF(msgID, convID, m) // o provedor só deixa o download nos PDFs do histórico
+			s.queueHistoricalPDF(msgID, convID, m) // provedor que ainda entrega o download pronto (só PDFs)
 		} else {
 			go func() {
 				s.mediaSlots <- struct{}{} // no máximo alguns downloads simultâneos
@@ -1722,21 +1734,29 @@ func (s *Service) fetchMedia(msgID, convID string, m whatsapp.InboundMessage) {
 	}()
 	data, err := m.Download(ctx)
 	if err != nil {
+		// Falhou ao chegar (celular sem rede, WhatsApp lento): guarda a referência para tentar de novo mais tarde, inclusive pedindo ao celular.
+		s.saveMediaRef(ctx, msgID, m.MediaRef, 5*time.Minute)
 		return
 	}
 	name, _ := m.Payload["fileName"].(string)
 	declared, _ := m.Payload["mimeType"].(string)
-	p, err := s.media.ProcessInbound(ctx, media.Kind(m.Kind), data, name, declared)
+	state = s.storeFetched(ctx, msgID, convID, m.Kind, data, name, declared)
+}
+
+// storeFetched valida, guarda e registra o arquivo de uma mensagem de mídia (recebida na hora ou baixada depois). Devolve "" se deu certo,
+// "blocked" se a validação de segurança recusou ou "failed" se não deu para guardar.
+func (s *Service) storeFetched(ctx context.Context, msgID, convID string, kind whatsapp.Kind, data []byte, name, declared string) string {
+	p, err := s.media.ProcessInbound(ctx, media.Kind(kind), data, name, declared)
 	if err != nil {
 		var rej *media.RejectError
 		if errors.As(err, &rej) {
-			state = "blocked"
+			return "blocked"
 		}
-		return
+		return "failed"
 	}
 	key := "attachments/" + uuid.NewString()
 	if err := s.store.Put(ctx, key, p.Data); err != nil {
-		return
+		return "failed"
 	}
 	sum := sha256.Sum256(p.Data)
 	if _, err := s.db.Exec(ctx, `
@@ -1744,19 +1764,19 @@ func (s *Service) fetchMedia(msgID, convID string, m whatsapp.InboundMessage) {
 		VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (message_id) DO NOTHING`,
 		msgID, key, p.MimeType, len(p.Data), hex.EncodeToString(sum[:]), p.FileName, p.ScanStatus); err != nil {
 		_ = s.store.Delete(ctx, key)
-		return
+		return "failed"
 	}
 	if p.DocType != "" {
 		_, _ = s.db.Exec(ctx, `UPDATE messages SET payload = payload || jsonb_build_object('docType', $2::text) WHERE id = $1`, msgID, p.DocType)
 	}
-	if m.Kind == whatsapp.KindAudio {
+	if kind == whatsapp.KindAudio {
 		s.startTranscription(msgID, convID, p.Data, p.DurationSec)
 	}
-	if m.Kind == whatsapp.KindImage {
+	if kind == whatsapp.KindImage {
 		thumb, _ := media.Thumb(p.Data)
 		_, _ = s.db.Exec(ctx, `UPDATE messages SET payload = payload || jsonb_build_object('thumb', $2::text) WHERE id = $1`, msgID, thumb)
 	}
-	state = ""
+	return ""
 }
 
 // AddParticipant inclui uma pessoa (de outra equipe, ou um administrador) no atendimento: ela passa a ver a conversa e a responder,
