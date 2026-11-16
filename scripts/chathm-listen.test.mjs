@@ -60,6 +60,23 @@ test("no modo resumo junta as respostas e avisa uma vez, com a mais recente de c
   } finally { srv.close(); }
 });
 
+test("--inbox anexa cada aviso como uma linha de JSON, sem precisar de comando nem de endereço", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "chathm-listen-"));
+  const inbox = join(dir, "inbox.jsonl");
+  let n = 0;
+  const srv = await fakeChatHM(() => (++n <= 2 ? { body: { total: 1, conversations: [reply(`c${n}`, `2026-11-16T10:0${n}:00Z`, `msg ${n}`)] } } : { body: { total: 0, timedOut: true, conversations: [] } }));
+  const ac = new AbortController();
+  try {
+    const o = parseArgs(["--inbox", inbox, "--state", join(dir, "s.json"), "--backlog", "--wait", "0"], { CHATHM_URL: srv.url, CHATHM_TOKEN: "t" });
+    setTimeout(() => ac.abort(), 500);
+    await run(o, { log() {}, signal: ac.signal });
+    const lines = (await readFile(inbox, "utf8")).trim().split("\n").map((l) => JSON.parse(l));
+    assert.equal(lines.length, 2);
+    assert.equal(lines[0].conversations[0].lastReply.text, "msg 1");
+    assert.equal(lines[1].conversations[0].conversationId, "c2");
+  } finally { srv.close(); }
+});
+
 test("token recusado para o script com uma mensagem clara, em vez de insistir", async () => {
   const dir = await mkdtemp(join(tmpdir(), "chathm-listen-"));
   const srv = await fakeChatHM(() => ({ status: 401, body: { error: { code: "invalid_token" } } }));
