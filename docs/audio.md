@@ -35,8 +35,11 @@ sob o áudio ("Transcrição"). O agente de IA lê o mesmo texto em `read_messag
 enquanto não termina).
 
 - **Estados** (`transcriptState` na mensagem): `pending`, `done`, `empty` (sem fala), `failed` (o áudio continua tocável, só sem texto) e `toolong` (acima de 10 minutos).
-- **Como funciona:** o ffmpeg converte para WAV 16 kHz mono e o `whisper-cli` lê. Um áudio por vez (usa metade dos núcleos e ~1 GB de memória), fila em memória.
+- **Como funciona:** o ffmpeg converte para WAV 16 kHz mono e o `whisper-cli` lê. Um áudio por vez (usa metade dos núcleos), em prioridade baixa (`nice`), fila em memória.
   Ao iniciar, o servidor transcreve também os áudios dos últimos 7 dias que ainda não têm texto. Código: `internal/transcribe`, `conversations/transcript.go`.
+- **Memória:** o modelo `small` quantizado deve usar entre 0,5 e 1 GB enquanto transcreve (estimativa; **medir na VPS depois de publicar**, olhando o container do app durante um áudio). Na VPS de
+  4 GB, o app e o Caddy usavam cerca de 40 MB juntos antes disso. Proteção: antes de cada áudio o servidor confere a memória disponível (`MemAvailable`) e **espera** se houver menos de
+  1000 MB livres (`WHISPER_MIN_FREE_MB`; `-1` desliga), desistindo depois de 10 minutos (o áudio fica sem texto, `failed`). A transcrição dos áudios antigos começa 2 minutos depois do servidor subir.
 - **Imagem Docker:** o `Dockerfile` compila o whisper.cpp (tag fixa) e embute o modelo `ggml-small-q5_1.bin` (~190 MB, checksum conferido), com `WHISPER_BIN`, `WHISPER_MODEL`
   e `WHISPER_LANG=pt`. A compilação usa `-march=native`: construa a imagem na máquina em que ela vai rodar (na VPS, é o caso). Sem as variáveis, o recurso fica desligado e
   nada mais muda. Ajustes: `WHISPER_THREADS`, `WHISPER_MAX_SECONDS` (padrão 600).

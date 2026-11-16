@@ -68,6 +68,7 @@ type Config struct {
 	WhisperLang       string // WHISPER_LANG: idioma (padrão pt)
 	WhisperThreads    int    // WHISPER_THREADS: núcleos (padrão: metade)
 	WhisperMaxSeconds int    // WHISPER_MAX_SECONDS: áudios mais longos não são transcritos (padrão 600)
+	WhisperMinFreeMB  int    // WHISPER_MIN_FREE_MB: só transcreve com esta memória livre (padrão 1000; -1 desliga a proteção)
 	FFprobeBin        string // FFPROBE_BIN: caminho do ffprobe (vazio = PATH)
 }
 
@@ -107,6 +108,7 @@ func Load() (Config, error) {
 	}
 	cfg.WhisperThreads, _ = strconv.Atoi(os.Getenv("WHISPER_THREADS"))
 	cfg.WhisperMaxSeconds, _ = strconv.Atoi(os.Getenv("WHISPER_MAX_SECONDS"))
+	cfg.WhisperMinFreeMB, _ = strconv.Atoi(os.Getenv("WHISPER_MIN_FREE_MB"))
 	cfg.MaxAttachment = 25 << 20
 	if v := os.Getenv("MAX_ATTACHMENT_MB"); v != "" {
 		n, err := strconv.Atoi(v)

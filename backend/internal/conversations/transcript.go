@@ -58,6 +58,12 @@ func (s *Service) BackfillTranscripts(ctx context.Context) {
 	if s.transcriber == nil || s.store == nil {
 		return
 	}
+	// Espera um pouco depois de iniciar: o app atende primeiro, e o trabalho pesado começa com a máquina já calma.
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(2 * time.Minute):
+	}
 	rows, err := s.db.Query(ctx, `
 		SELECT m.id::text, m.conversation_id::text, a.storage_key, coalesce((m.payload->>'durationSec')::int, 0)
 		  FROM messages m JOIN attachments a ON a.message_id = m.id

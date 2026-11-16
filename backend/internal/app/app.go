@@ -106,7 +106,7 @@ func NewServices(ctx context.Context, cfg config.Config, db *pgxpool.Pool, opt O
 		mediaSvc.FFprobe = cfg.FFprobeBin
 	}
 	convs.SetMedia(store, mediaSvc)
-	if t := transcribe.New(transcribe.Config{Bin: cfg.WhisperBin, Model: cfg.WhisperModel, FFmpeg: cfg.FFmpegBin, Lang: cfg.WhisperLang, Threads: cfg.WhisperThreads, MaxSeconds: cfg.WhisperMaxSeconds}); t != nil {
+	if t := transcribe.New(transcribe.Config{Bin: cfg.WhisperBin, Model: cfg.WhisperModel, FFmpeg: cfg.FFmpegBin, Lang: cfg.WhisperLang, Threads: cfg.WhisperThreads, MaxSeconds: cfg.WhisperMaxSeconds, MinFreeMB: cfg.WhisperMinFreeMB}); t != nil {
 		convs.SetTranscriber(t)
 		opt.Logger.Info("transcrição de áudios ligada", "model", cfg.WhisperModel)
 	}

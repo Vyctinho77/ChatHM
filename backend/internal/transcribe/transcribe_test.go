@@ -84,3 +84,50 @@ func TestTranscribeWithFakeWhisper(t *testing.T) {
 	}
 	<-s.sem
 }
+
+func TestWaitsForFreeMemoryAndGivesUpIfItNeverComes(t *testing.T) {
+	dir := t.TempDir()
+	model := filepath.Join(dir, "model.bin")
+	_ = os.WriteFile(model, []byte("x"), 0o600)
+	s := New(Config{Bin: "sh", Model: model, MinFreeMB: 1000})
+	s.memPoll, s.memMax = 5*time.Millisecond, 60*time.Millisecond
+
+	// Memória volta antes do prazo: segue.
+	calls := 0
+	s.memFree = func() (int, bool) { calls++; return map[bool]int{true: 2000, false: 300}[calls >= 3], true }
+	if err := s.waitForMemory(context.Background()); err != nil || calls < 3 {
+		t.Fatalf("deveria esperar a memória voltar: %v (%d consultas)", err, calls)
+	}
+	// Nunca volta: desiste com o erro certo, sem travar.
+	s.memFree = func() (int, bool) { return 100, true }
+	if err := s.waitForMemory(context.Background()); err != ErrLowMemory {
+		t.Fatalf("esperava ErrLowMemory: %v", err)
+	}
+	// Não saber a memória (fora do Linux) ou desligar a proteção não bloqueia.
+	s.memFree = func() (int, bool) { return 0, false }
+	if err := s.waitForMemory(context.Background()); err != nil {
+		t.Fatalf("sem leitura não bloqueia: %v", err)
+	}
+	s.memFree = func() (int, bool) { return 1, true }
+	s.cfg.MinFreeMB = -1
+	if err := s.waitForMemory(context.Background()); err != nil {
+		t.Fatalf("proteção desligada não bloqueia: %v", err)
+	}
+	// Cancelar enquanto espera devolve o erro do contexto.
+	s.cfg.MinFreeMB = 1000
+	s.memMax = time.Minute
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	if err := s.waitForMemory(ctx); err == nil || err == ErrLowMemory {
+		t.Fatalf("deveria devolver o erro do contexto: %v", err)
+	}
+}
+
+func TestAvailableMBReadsThisMachine(t *testing.T) {
+	if _, err := os.Stat("/proc/meminfo"); err != nil {
+		t.Skip("sem /proc/meminfo")
+	}
+	if mb, ok := availableMB(); !ok || mb <= 0 {
+		t.Fatalf("deveria ler a memória disponível: %d %v", mb, ok)
+	}
+}
