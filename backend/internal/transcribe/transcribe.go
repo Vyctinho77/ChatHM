@@ -135,12 +135,17 @@ func tail(b []byte) string {
 	return s
 }
 
-// Marcadores que o whisper escreve no lugar de silêncio, música e ruído (variam com o idioma): não são fala.
-var noise = regexp.MustCompile(`(?i)[\[(]\s*(blank_audio|silêncio|silencio|música|musica|music|ruído|ruido|noise|aplausos|applause|risos|laughter|inaudível|inaudivel)\s*[\])]`)
+// Marcadores que o whisper escreve no lugar de silêncio, música e ruído, em qualquer idioma: "[MÚSICA DE FUNDO]", "[BLANK_AUDIO]", "[Silêncio]"...
+// O whisper põe essas anotações entre colchetes (nunca fala), então todo trecho entre colchetes sai. Entre parênteses só saem as anotações conhecidas,
+// porque alguém pode mesmo falar entre parênteses.
+var (
+	bracketed = regexp.MustCompile(`\[[^\]]*\]`)
+	noise     = regexp.MustCompile(`(?i)\(\s*(blank_audio|silêncio|silencio|música|musica|music|ruído|ruido|noise|aplausos|applause|risos|laughter|inaudível|inaudivel)[^)]*\)`)
+)
 
 // clean junta as linhas num texto corrido e tira os marcadores de silêncio/música.
 func clean(raw string) string {
-	raw = noise.ReplaceAllString(raw, " ")
+	raw = noise.ReplaceAllString(bracketed.ReplaceAllString(raw, " "), " ")
 	var parts []string
 	for _, l := range strings.Split(raw, "\n") {
 		if l = strings.Join(strings.Fields(l), " "); l != "" {

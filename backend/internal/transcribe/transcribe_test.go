@@ -18,6 +18,15 @@ func TestClean(t *testing.T) {
 	if clean("[BLANK_AUDIO]\n") != "" {
 		t.Fatal("só silêncio vira vazio")
 	}
+	// O que o whisper escreveu de verdade para um tom, na VPS: não é fala.
+	for _, in := range []string{"[MÚSICA DE FUNDO]", " [Música]\n", "[SILÊNCIO]", "(música de fundo)", "[RISOS] [APLAUSOS]", "[ Pause ]"} {
+		if got := clean(in); got != "" {
+			t.Errorf("%q deveria virar vazio, virou %q", in, got)
+		}
+	}
+	if got := clean("[MÚSICA DE FUNDO] Bom dia, (risos) tudo bem? (isso eu falei entre parênteses)"); got != "Bom dia, tudo bem? (isso eu falei entre parênteses)" {
+		t.Errorf("%q", got)
+	}
 }
 
 func TestNewIsOffWithoutBinaryOrModel(t *testing.T) {
