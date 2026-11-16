@@ -144,6 +144,9 @@ func TestDocumentMimeFromExtension(t *testing.T) {
 		{"empresa.P12", "application/x-pkcs12", pfx},
 		{"cadeia.cer", "application/x-x509-ca-cert", pfx},
 		{"guia.pdf", "application/pdf", []byte("%PDF-1.4 x")},
+		// Nota fiscal eletrônica: com ou sem a declaração <?xml, o tipo é sempre application/xml.
+		{"35240512345678000199550010000012341000012345-procNFe.xml", "application/xml", []byte(`<?xml version="1.0" encoding="UTF-8"?><nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe/></nfeProc>`)},
+		{"nota.xml", "application/xml", []byte(`<nfeProc><NFe/></nfeProc>`)},
 	}
 	s := NewService(1<<20, nil)
 	for _, c := range cases {

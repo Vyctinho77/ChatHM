@@ -7,6 +7,7 @@ const style: Record<Exclude<DocKind, "other" | "certificate">, { bg: string; mar
   word: { bg: "bg-[#2b579a]", mark: "W" },
   excel: { bg: "bg-[#217346]", mark: "X" },
   powerpoint: { bg: "bg-[#c43e1c]", mark: "P" },
+  xml: { bg: "bg-amber-600", mark: "XML" },
 };
 
 const box = { sm: "size-5", md: "h-11 w-9", lg: "h-20 w-16" } as const;
@@ -33,7 +34,7 @@ export function DocBadge({ kind, size = "md", className }: { kind: DocKind; size
   const s = style[kind];
   return (
     <span aria-hidden className={cn("inline-flex shrink-0 select-none items-center justify-center rounded-md font-bold leading-none text-white", s.bg, box[size], className)}>
-      <span className={cn(kind === "pdf" ? pdfGlyph[size] : cn("font-extrabold", glyph[size]))}>{s.mark}</span>
+      <span className={cn(kind === "pdf" || kind === "xml" ? pdfGlyph[size] : cn("font-extrabold", glyph[size]))}>{s.mark}</span>
     </span>
   );
 }

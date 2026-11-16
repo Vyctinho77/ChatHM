@@ -234,11 +234,11 @@ var extMime = map[string]string{
 }
 
 // documentMime escolhe o tipo de um documento. O conteúdo manda, exceto quando ele é genérico demais para dizer o que o
-// arquivo é: texto puro, binário qualquer e ZIP (Word, Excel, PowerPoint e LibreOffice são ZIPs por dentro; sem a
+// arquivo é: texto puro, XML, binário qualquer e ZIP (Word, Excel, PowerPoint e LibreOffice são ZIPs por dentro; sem a
 // extensão, o contato receberia um "arquivo zip"). Nesses casos vale a extensão, se for conhecida.
 func documentMime(sniffed, name string) string {
 	t := strings.SplitN(sniffed, ";", 2)[0]
-	if t == "application/octet-stream" || t == "application/zip" || strings.HasPrefix(t, "text/plain") {
+	if t == "application/octet-stream" || t == "application/zip" || t == "text/xml" || strings.HasPrefix(t, "text/plain") {
 		if e := extMime[strings.ToLower(filepath.Ext(name))]; e != "" {
 			return e
 		}

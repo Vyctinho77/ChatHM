@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { IMAGE_TYPES, docKind, docKindLabel, officeApp } from "./docKind";
+import { IMAGE_TYPES, docKind, docKindLabel, isInvoiceXml, officeApp } from "./docKind";
 
 describe("tipo de documento", () => {
   it("reconhece Word, Excel, PowerPoint e PDF pela extensão, sem depender de maiúsculas", () => {
@@ -32,8 +32,20 @@ describe("tipo de documento", () => {
     expect(docKindLabel("certificate", "pfx")).toBe("Certificado digital");
   });
 
+  it("reconhece XML e, pelo nome, o XML de nota fiscal", () => {
+    expect(docKind("dados.xml")).toBe("xml");
+    expect(docKind("semnome", "text/xml")).toBe("xml");
+    expect(docKindLabel("xml", "xml")).toBe("XML");
+    expect(isInvoiceXml("35240512345678000199550010000012341000012345-procNFe.xml")).toBe(true);
+    expect(isInvoiceXml("NFe_123.XML")).toBe(true);
+    expect(isInvoiceXml("cte-55.xml")).toBe(true);
+    expect(isInvoiceXml("configuracoes.xml")).toBe(false);
+    expect(isInvoiceXml("nota.pdf")).toBe(false);
+    expect(isInvoiceXml(undefined)).toBe(false);
+  });
+
   it("só Word, Excel e PowerPoint abrem no aplicativo do computador; PDF abre no visualizador do app", () => {
-    expect(officeApp).toEqual({ pdf: null, word: "Word", excel: "Excel", powerpoint: "PowerPoint", certificate: null, other: null });
+    expect(officeApp).toEqual({ pdf: null, word: "Word", excel: "Excel", powerpoint: "PowerPoint", certificate: null, xml: null, other: null });
     expect(docKindLabel("word")).toBe("Word");
     expect(docKindLabel("other", "txt")).toBe("TXT");
     expect(docKindLabel("other")).toBe("Arquivo");

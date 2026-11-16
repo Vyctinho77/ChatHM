@@ -8,7 +8,7 @@ import { previewUrl } from "@/lib/media";
 import { formatBytes, formatTime } from "@/lib/format";
 import { AudioPlayer } from "./AudioPlayer";
 import { DocBadge } from "./DocBadge";
-import { docKind, docKindLabel, officeApp } from "./docKind";
+import { docKind, docKindLabel, isInvoiceXml, officeApp } from "./docKind";
 import { receiptDetails } from "./receipts";
 import { Highlight } from "@/components/Highlight";
 import { RichText } from "@/components/RichText";
@@ -229,7 +229,7 @@ function DocumentCard({ m, onOpen, term }: { m: Extract<Message, { kind: "docume
   const app = officeApp[kind];
   const ext = m.fileName?.includes(".") ? m.fileName.split(".").pop()!.toUpperCase() : "ARQ";
   // PDF abre no visualizador do app; Word/Excel/PowerPoint baixam e abrem no próprio Office do computador.
-  const isCert = kind === "certificate";
+  const isCert = kind === "certificate" || kind === "xml"; // sem aplicativo que abra: baixa
   const action = m.url ? (isPdf && onOpen ? () => onOpen(m.id) : app || isCert ? () => saveFile(m.url!, fileName) : null) : null;
   return (
     <div
@@ -240,7 +240,7 @@ function DocumentCard({ m, onOpen, term }: { m: Extract<Message, { kind: "docume
       {...(action && {
         role: "button",
         tabIndex: 0,
-        title: isPdf ? "Abrir PDF" : isCert ? "Baixar certificado" : `Abrir no ${app}`,
+        title: isPdf ? "Abrir PDF" : isCert ? "Baixar arquivo" : `Abrir no ${app}`,
         onClick: action,
         onKeyDown: (e: React.KeyboardEvent) => {
           if (e.key === "Enter" || e.key === " ") {
@@ -256,7 +256,7 @@ function DocumentCard({ m, onOpen, term }: { m: Extract<Message, { kind: "docume
           <Highlight text={fileName} term={term} />
         </p>
         <p className="text-[11px] opacity-70">
-          {docKindLabel(kind, ext)}{m.sizeBytes ? ` • ${formatBytes(m.sizeBytes)}` : ""}
+          {kind === "xml" && isInvoiceXml(m.fileName) ? "Nota fiscal (XML)" : docKindLabel(kind, ext)}{m.sizeBytes ? ` • ${formatBytes(m.sizeBytes)}` : ""}
           {!m.url && ` • ${historicalDocLabel(m)}`}
         </p>
       </div>
