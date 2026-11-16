@@ -59,7 +59,7 @@ type Base = {
 export type Message = Base &
   (
     | { kind: "text"; text: string }
-    | { kind: "audio"; durationSec: number; waveform?: number[]; url?: string }
+    | { kind: "audio"; durationSec: number; waveform?: number[]; url?: string; transcript?: string; transcriptState?: "pending" | "done" | "empty" | "failed" | "toolong" }
     | { kind: "document"; fileName?: string; mimeType?: string; docType?: string; sizeBytes?: number; url?: string; caption?: string }
     | { kind: "image"; url?: string; caption?: string; width?: number; height?: number; hd?: boolean; thumb?: string }
     | { kind: "sticker"; url?: string; width?: number; height?: number; animated?: boolean }

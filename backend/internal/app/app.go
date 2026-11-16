@@ -23,6 +23,7 @@ import (
 	"github.com/vyctinho77/chathm/backend/internal/storage"
 	"github.com/vyctinho77/chathm/backend/internal/tags"
 	"github.com/vyctinho77/chathm/backend/internal/teams"
+	"github.com/vyctinho77/chathm/backend/internal/transcribe"
 	"github.com/vyctinho77/chathm/backend/internal/users"
 	"github.com/vyctinho77/chathm/backend/internal/whatsapp"
 	"github.com/vyctinho77/chathm/backend/internal/whatsapp/fake"
@@ -105,6 +106,10 @@ func NewServices(ctx context.Context, cfg config.Config, db *pgxpool.Pool, opt O
 		mediaSvc.FFprobe = cfg.FFprobeBin
 	}
 	convs.SetMedia(store, mediaSvc)
+	if t := transcribe.New(transcribe.Config{Bin: cfg.WhisperBin, Model: cfg.WhisperModel, FFmpeg: cfg.FFmpegBin, Lang: cfg.WhisperLang, Threads: cfg.WhisperThreads, MaxSeconds: cfg.WhisperMaxSeconds}); t != nil {
+		convs.SetTranscriber(t)
+		opt.Logger.Info("transcrição de áudios ligada", "model", cfg.WhisperModel)
+	}
 	convs.SetHistoryMediaBudget(cfg.HistoryMediaBudget)
 	s := &Services{
 		Auth:          authSvc,

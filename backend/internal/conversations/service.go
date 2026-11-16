@@ -110,12 +110,13 @@ type Service struct {
 	media      *media.Service
 	mediaSlots chan struct{}
 	// PDFs do histórico têm fila própria (poucos de cada vez) para nunca atrasar a mídia das conversas ao vivo.
-	histSlots  chan struct{}
-	histBudget int64 // bytes máximos de anexos antes de parar de baixar PDFs do histórico (<= 0 desliga)
-	db         *pgxpool.Pool
-	pub        Publisher
-	sender     Sender
-	inbound    InboundNotifier
+	histSlots   chan struct{}
+	transcriber Transcriber
+	histBudget  int64 // bytes máximos de anexos antes de parar de baixar PDFs do histórico (<= 0 desliga)
+	db          *pgxpool.Pool
+	pub         Publisher
+	sender      Sender
+	inbound     InboundNotifier
 }
 
 func NewService(db *pgxpool.Pool, pub Publisher) *Service {
@@ -130,6 +131,15 @@ func (s *Service) SetSender(sd Sender) { s.sender = sd }
 
 // SetMedia liga o armazenamento privado e o processamento de anexos.
 func (s *Service) SetMedia(st storage.Store, m *media.Service) { s.store, s.media = st, m }
+
+// Transcriber transcreve um áudio para texto (internal/transcribe). Sem ele, as mensagens de voz ficam sem transcrição.
+type Transcriber interface {
+	Transcribe(ctx context.Context, audio []byte, durationSec int) (string, error)
+	MaxSeconds() int
+}
+
+// SetTranscriber liga a transcrição das mensagens de voz recebidas (opcional).
+func (s *Service) SetTranscriber(t Transcriber) { s.transcriber = t }
 
 // Eventos em tempo real. Só chegam a quem pode ver a conversa.
 const (
@@ -1735,6 +1745,9 @@ func (s *Service) fetchMedia(msgID, convID string, m whatsapp.InboundMessage) {
 	}
 	if p.DocType != "" {
 		_, _ = s.db.Exec(ctx, `UPDATE messages SET payload = payload || jsonb_build_object('docType', $2::text) WHERE id = $1`, msgID, p.DocType)
+	}
+	if m.Kind == whatsapp.KindAudio {
+		s.startTranscription(msgID, convID, p.Data, p.DurationSec)
 	}
 	if m.Kind == whatsapp.KindImage {
 		thumb, _ := media.Thumb(p.Data)

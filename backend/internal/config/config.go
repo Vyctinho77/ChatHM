@@ -62,6 +62,12 @@ type Config struct {
 	SeedExampleData   bool   // SEED_EXAMPLE_DATA: cria segmentos de exemplo na primeira subida (só desenvolvimento)
 	SetupToken        string // SETUP_TOKEN: exigido na tela de configuração inicial (opcional)
 	FFmpegBin         string // FFMPEG_BIN: caminho do ffmpeg (vazio = PATH)
+	// Transcrição de mensagens de voz (whisper.cpp, local e gratuita). Desligada sem WHISPER_BIN e WHISPER_MODEL.
+	WhisperBin        string // WHISPER_BIN: whisper-cli
+	WhisperModel      string // WHISPER_MODEL: arquivo do modelo ggml
+	WhisperLang       string // WHISPER_LANG: idioma (padrão pt)
+	WhisperThreads    int    // WHISPER_THREADS: núcleos (padrão: metade)
+	WhisperMaxSeconds int    // WHISPER_MAX_SECONDS: áudios mais longos não são transcritos (padrão 600)
 	FFprobeBin        string // FFPROBE_BIN: caminho do ffprobe (vazio = PATH)
 }
 
@@ -95,7 +101,12 @@ func Load() (Config, error) {
 		WebDir:            os.Getenv("WEB_DIR"),
 		FFmpegBin:         os.Getenv("FFMPEG_BIN"),
 		FFprobeBin:        os.Getenv("FFPROBE_BIN"),
+		WhisperBin:        os.Getenv("WHISPER_BIN"),
+		WhisperModel:      os.Getenv("WHISPER_MODEL"),
+		WhisperLang:       os.Getenv("WHISPER_LANG"),
 	}
+	cfg.WhisperThreads, _ = strconv.Atoi(os.Getenv("WHISPER_THREADS"))
+	cfg.WhisperMaxSeconds, _ = strconv.Atoi(os.Getenv("WHISPER_MAX_SECONDS"))
 	cfg.MaxAttachment = 25 << 20
 	if v := os.Getenv("MAX_ATTACHMENT_MB"); v != "" {
 		n, err := strconv.Atoi(v)

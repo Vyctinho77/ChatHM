@@ -26,3 +26,21 @@ pelo hardware, e a supressão nativa varia conforme navegador e dispositivo.
 
 Referências: [restrições de captura](https://www.w3.org/TR/mediacapture-streams/)
 e [filtros Web Audio](https://www.w3.org/TR/webaudio/#BiquadFilterNode).
+
+## Transcrição das mensagens de voz recebidas (11/2026)
+
+Cada mensagem de voz que o cliente manda é transcrita **na própria máquina**, em segundo plano, com o [whisper.cpp](https://github.com/ggml-org/whisper.cpp)
+(código aberto; sem custo e sem enviar o áudio a nenhum serviço). A mensagem aparece na hora, com "Transcrevendo…", e o texto chega depois por tempo real,
+sob o áudio ("Transcrição"). O agente de IA lê o mesmo texto em `read_messages` (`media.transcript`, com o mesmo filtro de privacidade das mensagens; `media.transcriptPending`
+enquanto não termina).
+
+- **Estados** (`transcriptState` na mensagem): `pending`, `done`, `empty` (sem fala), `failed` (o áudio continua tocável, só sem texto) e `toolong` (acima de 10 minutos).
+- **Como funciona:** o ffmpeg converte para WAV 16 kHz mono e o `whisper-cli` lê. Um áudio por vez (usa metade dos núcleos e ~1 GB de memória), fila em memória.
+  Ao iniciar, o servidor transcreve também os áudios dos últimos 7 dias que ainda não têm texto. Código: `internal/transcribe`, `conversations/transcript.go`.
+- **Imagem Docker:** o `Dockerfile` compila o whisper.cpp (tag fixa) e embute o modelo `ggml-small-q5_1.bin` (~190 MB, checksum conferido), com `WHISPER_BIN`, `WHISPER_MODEL`
+  e `WHISPER_LANG=pt`. A compilação usa `-march=native`: construa a imagem na máquina em que ela vai rodar (na VPS, é o caso). Sem as variáveis, o recurso fica desligado e
+  nada mais muda. Ajustes: `WHISPER_THREADS`, `WHISPER_MAX_SECONDS` (padrão 600).
+- **Qualidade:** o modelo "small" entende bem o português falado, mas erra nomes próprios, números e ruído forte; trate o texto como apoio, não como registro exato. Para mais
+  precisão, troque para o modelo `medium` (mais lento e mais pesado) em `WHISPER_MODEL`/`WHISPER_MODEL_SHA256` no build.
+- **Não faz:** a busca de mensagens ainda não procura dentro da transcrição; áudios enviados pela equipe não são transcritos.
+

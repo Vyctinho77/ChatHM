@@ -441,3 +441,79 @@ func TestBackfillThumbsForOldPhotos(t *testing.T) {
 		t.Fatalf("a miniatura deveria ter sido criada: %.30q", thumb)
 	}
 }
+
+// fakeTranscriber: o texto fixo que o whisper "ouviu"; falha se o áudio vier marcado.
+type fakeTranscriber struct {
+	text string
+	err  error
+	max  int
+}
+
+func (f fakeTranscriber) Transcribe(_ context.Context, _ []byte, _ int) (string, error) {
+	return f.text, f.err
+}
+func (f fakeTranscriber) MaxSeconds() int { return f.max }
+
+// Mensagem de voz recebida: aparece na hora e o texto chega depois (pending → done), na tela e no MCP.
+func TestInboundVoiceMessageGetsTranscribed(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg não instalado")
+	}
+	w := setupWorld(t)
+	w.e.svcs.Conversations.SetTranscriber(fakeTranscriber{text: "Oi, já paguei o boleto de novembro.", max: 600})
+	expect(t, w.admin.do("PUT", "/api/v1/ai/settings", map[string]any{"enabled": true, "maskDocuments": true, "allowWrite": true}), 200)
+	tok := w.mkScopedToken(w.admin, "leitor", "read")
+
+	voice := func(name string, dur int) string {
+		p := itoa(int(phoneSeq.Add(1)))
+		m := inbound("V-"+p, p, name, "")
+		m.Kind = whatsapp.KindAudio
+		m.Payload = map[string]any{"durationSec": dur}
+		m.Download = func(context.Context) ([]byte, error) { return testWAV(), nil }
+		w.e.wa.Receive(m)
+		return name
+	}
+	lastMsg := func(name string) map[string]any {
+		c := conv(t, w.admin, name)
+		if c == nil {
+			return nil
+		}
+		ms := w.admin.do("GET", "/api/v1/conversations/"+c["id"].(string)+"/messages", nil).body["messages"].([]any)
+		return ms[len(ms)-1].(map[string]any)
+	}
+
+	voice("Cliente Voz Um", 12)
+	eventually(t, "transcrição", func() bool {
+		m := lastMsg("Cliente Voz Um")
+		return m != nil && m["transcriptState"] == "done"
+	})
+	m := lastMsg("Cliente Voz Um")
+	if m["kind"] != "audio" || m["transcript"] != "Oi, já paguei o boleto de novembro." {
+		t.Fatalf("mensagem de voz: %v", m)
+	}
+	// O agente (MCP) lê o texto junto dos metadados do áudio.
+	id := conv(t, w.admin, "Cliente Voz Um")["id"].(string)
+	msgs, _ := w.tool(tok, "read_messages", map[string]any{"conversation_id": id})
+	var media map[string]any
+	for _, x := range msgs["messages"].([]any) {
+		if mm := x.(map[string]any); mm["kind"] == "audio" {
+			media = mm["media"].(map[string]any)
+		}
+	}
+	if media == nil || media["transcript"] != "Oi, já paguei o boleto de novembro." {
+		t.Fatalf("o MCP deveria trazer a transcrição: %v", msgs)
+	}
+
+	// Áudio acima do limite (a duração vale a medida no próprio áudio, 1 s aqui; limite 0): não transcreve e diz por quê.
+	w.e.svcs.Conversations.SetTranscriber(fakeTranscriber{text: "x", max: 0})
+	voice("Cliente Voz Longo", 900)
+	eventually(t, "áudio longo", func() bool { m := lastMsg("Cliente Voz Longo"); return m != nil && m["transcriptState"] == "toolong" })
+
+	// Falha do transcritor: a mensagem de voz continua normal, marcada como falha, sem texto.
+	w.e.svcs.Conversations.SetTranscriber(fakeTranscriber{err: errors.New("whisper caiu"), max: 600})
+	voice("Cliente Voz Falha", 5)
+	eventually(t, "falha", func() bool { m := lastMsg("Cliente Voz Falha"); return m != nil && m["transcriptState"] == "failed" })
+	if m := lastMsg("Cliente Voz Falha"); m["transcript"] != nil || m["url"] == nil {
+		t.Fatalf("o áudio deve continuar tocável, sem texto: %v", m)
+	}
+}

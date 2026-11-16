@@ -484,6 +484,15 @@ func msgView(m conversations.Message, p Principal, contactID string) any {
 				media[k] = x
 			}
 		}
+		if str(m["kind"]) == "audio" {
+			// A fala do áudio, transcrita no servidor (o texto passa pelo mesmo filtro de privacidade das mensagens).
+			if t := str(m["transcript"]); t != "" {
+				media["transcript"] = t
+			}
+			if str(m["transcriptState"]) == "pending" {
+				media["transcriptPending"] = true // ainda transcrevendo: leia de novo em instantes
+			}
+		}
 		if len(media) > 0 {
 			v["media"] = media
 		}
