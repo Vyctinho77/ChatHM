@@ -189,7 +189,28 @@ body {
   85% { opacity: 0; transform: translateY(-2px) scale(0.5); }
 }
 
+/* Destaque rápido da linha de uma mensagem ao chegar nela (resposta citada, @menção): uma faixa que acende e apaga. */
+.msg-flash { position: relative; }
+.msg-flash::after {
+  --flash: color-mix(in srgb, var(--c-text) 14%, transparent);
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--flash);
+  /* As sombras levam a faixa até as bordas do painel sem criar rolagem horizontal. */
+  box-shadow: -1rem 0 0 var(--flash), 1rem 0 0 var(--flash);
+  animation: msg-flash 1.6s ease-out forwards;
+}
+
+@keyframes msg-flash {
+  0% { opacity: 0; }
+  15%, 55% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .msg-flash::after { animation: none; opacity: 1; } /* sem animação: a faixa fica acesa até o destaque sair */
   .typing-gradient { animation: none; background: none; color: var(--c-muted); }
   .typing-dot { animation: none; opacity: 1; transform: none; }
   .typing-bubble-dot { animation: none; opacity: 0.7; }

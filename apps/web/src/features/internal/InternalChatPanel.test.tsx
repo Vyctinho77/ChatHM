@@ -107,11 +107,12 @@ describe("mentions and shared conversations in the panel", () => {
     fromServer(raw("2", ME, "Victor", "admin", "Já vi, @Caio.", 2, "2026-11-12T13:01:00Z", { mentions: [{ id: "caio", name: "Caio" }] }), ME),
   ];
 
-  it("highlights each @mention, with more emphasis on the ones about me", () => {
+  it("turns each @mention into a blue link to the person's last message, bolder when it's about me", () => {
     const html = wrap(seeded(1, mentioning, 1), <InternalChatPanel />);
-    expect(html).toMatch(/bg-amber-300\/70[^>]*>@Victor</); // sobre mim
-    expect(html).toMatch(/bg-\[#5f6e24\]\/15[^>]*>@Bia</); // sobre outra pessoa
-    expect(html).toMatch(/bg-white\/20[^>]*>@Caio</); // na minha mensagem (balão verde)
+    expect(html).toMatch(/<button[^>]*title="Ir para a última mensagem de Victor"[^>]*text-\[#027eb5\][^>]*font-semibold[^>]*>@Victor</); // sobre mim
+    expect(html).toMatch(/<button[^>]*title="Ir para a última mensagem de Bia"[^>]*text-\[#027eb5\][^>]*font-medium[^>]*>@Bia</); // sobre outra pessoa
+    expect(html).toMatch(/<button[^>]*text-sky-300[^>]*>@Caio</); // na minha mensagem (balão escuro)
+    expect(html).not.toContain("bg-amber-300/70");
     expect(html).not.toContain(">@Victor e @Bia");
   });
 

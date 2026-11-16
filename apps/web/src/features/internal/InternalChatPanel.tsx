@@ -93,6 +93,8 @@ export function InternalChatPanel({ onBack }: { onBack?: () => void }) {
   const [sharing, setSharing] = useState(false);
   const sound = useSoundPreferences();
   const [flashId, setFlashId] = useState<string | null>(null);
+  const flashTimer = useRef<number | undefined>(undefined);
+  const [mentionNotice, setMentionNotice] = useState("");
   const [viewerId, setViewerId] = useState<string | null>(null);
   const [pdfId, setPdfId] = useState<string | null>(null);
   const closeViewer = useCallback(() => setViewerId(null), []);
@@ -177,13 +179,25 @@ export function InternalChatPanel({ onBack }: { onBack?: () => void }) {
 
   const jumpToLatest = () => scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
 
-  /** Vai até a mensagem original de uma resposta (se ela está entre as carregadas). */
+  /** Vai até uma mensagem (se ela está entre as carregadas) e acende a linha dela por um instante, como no WhatsApp. */
   function jumpTo(id: string) {
     const el = document.getElementById(`msg-${id}`);
-    if (!el) return;
+    if (!el) return false;
     el.scrollIntoView({ block: "center", behavior: "smooth" });
-    setFlashId(id);
-    window.setTimeout(() => setFlashId((cur) => (cur === id ? null : cur)), 2500);
+    // Apaga e acende de novo, para o destaque repetir mesmo num segundo clique na mesma mensagem.
+    setFlashId(null);
+    window.requestAnimationFrame(() => setFlashId(id));
+    window.clearTimeout(flashTimer.current);
+    flashTimer.current = window.setTimeout(() => setFlashId((cur) => (cur === id ? null : cur)), 1800);
+    return true;
+  }
+
+  /** Clique numa @menção: vai até a última mensagem dessa pessoa entre as carregadas. */
+  function jumpToLastOf(person: { id: string; name: string }) {
+    const last = [...(messages ?? [])].reverse().find((m) => m.authorId === person.id && !m.deleted);
+    if (last && jumpTo(last.id)) return setMentionNotice("");
+    const who = person.id === myId ? "Você ainda não escreveu" : `${person.name} ainda não escreveu`;
+    setMentionNotice(page?.hasMore ? `${who} nas mensagens mais recentes. Role para cima para ver as anteriores.` : `${who} no chat interno.`);
   }
 
   function submit(d: OutgoingDraft) {
@@ -300,16 +314,15 @@ export function InternalChatPanel({ onBack }: { onBack?: () => void }) {
                       <span className="rounded-md bg-elevated px-2.5 py-0.5 text-[11px] tabular-nums text-fg/75 shadow-sm">{formatTime(m.sentAt)}</span>
                     </div>
                   )}
-                  <div id={`msg-${m.id}`} className={cn(startsGroup && "mt-2")}>
+                  <div id={`msg-${m.id}`} className={cn(startsGroup && "mt-2", m.id === flashId && "msg-flash")}>
                     <MessageBubble
                       m={m}
                       me={me?.user.name}
                       showAuthor={!mine && startsGroup}
                       startsGroup={startsGroup}
                       animateIn={new Date(m.sentAt).getTime() > openedAt}
-                      emphasis={m.id === flashId}
                       renderAuthor={renderAuthor}
-                      renderText={(t) => <MentionText m={t} myId={myId} />}
+                      renderText={(t) => <MentionText m={t} myId={myId} onMention={jumpToLastOf} />}
                       renderCard={(c) => <SharedConversationCard id={c.sharedConversationId} />}
                       onOpenImage={setViewerId}
                       onOpenPdf={setPdfId}
@@ -355,15 +368,15 @@ export function InternalChatPanel({ onBack }: { onBack?: () => void }) {
         </AnimatePresence>
       </div>
 
-      {(dropProblem || send.isError) && (
+      {(dropProblem || send.isError || mentionNotice) && (
         <div className="border-t border-line bg-panel px-3 pt-2">
-          <Alert>
+          <Alert tone={dropProblem || send.isError ? "danger" : "info"}>
             <span className="flex items-start justify-between gap-3">
-              {dropProblem || errorMessage(send.error)}
+              {dropProblem || (send.isError ? errorMessage(send.error) : mentionNotice)}
               <button
                 type="button"
                 className="shrink-0 font-medium underline-offset-2 hover:underline"
-                onClick={() => (dropProblem ? setDropProblem("") : send.reset())}
+                onClick={() => (dropProblem ? setDropProblem("") : send.isError ? send.reset() : setMentionNotice(""))}
               >
                 Fechar
               </button>
