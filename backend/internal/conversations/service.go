@@ -1487,6 +1487,32 @@ func (s *Service) ApplyReceipt(ctx context.Context, r whatsapp.Receipt) {
 		}
 	}
 	rows.Close()
+	if r.Status != whatsapp.ReceiptPlayed {
+		// Como no WhatsApp: se o cliente leu (ou recebeu) uma mensagem, as enviadas antes dela na mesma conversa também foram.
+		// O WhatsApp costuma avisar só da última; sem isto as anteriores ficariam como "entregue". Só avança mensagens que
+		// chegaram ao WhatsApp (enviada/entregue): pendente e falha não são tocadas.
+		more, err := s.db.Query(ctx, `
+			UPDATE messages m
+			   SET status = $2,
+			       delivered_at = coalesce(m.delivered_at, $3),
+			       read_at = CASE WHEN $2 = 'read' THEN coalesce(m.read_at, $3) ELSE m.read_at END
+			  FROM messages ref
+			 WHERE ref.external_id = ANY($1) AND ref.direction = 'out'
+			   AND m.conversation_id = ref.conversation_id AND m.direction = 'out'
+			   AND m.sent_at <= ref.sent_at AND m.id <> ref.id
+			   AND m.status IN ('sent', 'delivered')
+			   AND `+rank("m.status")+` < $4
+			RETURNING m.id, m.conversation_id`, r.MessageIDs, string(r.Status), ts, target)
+		if err == nil {
+			for more.Next() {
+				var p pair
+				if more.Scan(&p.msg, &p.conv) == nil {
+					changed = append(changed, p)
+				}
+			}
+			more.Close()
+		}
+	}
 	seen := map[string]userSet{}
 	for _, p := range changed {
 		after, ok := seen[p.conv]
