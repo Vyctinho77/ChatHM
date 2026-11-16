@@ -9,6 +9,7 @@ import { regenerateRecoveryCodes, useMe } from "@/features/auth/api";
 import { ThemeSwitcher } from "@/features/shell/ThemeSwitcher";
 import { HandoverCard } from "./HandoverCard";
 import { SoundSettings } from "./SoundSettings";
+import { TransferSettings } from "./TransferSettings";
 
 /** Cartão de configuração. A explicação (`info`) fica atrás do botão "i", para a tela mostrar só o que importa. */
 function Card({ title, info, children }: { title: string; info?: React.ReactNode; children: React.ReactNode }) {
@@ -69,6 +70,10 @@ export function SettingsPage() {
 
         <Card title="Sons e notificações" info="Efeitos ao enviar e receber mensagens e avisos sonoros de novas mensagens. As preferências ficam salvas neste navegador para a sua conta.">
           <SoundSettings />
+        </Card>
+
+        <Card title="Transferências" info="O que acontece com o seu lembrete quando você transfere uma conversa. A preferência fica salva neste navegador para a sua conta.">
+          <TransferSettings userId={me.user.id} />
         </Card>
 
         <Card title="Sobre o app">

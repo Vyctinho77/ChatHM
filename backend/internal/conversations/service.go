@@ -199,7 +199,7 @@ func (s *Service) publishState(ctx context.Context, convID string, before userSe
 			// Encerrada sai da lista de todos que a viam.
 			s.pub.Publish(EventConversationRemoved, map[string]string{"id": convID}, after.filter())
 		} else {
-			s.pub.Publish(EventConversationUpdated, c, after.filter())
+			s.publishViewers(ctx, c, after)
 		}
 	}
 	if len(before) > 0 {
@@ -361,6 +361,9 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 				if err := audit.Record(ctx, tx, audit.Entry{Action: "conversation.resume", TargetType: "conversation", TargetID: convID, Metadata: map[string]any{"reason": "inbound_message"}}); err != nil {
 					return err
 				}
+			}
+			if err := clearPersonal(ctx, tx, convID); err != nil { // cliente escreveu: volta para quem tinha adiado só para si
+				return err
 			}
 		}
 		if _, err := tx.Exec(ctx, `
@@ -526,6 +529,7 @@ type Conversation struct {
 	Classification string     `json:"classification"`
 	Status         string     `json:"status"`
 	SnoozedUntil   *time.Time `json:"snoozedUntil,omitempty"`
+	SnoozedFor     string     `json:"snoozedFor,omitempty"` // "all" (adiada para todos) ou "me" (só para quem está vendo)
 	Assignee       *Ref       `json:"assignee,omitempty"`
 	Participants   []Ref      `json:"participants"` // outras pessoas incluídas no atendimento
 	UnreadCount    int        `json:"unreadCount"`
@@ -663,6 +667,9 @@ func scanConversation(row pgx.Row) (Conversation, error) {
 	if err != nil {
 		return c, err
 	}
+	if c.SnoozedUntil != nil {
+		c.SnoozedFor = SnoozeAll
+	}
 	c.Participants = []Ref{}
 	_ = json.Unmarshal(parts, &c.Participants)
 	c.Contact.finish(name, phone, waID, kind, avatarVer)
@@ -704,10 +711,11 @@ func (s *Service) fetch(ctx context.Context, db database.DBTX, id string) (Conve
 func (s *Service) List(ctx context.Context, v Viewer) ([]Conversation, error) {
 	// Separate limits keep postponed work from displacing the active queue.
 	visibleIDs := `SELECT c.id FROM conversations c LEFT JOIN segments s ON s.id = c.segment_id
+		LEFT JOIN conversation_user_state us ON us.conversation_id = c.id AND us.user_id = $1::uuid
 		WHERE c.status <> 'closed' AND ` + forViewer
 	rows, err := s.db.Query(ctx, listQuery+` WHERE c.id IN ((`+visibleIDs+`
-		AND c.snoozed_until IS NULL ORDER BY c.last_message_at DESC LIMIT 300) UNION ALL (`+visibleIDs+`
-		AND c.snoozed_until IS NOT NULL ORDER BY c.snoozed_until LIMIT 300))
+		AND coalesce(c.snoozed_until, us.snoozed_until) IS NULL ORDER BY c.last_message_at DESC LIMIT 300) UNION ALL (`+visibleIDs+`
+		AND coalesce(c.snoozed_until, us.snoozed_until) IS NOT NULL ORDER BY coalesce(c.snoozed_until, us.snoozed_until) LIMIT 300))
 		ORDER BY c.last_message_at DESC`, v.ID, v.Admin)
 	if err != nil {
 		return nil, err
@@ -721,7 +729,14 @@ func (s *Service) List(ctx context.Context, v Viewer) ([]Conversation, error) {
 		}
 		out = append(out, c)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	if err := s.personalize(ctx, v.ID, out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // Get devolve a conversa se o viewer puder vê-la; caso contrário, ErrNotFound
@@ -734,7 +749,14 @@ func (s *Service) Get(ctx context.Context, v Viewer, id string) (Conversation, e
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Conversation{}, ErrNotFound
 	}
-	return c, err
+	if err != nil {
+		return c, err
+	}
+	one := []Conversation{c}
+	if err := s.personalize(ctx, v.ID, one); err != nil {
+		return Conversation{}, err
+	}
+	return one[0], nil
 }
 
 // Messages devolve as mensagens mais recentes (até 300) em ordem cronológica. Inclui as de
@@ -793,12 +815,13 @@ func (s *Service) MarkRead(ctx context.Context, v Viewer, id string) error {
 	if _, err := s.Get(ctx, v, id); err != nil {
 		return err
 	}
-	tag, err := s.db.Exec(ctx, `UPDATE conversations SET unread_count = 0 WHERE id = $1 AND unread_count > 0`, id)
+	// Individual: só esta pessoa deixa de ver a conversa como não lida; as demais continuam com o contador delas.
+	changed, err := s.markReadFor(ctx, id, v.ID)
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() > 0 {
-		s.publishState(ctx, id, nil)
+	if changed {
+		s.publishUser(ctx, id, v.ID)
 	}
 	return nil
 }
@@ -1119,6 +1142,11 @@ func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInpu
 			if _, err := tx.Exec(ctx, `UPDATE conversations SET last_message_at = now(), unread_count = 0 WHERE id = $1`, convID); err != nil {
 				return err
 			}
+			// Responder atende a conversa para todos: o "lido até" de cada pessoa avança, e quem respondeu sai do adiamento só seu.
+			if _, err := tx.Exec(ctx, `UPDATE conversation_user_state SET read_through = `+readThrough+`,
+				snoozed_until = CASE WHEN user_id = $2 THEN NULL ELSE snoozed_until END WHERE conversation_id = $1`, convID, v.ID); err != nil {
+				return err
+			}
 			created = true
 		default:
 			return err
@@ -1268,51 +1296,16 @@ func (s *Service) currentAssignee(ctx context.Context, convID string) string {
 // ---------------------------------------------------------------------------
 // Encerrar e etiquetas
 
-// Close encerra o atendimento. Quem pode: o responsável e administradores.
-func (s *Service) Close(ctx context.Context, v Viewer, convID string) error {
-	if !httpx.ValidUUID(convID) {
-		return ErrNotFound
-	}
-	err := database.InTx(ctx, s.db, func(tx pgx.Tx) error {
-		var status string
-		var assignee *string
-		err := tx.QueryRow(ctx, `
-			SELECT c.status, c.assignee_id FROM conversations c LEFT JOIN segments s ON s.id = c.segment_id
-			 WHERE c.id = $3 AND `+forViewer+` FOR UPDATE OF c`, v.ID, v.Admin, convID).Scan(&status, &assignee)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrNotFound
-		}
-		if err != nil {
-			return err
-		}
-		if status == "closed" {
-			return nil
-		}
-		if !v.CanSupervise() && (assignee == nil || *assignee != v.ID) {
-			return ErrForbidden
-		}
-		if _, err := tx.Exec(ctx, `UPDATE conversations SET status = 'closed', closed_at = now(), snoozed_until = NULL, snoozed_by = NULL WHERE id = $1`, convID); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `UPDATE conversation_assignments SET ended_at = now(), ended_reason = 'closed'
-			WHERE conversation_id = $1 AND ended_at IS NULL`, convID); err != nil {
-			return err
-		}
-		return audit.Record(ctx, tx, audit.Entry{ActorID: v.ID, Action: audit.ConversationClose, TargetType: "conversation", TargetID: convID})
-	})
-	if err != nil {
-		return err
-	}
-	s.publishState(ctx, convID, nil) // encerrada: sai da lista de quem a via (ver publishState)
-	return nil
-}
-
 // Transfer passa o atendimento para outra pessoa do escritório (mesmo de outra equipe).
 //
 // Quem pode: o responsável atual, um administrador ou, se a conversa ainda não tem
 // responsável, qualquer pessoa que a veja. A nova pessoa passa a enxergar e atender a
 // conversa; o histórico de atribuições registra a transferência.
-func (s *Service) Transfer(ctx context.Context, v Viewer, convID, targetID string) error {
+//
+// Com shareReminder, o lembrete pessoal de quem transfere (só quando é o responsável atual) vai
+// junto: vira o lembrete de quem recebe e fica gravado no novo atendimento. Sem isso, os
+// lembretes continuam privados de cada pessoa.
+func (s *Service) Transfer(ctx context.Context, v Viewer, convID, targetID string, shareReminder bool) error {
 	if !httpx.ValidUUID(convID) {
 		return ErrNotFound
 	}
@@ -1364,6 +1357,14 @@ func (s *Service) Transfer(ctx context.Context, v Viewer, convID, targetID strin
 		if before, err = s.visibleUsers(ctx, tx, convID); err != nil {
 			return err
 		}
+		// Só o lembrete de quem está atendendo é dele para compartilhar; um administrador que
+		// transfere a conversa de outra pessoa nunca lê nem repassa o lembrete dela.
+		var note, noteColor *string
+		if shareReminder && assignee != nil && *assignee == v.ID {
+			if note, noteColor, err = readReminder(ctx, tx, v.ID, convID); err != nil {
+				return err
+			}
+		}
 		if _, err := tx.Exec(ctx, `UPDATE conversation_assignments SET ended_at = now(), ended_reason = 'transferred'
 			WHERE conversation_id = $1 AND ended_at IS NULL`, convID); err != nil {
 			return err
@@ -1371,14 +1372,22 @@ func (s *Service) Transfer(ctx context.Context, v Viewer, convID, targetID strin
 		if _, err := tx.Exec(ctx, `UPDATE conversations SET assignee_id = $2, status = 'in_progress' WHERE id = $1`, convID, targetID); err != nil {
 			return err
 		}
+		var handoverBy *string
+		if note != nil {
+			handoverBy = &v.ID
+		}
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO conversation_assignments (conversation_id, user_id, team_id, segment_id) VALUES ($1, $2, $3, $4)`,
-			convID, targetID, teamID, segID); err != nil {
+			INSERT INTO conversation_assignments (conversation_id, user_id, team_id, segment_id, handover_note, handover_color, handover_by)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+			convID, targetID, teamID, segID, note, noteColor, handoverBy); err != nil {
+			return err
+		}
+		if err := copyReminder(ctx, tx, targetID, convID, note, noteColor); err != nil {
 			return err
 		}
 		changed = true
 		return audit.Record(ctx, tx, audit.Entry{ActorID: v.ID, Action: audit.ConversationTransfer, TargetType: "conversation", TargetID: convID,
-			Metadata: map[string]any{"from": assignee, "to": targetID}})
+			Metadata: map[string]any{"from": assignee, "to": targetID, "reminderShared": note != nil}})
 	})
 	if err != nil {
 		return err

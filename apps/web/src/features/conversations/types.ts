@@ -37,6 +37,10 @@ type Base = {
   readAt?: string; // recibo de leitura (mensagens enviadas)
   playedAt?: string; // o cliente ouviu a mensagem de voz enviada (recibo "ouvido", separado de "lida")
   authorName?: string; // atendente que enviou (ou, em grupos, quem escreveu)
+  authorId?: string; // identidade estável de quem escreveu
+  authorRole?: "admin" | "manager" | "agent"; // chat interno: perfil de quem escreveu
+  noReceipts?: boolean; // chat interno: sem tiques de entrega/leitura
+  mentions?: { id: string; name: string }[]; // chat interno: pessoas citadas com @
   automated?: boolean; // enviada pela IA (envio automático aprovado)
   aiProvider?: string; // claude | chatgpt | grok | gemini | other
   aiMode?: string; // attend: a IA atendeu como um atendente
@@ -60,6 +64,7 @@ export type Message = Base &
     | { kind: "sticker"; url?: string; width?: number; height?: number; animated?: boolean }
     | { kind: "location"; lat: number; lng: number; name?: string; address?: string; thumb?: string }
     | { kind: "unsupported"; label: string; text?: string }
+    | { kind: "conversation"; sharedConversationId: string; caption?: string } // chat interno: cartão de uma conversa de cliente
   );
 
 export type Contact = {
@@ -75,6 +80,9 @@ export type Contact = {
   note: string;
 };
 
+/** Adiar para toda a equipe ou só para quem pediu. */
+export type SnoozeScope = "all" | "me";
+
 export type Conversation = {
   id: string;
   contact: Contact;
@@ -84,6 +92,8 @@ export type Conversation = {
   classification?: "none" | "keyword" | "conflict";
   status: ConversationStatus;
   snoozedUntil?: string;
+  /** Quem vê a conversa adiada: "all" = para toda a equipe, "me" = só para quem está vendo. */
+  snoozedFor?: SnoozeScope;
   participants?: { id: string; name: string }[]; // pessoas incluídas no atendimento (veem e respondem sem assumir)
   assignee?: { id: string; name: string };
   unreadCount: number;

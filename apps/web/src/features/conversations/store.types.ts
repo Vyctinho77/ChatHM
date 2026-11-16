@@ -1,3 +1,4 @@
+import type { MentionRef } from "./mentions";
 import type { Message, Quoted } from "./types";
 
 /** O que a implementação atual permite fazer pela interface. */
@@ -14,7 +15,7 @@ export type Capabilities = {
 
 /** `file` é o conteúdo a enviar; `url` é só a prévia local (blob:) da bolha. */
 export type OutgoingDraft =
-  | { kind: "text"; text: string }
+  | { kind: "text"; text: string; mentions?: MentionRef[] }
   | { kind: "audio"; durationSec: number; waveform: number[]; url: string; file?: Blob }
   | { kind: "document"; fileName: string; mimeType: string; sizeBytes: number; url: string; caption?: string; file?: Blob }
   | { kind: "image"; url: string; width: number; height: number; caption?: string; hd?: boolean; file?: Blob }

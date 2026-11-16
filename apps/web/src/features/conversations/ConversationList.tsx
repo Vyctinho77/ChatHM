@@ -21,6 +21,7 @@ import { TransferMenu } from "./TransferMenu";
 import { countsByTab, filterConversations, type ConversationFilter as Filter } from "./conversationFilter";
 import { reminderColors, useReminders, type Reminder } from "./reminders";
 import { ReminderEditor } from "./ReminderEditor";
+import { useTransferFlow } from "./transferFlow";
 import { useTyping } from "./typing";
 import { TypingIndicator } from "./TypingIndicator";
 import type { ContactRecord, Conversation, MessageHit, SegmentKey, SegmentOption } from "./types";
@@ -40,6 +41,7 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
   const filter: Filter = requestedFilter === "mine" || requestedFilter === "general" || requestedFilter === "groups" || requestedFilter === "snoozed" ? requestedFilter : "all";
   const reminders = useReminders(filter === "mine");
   const [editingReminder, setEditingReminder] = useState<Conversation | null>(null);
+  const transferFlow = useTransferFlow(actions);
   const setFilter = (nextFilter: Filter) => setParams((p) => {
     const next = new URLSearchParams(p);
     if (nextFilter === "all") next.delete("vista");
@@ -95,17 +97,30 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
   const openMenu = useCallback((id: string, x: number, y: number) => setCtx({ id, x, y }), []);
 
   // Quando a tela fica parada, adianta as mensagens das primeiras conversas da lista: o clique abre sem esperar.
-  const firstIds = visible.slice(0, 6).map((c) => c.id).join(",");
+  // Uma de cada vez (e poucas): pedidos em paralelo disputam as conexões do banco com o que a pessoa realmente abriu.
+  const firstIds = visible.slice(0, 3).map((c) => c.id).join(",");
   useEffect(() => {
     if (!firstIds) return;
-    const run = () => firstIds.split(",").forEach(warm);
+    let cancelled = false;
+    const run = async () => {
+      for (const id of firstIds.split(",")) {
+        if (cancelled) return;
+        await warm(id);
+      }
+    };
     const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (h: number) => void };
     if (w.requestIdleCallback) {
-      const h = w.requestIdleCallback(run, { timeout: 2000 });
-      return () => w.cancelIdleCallback?.(h);
+      const h = w.requestIdleCallback(() => void run(), { timeout: 2000 });
+      return () => {
+        cancelled = true;
+        w.cancelIdleCallback?.(h);
+      };
     }
-    const t = setTimeout(run, 800);
-    return () => clearTimeout(t);
+    const t = setTimeout(() => void run(), 800);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
   }, [firstIds, warm]);
 
   async function openContact(ct: ContactRecord) {
@@ -271,10 +286,11 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
           y={ctx.y}
           myId={actions.me.id}
           canTransfer={!ctxConv.assignee || ctxConv.assignee.id === actions.me.id || isAdmin}
-          onPick={(p) => actions.transfer(ctxConv.id, p)}
+          onPick={(p) => transferFlow.request(ctxConv, p)}
           onClose={() => setCtx(null)}
         />
       )}
+      {transferFlow.dialog}
     </section>
   );
 }

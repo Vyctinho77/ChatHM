@@ -7,7 +7,9 @@ import type { Me } from "@/features/auth/api";
 import { DEMO } from "@/lib/env";
 import { useRealtime } from "@/features/realtime/useRealtime";
 import { useAppSounds } from "@/lib/sounds";
+import { NoticeHost } from "@/components/NoticeHost";
 import { Sidebar } from "./Sidebar";
+import { useVersionCheck } from "./useVersionCheck";
 import { TopBar } from "./TopBar";
 
 export function ResizeHandle() {
@@ -23,10 +25,12 @@ export function AppShell({ me }: { me: Me }) {
   const desktop = useMediaQuery("(min-width: 1024px)");
   const [drawer, setDrawer] = useState(false);
   useRealtime(!DEMO);
+  useVersionCheck(!DEMO);
   const layout = useDefaultLayout({ id: "chathm-shell", storage: safeStorage });
 
   return (
     <div className="flex h-full flex-col bg-app">
+      <NoticeHost />
       {!desktop && <TopBar onOpenMenu={() => setDrawer(true)} />}
 
       <div className="min-h-0 flex-1">

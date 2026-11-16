@@ -5,7 +5,7 @@ import { del, get, isRejection, post, put, patch } from "@/lib/api";
 import { useMe } from "@/features/auth/api";
 import { pendingFiles, type Capabilities } from "./store.types";
 import { tagsKey } from "@/features/tags/api";
-import type { Conversation, Message, SearchResult, TagInfo } from "./types";
+import type { Conversation, Message, SearchResult, SnoozeScope, TagInfo } from "./types";
 import { playSentSound } from "@/lib/sounds";
 
 export const capabilities: Capabilities = {
@@ -38,12 +38,15 @@ export function useMessages(conversationId: string | undefined) {
   });
 }
 
-/** Começa a baixar as mensagens de uma conversa antes do clique (passar o mouse, focar, tocar), para abrir sem espera. */
+/**
+ * Começa a baixar as mensagens de uma conversa antes do clique (passar o mouse, focar, tocar), para abrir sem espera.
+ * Devolve uma promessa, para quem pré-carrega várias poder fazer uma de cada vez.
+ */
 export function usePrefetchMessages() {
   const qc = useQueryClient();
   return useMemo(
     () => (conversationId: string) =>
-      void qc.prefetchQuery({ queryKey: conversationKeys.messages(conversationId), queryFn: () => fetchMessages(conversationId), staleTime: 20_000, gcTime: 30 * 60_000 }),
+      qc.prefetchQuery({ queryKey: conversationKeys.messages(conversationId), queryFn: () => fetchMessages(conversationId), staleTime: 20_000, gcTime: 30 * 60_000 }),
     [qc],
   );
 }
@@ -96,12 +99,12 @@ export function useConversationActions() {
 
     return {
       markRead,
-      async snooze(id: string, until: string) {
-        await post(`/conversations/${id}/snooze`, { until });
+      async snooze(id: string, until: string, scope: SnoozeScope = "all") {
+        await post(`/conversations/${id}/snooze`, { until, scope });
         await resync();
       },
-      async resume(id: string) {
-        await post(`/conversations/${id}/resume`);
+      async resume(id: string, scope: SnoozeScope = "all") {
+        await post(`/conversations/${id}/resume`, { scope });
         await resync();
       },
       markAllRead() {
@@ -109,13 +112,22 @@ export function useConversationActions() {
           .filter((c) => c.unreadCount > 0)
           .forEach((c) => markRead(c.id));
       },
-      close(id: string) {
-        patchConv(id, (x) => ({ ...x, status: "closed" }));
-        post(`/conversations/${id}/close`).catch(resync);
+      /** Encerra para todos (padrão) ou só a parte de quem pede; neste caso a conversa segue para quem ficou. */
+      async close(id: string, opts?: { scope?: "all" | "me"; passTo?: string; shareReminder?: boolean }) {
+        const scope = opts?.scope ?? "all";
+        if (scope === "all") patchConv(id, (x) => ({ ...x, status: "closed" }));
+        try {
+          await post(`/conversations/${id}/close`, { scope, ...(opts?.passTo ? { passTo: opts.passTo } : {}), ...(opts?.shareReminder ? { shareReminder: true } : {}) });
+        } catch (e) {
+          await resync();
+          throw e;
+        }
+        // Só a lista (exact): a chave dela é prefixo da das mensagens, e quem saiu pode já não enxergar a conversa aberta.
+        if (scope === "me") await qc.invalidateQueries({ queryKey: conversationKeys.list, exact: true });
       },
-      transfer(id: string, person: { id: string; name: string }) {
+      transfer(id: string, person: { id: string; name: string }, shareReminder = false) {
         patchConv(id, (x) => ({ ...x, status: "in_progress", assignee: { id: person.id, name: person.name } }));
-        post(`/conversations/${id}/transfer`, { userId: person.id }).then(resync, resync);
+        post(`/conversations/${id}/transfer`, { userId: person.id, ...(shareReminder ? { shareReminder: true } : {}) }).then(resync, resync);
       },
       /** Inclui a pessoa no atendimento (vê e responde sem assumir); se já participa, tira. */
       toggleParticipant(id: string, person: { id: string; name: string }) {

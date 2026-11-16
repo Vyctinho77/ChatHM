@@ -118,3 +118,66 @@ func TestReminderValidationAndClosedConversation(t *testing.T) {
 		t.Fatal("personal reminders table missing RLS")
 	}
 }
+
+func TestTransferCanShareTheReminder(t *testing.T) {
+	w := setupWorld(t)
+	share := func(c *client, convID, userID string) resp {
+		return c.do("POST", "/api/v1/conversations/"+convID+"/transfer", map[string]any{"userId": userID, "shareReminder": true})
+	}
+	handover := func(convID string) (note, color, by *string) {
+		t.Helper()
+		err := w.e.pool.QueryRow(t.Context(), `SELECT handover_note, handover_color, handover_by::text
+			FROM conversation_assignments WHERE conversation_id = $1 AND ended_at IS NULL`, convID).Scan(&note, &color, &by)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	setup := func(name string) string {
+		w.receive(name, "folha de pagamento")
+		id := mustConv(t, w.admin, name)["id"].(string)
+		expect(t, w.send(w.ana, id, "Vou verificar"), 201)
+		expect(t, w.ana.do("PUT", "/api/v1/conversations/"+id+"/reminder", map[string]string{"text": "Cliente espera o contrato", "color": "sky"}), 204)
+		return id
+	}
+
+	// Com autorização, o lembrete vai para quem recebe e fica no histórico do atendimento.
+	id := setup("Repasse com lembrete")
+	expect(t, share(w.ana, id, w.users["ana2"]), 204)
+	got := personalReminders(t, w.ana2)
+	if len(got) != 1 || got[0].(map[string]any)["text"] != "Cliente espera o contrato" || got[0].(map[string]any)["color"] != "sky" {
+		t.Fatalf("reminder not shared with the new assignee: %v", got)
+	}
+	if note, color, by := handover(id); note == nil || *note != "Cliente espera o contrato" || color == nil || *color != "sky" || by == nil || *by != w.users["ana"] {
+		t.Fatal("handover not recorded on the new assignment")
+	}
+	// Quem recebeu edita à vontade; o registro do repasse não muda.
+	path := "/api/v1/conversations/" + id + "/reminder"
+	expect(t, w.ana2.do("PUT", path, map[string]string{"text": "Contrato enviado", "color": "olive"}), 204)
+	if note, _, _ := handover(id); note == nil || *note != "Cliente espera o contrato" {
+		t.Fatal("handover record changed with the new owner's edit")
+	}
+	// O lembrete de quem transferiu continua só dele.
+	if len(personalReminders(t, w.ana)) != 0 || len(personalReminders(t, w.bia)) != 0 {
+		t.Fatal("reminder visible to someone else")
+	}
+
+	// Um administrador que transfere a conversa de outra pessoa não repassa o lembrete dela.
+	id = setup("Repasse por administrador")
+	expect(t, share(w.admin, id, w.users["ana2"]), 204)
+	if len(personalReminders(t, w.ana2)) != 1 { // só o da conversa anterior
+		t.Fatal("administrator transfer shared someone else's reminder")
+	}
+	if note, _, by := handover(id); note != nil || by != nil {
+		t.Fatal("handover recorded without the owner's reminder")
+	}
+
+	// Sem lembrete salvo, pedir para compartilhar não muda nada.
+	w.receive("Repasse sem lembrete", "folha de pagamento")
+	id = mustConv(t, w.admin, "Repasse sem lembrete")["id"].(string)
+	expect(t, w.send(w.ana, id, "Vou verificar"), 201)
+	expect(t, share(w.ana, id, w.users["ana2"]), 204)
+	if note, _, _ := handover(id); note != nil {
+		t.Fatal("handover recorded without a reminder")
+	}
+}

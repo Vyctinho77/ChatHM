@@ -16,15 +16,18 @@ import { FormattedText } from "@/components/FormattedText";
 import { Ticks } from "./Ticks";
 import type { Message, Quoted } from "./types";
 
+/** Os tipos que esta versão sabe desenhar; os outros (de uma versão mais nova do servidor) ganham um aviso em vez de um balão vazio. */
+const KNOWN_KINDS = new Set(["text", "audio", "document", "image", "sticker", "unsupported", "location", "conversation"]);
+
 function Meta({ m }: { m: Message }) {
   return (
     <span
       className="ml-auto flex shrink-0 items-center gap-1 self-end pl-2.5 text-[10.5px] tabular-nums opacity-70"
-      title={m.direction === "out" ? receiptDetails(m) : undefined}
+      title={m.direction === "out" && !m.noReceipts ? receiptDetails(m) : undefined}
     >
       {m.editedAt && <span className="italic">editada</span>}
       {formatTime(m.sentAt)}
-      {m.direction === "out" && <Ticks status={m.status} />}
+      {m.direction === "out" && !m.noReceipts && <Ticks status={m.status} />}
     </span>
   );
 }
@@ -64,10 +67,10 @@ function MetaOverlay({ m }: { m: Message }) {
   return (
     <span
       className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-full bg-black/50 px-1.5 py-0.5 text-[10.5px] tabular-nums text-white"
-      title={m.direction === "out" ? receiptDetails(m) : undefined}
+      title={m.direction === "out" && !m.noReceipts ? receiptDetails(m) : undefined}
     >
       {formatTime(m.sentAt)}
-      {m.direction === "out" && <Ticks status={m.status} className="size-3.5" />}
+      {m.direction === "out" && !m.noReceipts && <Ticks status={m.status} className="size-3.5" />}
     </span>
   );
 }
@@ -143,13 +146,16 @@ function ImageBody({
   showAuthor,
   onOpen,
   term,
+  renderAuthor,
 }: {
   m: Extract<Message, { kind: "image" }>;
   showAuthor: boolean;
   onOpen?: (id: string) => void;
   term?: string;
+  renderAuthor?: (m: Message) => React.ReactNode;
 }) {
-  const author = m.direction === "in" && m.group && showAuthor && m.authorName ? m.authorName : "";
+  const wantsAuthor = m.direction === "in" && m.group && showAuthor;
+  const author = wantsAuthor ? (renderAuthor ? renderAuthor(m) : m.authorName ? <p className="text-[12.5px] font-semibold">{m.authorName}:</p> : null) : null;
   const hasText = !!m.caption || !!author;
   return (
     <div className="w-72 max-w-full">
@@ -180,7 +186,7 @@ function ImageBody({
       {hasText && (
         // w-0 min-w-full: o texto quebra na largura da imagem em vez de alargar o balão.
         <div className="w-0 min-w-full px-2 pb-1 pt-1.5">
-          {author && <p className="text-[12.5px] font-semibold">{author}:</p>}
+          {author}
           <div className="flex flex-wrap items-end">
             {m.caption && (
               <p className="whitespace-pre-wrap break-words">
@@ -346,8 +352,17 @@ export function MessageBubble({
   onJump,
   contact,
   me,
+  renderAuthor,
+  renderText,
+  renderCard,
 }: {
   m: Message;
+  /** Como mostrar quem escreveu nas mensagens recebidas de grupo (o chat interno acrescenta o perfil); padrão: só o nome. */
+  renderAuthor?: (m: Message) => React.ReactNode;
+  /** Como desenhar o texto das mensagens de texto (o chat interno destaca as @menções); padrão: texto com links. */
+  renderText?: (m: Extract<Message, { kind: "text" }>) => React.ReactNode;
+  /** Corpo do cartão de conversa compartilhada (só existe no chat interno). */
+  renderCard?: (m: Extract<Message, { kind: "conversation" }>) => React.ReactNode;
   /** Contato da conversa: a foto dele aparece nos áudios recebidos. */
   contact?: { name: string; avatarUrl?: string };
   /** Nome de quem está usando o ChatHM (áudios enviados sem atendente identificado). */
@@ -438,7 +453,7 @@ export function MessageBubble({
         {m.deleted ? (
           <div className="flex flex-wrap items-end">
             <p className="flex items-center gap-1.5 italic opacity-80">
-              <Ban className="size-3.5" /> {out ? "Você apagou esta mensagem" : "Esta mensagem foi apagada"}
+              <Ban className="size-3.5" /> {out && !m.noReceipts ? "Você apagou esta mensagem" : "Esta mensagem foi apagada"}
             </p>
             <Meta m={m} />
           </div>
@@ -451,16 +466,24 @@ export function MessageBubble({
             <span className="font-normal opacity-70">{m.aiMode === "attend" ? "· atendimento por IA" : "· envio automático"}</span>
           </p>
         )}
-        {m.kind !== "image" && !out && m.group && showAuthor && m.authorName && (
+        {m.kind !== "image" && !out && m.group && showAuthor && (renderAuthor ? renderAuthor(m) : m.authorName && (
           <p className="text-[12.5px] font-semibold">{m.authorName}</p>
-        )}
+        ))}
         {m.quoted && <div className={m.kind === "image" ? "px-1.5 pt-1.5" : ""}><QuotedBlock q={m.quoted} onJump={onJump} /></div>}
 
         {m.kind === "text" && (
           <div className="flex flex-wrap items-end">
             <p className="whitespace-pre-wrap break-words">
-                <RichText text={m.text} term={term} />
+                {renderText ? renderText(m) : <RichText text={m.text} term={term} />}
             </p>
+            <Meta m={m} />
+          </div>
+        )}
+
+        {m.kind === "conversation" && (
+          <div className="flex flex-col gap-1 pt-1">
+            {renderCard?.(m)}
+            {m.caption && <p className="whitespace-pre-wrap break-words pt-1"><RichText text={m.caption} term={term} /></p>}
             <Meta m={m} />
           </div>
         )}
@@ -491,7 +514,7 @@ export function MessageBubble({
           </div>
         )}
 
-        {m.kind === "image" && <ImageBody m={m} showAuthor={showAuthor} onOpen={onOpenImage} term={term} />}
+        {m.kind === "image" && <ImageBody m={m} showAuthor={showAuthor} onOpen={onOpenImage} term={term} renderAuthor={renderAuthor} />}
         {m.kind === "sticker" && <StickerBody m={m} />}
 
         {m.kind === "unsupported" && (
@@ -500,6 +523,15 @@ export function MessageBubble({
               <Ban className="size-3.5" /> {m.label} — ainda não exibido no ChatHM
             </p>
             {m.text && <p className="w-full whitespace-pre-wrap break-words">{m.text}</p>}
+            <Meta m={m} />
+          </div>
+        )}
+
+        {!KNOWN_KINDS.has(m.kind) && (
+          <div className="flex flex-wrap items-end">
+            <p className="flex items-center gap-1.5 italic opacity-80">
+              <Ban className="size-3.5" /> Mensagem de um tipo novo: atualize a página para ver
+            </p>
             <Meta m={m} />
           </div>
         )}

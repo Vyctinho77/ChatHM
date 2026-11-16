@@ -25,8 +25,13 @@ export function useConnection() {
   return useQuery({
     queryKey: connectionKey,
     queryFn: () => get<Connection>("/whatsapp/connection"),
-    // O WebSocket atualiza em tempo real; a consulta periódica cobre quedas do WebSocket.
-    refetchInterval: (q) => (q.state.data?.state === "pending_qr" || q.state.data?.preparing || q.state.data?.sync?.state === "syncing" ? 1_000 : 10_000),
+    // O WebSocket atualiza em tempo real; a consulta periódica cobre quedas do WebSocket. Conectado e sem nada em andamento, basta
+    // uma conferência por minuto; pareando, sincronizando ou desconectado, a consulta é frequente.
+    refetchInterval: (q) => {
+      const d = q.state.data;
+      if (d?.state === "pending_qr" || d?.preparing || d?.sync?.state === "syncing") return 1_000;
+      return d?.state === "connected" ? 60_000 : 10_000;
+    },
   });
 }
 

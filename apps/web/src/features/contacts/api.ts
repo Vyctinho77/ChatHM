@@ -5,14 +5,18 @@ import { useConversationActions, useConversations } from "@/features/conversatio
 import { conversationKeys } from "@/features/conversations/store.api";
 import type { ContactRecord } from "@/features/conversations/types";
 
-/** Contatos que a pessoa pode ver (o administrador vê o diretório importado inteiro). */
-export function useContacts() {
+/**
+ * Contatos que a pessoa pode ver (o administrador vê o diretório importado inteiro). A lista é grande (centenas de contatos):
+ * `enabled: false` não a busca, e ela só é atualizada de tempos em tempos enquanto alguém está usando.
+ */
+export function useContacts({ enabled = true }: { enabled?: boolean } = {}) {
   const demo = useConversations();
   const query = useQuery({
     queryKey: ["contacts"],
-    enabled: !DEMO,
+    enabled: !DEMO && enabled,
     queryFn: async () => (await get<{ contacts: ContactRecord[] }>("/contacts")).contacts,
-    refetchInterval: 10_000,
+    staleTime: 30_000,
+    refetchInterval: 60_000, // só roda enquanto a consulta está ativa; mudanças grandes chegam por WebSocket (useRealtime)
   });
   const contacts: ContactRecord[] = DEMO
     ? [...new Map((demo.data ?? []).map((c) => [c.contact.id, { ...c.contact, conversationId: c.id }])).values()]

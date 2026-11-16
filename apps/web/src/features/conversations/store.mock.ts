@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMe } from "@/features/auth/api";
 import { buildMock } from "./mock";
 import type { Capabilities } from "./store.types";
-import type { Conversation, Message, SearchResult } from "./types";
+import type { Conversation, Message, SearchResult, SnoozeScope } from "./types";
 import { fold, matches } from "@/lib/search";
 import { playSentSound } from "@/lib/sounds";
 
@@ -141,12 +141,12 @@ export function useConversationActions() {
   const refresh = () => qc.invalidateQueries({ queryKey: keys.list });
 
   return useMemo(() => ({
-    async snooze(id: string, until: string) {
-      patchConversation(id, (c) => ({ ...c, snoozedUntil: until }));
+    async snooze(id: string, until: string, scope: SnoozeScope = "all") {
+      patchConversation(id, (c) => ({ ...c, snoozedUntil: until, snoozedFor: scope }));
       await refresh();
     },
     async resume(id: string) {
-      patchConversation(id, (c) => ({ ...c, snoozedUntil: undefined }));
+      patchConversation(id, (c) => ({ ...c, snoozedUntil: undefined, snoozedFor: undefined }));
       await refresh();
     },
     markRead(id: string) {
@@ -159,11 +159,13 @@ export function useConversationActions() {
       db?.conversations.forEach((c) => patchConversation(c.id, (x) => ({ ...x, unreadCount: 0 })));
       refresh();
     },
-    close(id: string) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- a demonstração tem uma pessoa só: sair e encerrar dão no mesmo
+    async close(id: string, _opts?: { scope?: "all" | "me"; passTo?: string; shareReminder?: boolean }) {
       patchConversation(id, (x) => ({ ...x, status: "closed" }));
       refresh();
     },
-    transfer(id: string, person: { id: string; name: string }) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- a demonstração não tem lembretes de outras pessoas para receber
+    transfer(id: string, person: { id: string; name: string }, _shareReminder = false) {
       patchConversation(id, (x) => ({ ...x, status: "in_progress", assignee: { id: person.id, name: person.name } }));
       refresh();
     },

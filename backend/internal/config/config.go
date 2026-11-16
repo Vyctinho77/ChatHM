@@ -17,6 +17,8 @@ type Config struct {
 	LogLevel    slog.Level
 	DatabaseURL string
 	AutoMigrate bool
+	// Conexões do pool do app com o banco (DB_MAX_CONNS / DB_MIN_CONNS). Vazio = padrão seguro para o pooler do Supabase (10 e 2).
+	DBMaxConns, DBMinConns int
 
 	// Origens do frontend autorizadas (CORS com credenciais).
 	AllowedOrigins []string
@@ -101,6 +103,15 @@ func Load() (Config, error) {
 			return cfg, errors.New("MAX_ATTACHMENT_MB deve estar entre 1 e 100")
 		}
 		cfg.MaxAttachment = int64(n) << 20
+	}
+	for name, dst := range map[string]*int{"DB_MAX_CONNS": &cfg.DBMaxConns, "DB_MIN_CONNS": &cfg.DBMinConns} {
+		if v := os.Getenv(name); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 1 || n > 200 {
+				return cfg, errors.New(name + " deve ser um número de conexões entre 1 e 200")
+			}
+			*dst = n
+		}
 	}
 	cfg.HistoryMediaBudget = 2048 << 20 // 2 GB
 	if v := os.Getenv("HISTORY_MEDIA_MAX_MB"); v != "" {

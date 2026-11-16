@@ -47,7 +47,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := database.Connect(ctx, cfg.DatabaseURL)
+	pool, err := database.ConnectWith(ctx, cfg.DatabaseURL, database.Options{MaxConns: int32(cfg.DBMaxConns), MinConns: int32(cfg.DBMinConns)})
 	if err != nil {
 		return err
 	}
@@ -78,7 +78,7 @@ func run() error {
 		Handler: httpapi.NewRouter(httpapi.Deps{
 			Config: cfg, Logger: logger, DB: pool,
 			Auth: svcs.Auth, Users: svcs.Users, Teams: svcs.Teams,
-			Hub: svcs.Hub, Conversations: svcs.Conversations, Segments: svcs.Segments, Tags: svcs.Tags, AI: svcs.AI, Automation: svcs.Automation,
+			Hub: svcs.Hub, Conversations: svcs.Conversations, Segments: svcs.Segments, Tags: svcs.Tags, AI: svcs.AI, Automation: svcs.Automation, InternalChat: svcs.InternalChat,
 			WhatsApp: svcs.WhatsApp, Instance: svcs.Instance, Simulate: svcs.Simulate,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,

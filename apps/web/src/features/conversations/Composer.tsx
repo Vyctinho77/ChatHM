@@ -10,6 +10,8 @@ import { recordingError } from "./voiceCapture";
 import { getDraft, setDraft } from "./drafts";
 import type { OutgoingDraft } from "./store";
 import { AttachmentPreview, type AttachmentSelection } from "./AttachmentPreview";
+import { MentionPopup } from "./MentionPopup";
+import { applyMention, extractMentions, filterPeople, findMentionQuery, mentionListId, mentionOptionId, type MentionPerson, type MentionRef } from "./mentions";
 
 const quickEmojis = ["😀", "😉", "🙏", "👍", "👏", "✅", "📄", "📎", "⏰", "💰", "🎉", "❤️"];
 
@@ -49,6 +51,9 @@ export function Composer({
   edit,
   onCancelEdit,
   onSaveEdit,
+  mentionPeople,
+  myId,
+  attachExtras,
 }: {
   /** Mensagem sendo respondida: aparece como citação acima do campo e vai junto no envio. */
   reply?: { author: string; text: string } | null;
@@ -56,7 +61,13 @@ export function Composer({
   /** Edição de uma mensagem enviada: o campo começa com o texto atual; Enter salva, Esc cancela. */
   edit?: { id: string; text: string } | null;
   onCancelEdit?: () => void;
-  onSaveEdit?: (text: string) => Promise<void>;
+  onSaveEdit?: (text: string, mentions?: MentionRef[]) => Promise<void>;
+  /** Chat interno: quem pode ser mencionado com @ (liga o autocompletar e a lista de quem foi citado no envio). */
+  mentionPeople?: MentionPerson[];
+  /** Quem está escrevendo (não aparece na lista de menções). */
+  myId?: string;
+  /** Itens a mais no menu de anexar (o chat interno acrescenta "Conversa de cliente"). */
+  attachExtras?: { label: string; icon: React.ReactNode; onClick: () => void }[];
   conversationId: string;
   disabled?: boolean;
   disabledReason?: string;
@@ -70,6 +81,11 @@ export function Composer({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [attachments, setAttachments] = useState<AttachmentSelection | null>(null);
+  // @menção: posição do cursor, item escolhido na lista, lista dispensada com Esc e quem foi escolhido (nome → id).
+  const [caret, setCaret] = useState(0);
+  const [mentionIdx, setMentionIdx] = useState(0);
+  const [dismissedAt, setDismissedAt] = useState<number | null>(null);
+  const picked = useRef(new Map<string, string>());
   const reducedMotion = useReducedMotion();
   const ta = useRef<HTMLTextAreaElement>(null);
   const docInput = useRef<HTMLInputElement>(null);
@@ -90,8 +106,27 @@ export function Composer({
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, [text]);
 
+  const mentionQuery = mentionPeople ? findMentionQuery(text, caret) : null;
+  if (!mentionQuery && dismissedAt !== null) setDismissedAt(null);
+  const mentionOptions = mentionQuery && mentionQuery.start !== dismissedAt ? filterPeople(mentionPeople ?? [], mentionQuery.query, myId ?? "") : [];
+  const mentionOpen = mentionOptions.length > 0;
+  const activeMention = mentionOpen ? Math.min(mentionIdx, mentionOptions.length - 1) : 0;
+
+  function pickMention(p: MentionPerson) {
+    if (!mentionQuery) return;
+    const next = applyMention(text, mentionQuery.start, caret, p.name);
+    picked.current.set(p.name, p.id);
+    update(next.text);
+    setCaret(next.caret);
+    requestAnimationFrame(() => {
+      ta.current?.focus();
+      ta.current?.setSelectionRange(next.caret, next.caret);
+    });
+  }
+
   function update(v: string) {
     setText(v);
+    setMentionIdx(0);
     if (!edit) setDraft(conversationId, v); // editar não mexe no rascunho da conversa
   }
 
@@ -108,7 +143,7 @@ export function Composer({
     setSaving(true);
     setError("");
     try {
-      await onSaveEdit?.(t);
+      await onSaveEdit?.(t, mentionPeople ? extractMentions(t, mentionPeople, picked.current) : undefined);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível editar.");
     } finally {
@@ -120,11 +155,30 @@ export function Composer({
     if (edit) return void saveEdit();
     const t = text.trim();
     if (!t || disabled) return;
-    onSend({ kind: "text", text: t });
+    const mentions = mentionPeople ? extractMentions(t, mentionPeople, picked.current) : [];
+    onSend({ kind: "text", text: t, ...(mentions.length ? { mentions } : {}) });
+    picked.current.clear();
     update("");
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (mentionOpen && !e.nativeEvent.isComposing) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setMentionIdx((activeMention + (e.key === "ArrowDown" ? 1 : mentionOptions.length - 1)) % mentionOptions.length);
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        pickMention(mentionOptions[activeMention]!);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setDismissedAt(mentionQuery!.start);
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       sendText();
@@ -225,6 +279,7 @@ export function Composer({
       {attachments && <AttachmentPreview selection={attachments} onClose={() => setAttachments(null)} onSend={onSend} />}
       {error && <p className="px-2 pb-1 text-xs text-danger">{error}</p>}
       <div className="relative">
+      {mentionOpen && <MentionPopup people={mentionOptions} index={activeMention} onPick={pickMention} onHover={setMentionIdx} />}
       {(reply || edit) && !recorder.recording && (
         <div className="mb-1 flex items-start gap-2 rounded-2xl bg-panel px-3 py-2 shadow-sm">
           <span className="mt-0.5 text-brand-ink [&>svg]:size-4">{edit ? <Pencil /> : <Reply />}</span>
@@ -304,6 +359,11 @@ export function Composer({
                 <MenuItem icon={<MapPin />} onClick={() => (sendLocation(), close())}>
                   Localização atual
                 </MenuItem>
+                {attachExtras?.map((x) => (
+                  <MenuItem key={x.label} icon={x.icon} onClick={() => (x.onClick(), close())}>
+                    {x.label}
+                  </MenuItem>
+                ))}
               </>
             )}
           </Menu>
@@ -315,9 +375,15 @@ export function Composer({
             ref={ta}
             rows={1}
             value={text}
-            onChange={(e) => update(e.target.value)}
+            onChange={(e) => {
+              update(e.target.value);
+              setCaret(e.target.selectionStart);
+            }}
             onKeyDown={onKeyDown}
+            onKeyUp={(e) => setCaret(e.currentTarget.selectionStart)}
+            onClick={(e) => setCaret(e.currentTarget.selectionStart)}
             onPaste={onPaste}
+            {...(mentionPeople ? { role: "combobox", "aria-autocomplete": "list", "aria-expanded": mentionOpen, "aria-controls": mentionOpen ? mentionListId : undefined, "aria-activedescendant": mentionOpen ? mentionOptionId(mentionOptions[activeMention]!.id) : undefined } : {})}
             placeholder="Digite uma mensagem"
             aria-label="Mensagem"
             className="mx-1 max-h-40 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-[13.5px] leading-5 outline-none placeholder:text-muted focus-visible:outline-none"

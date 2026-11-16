@@ -1,4 +1,4 @@
-import { CalendarDays, Contact, Layers, MessageSquareText, Plug, Settings, Tag, UsersRound } from "lucide-react";
+import { CalendarDays, Contact, Layers, MessageSquareText, MessagesSquare, Plug, Settings, Tag, UsersRound } from "lucide-react";
 import type { ComponentType } from "react";
 import { WhatsAppIcon } from "@/components/WhatsAppIcon";
 import { AiIcon } from "@/components/AiIcon";
@@ -18,6 +18,7 @@ export const secondaryNav: NavItem[] = [
   { to: "/equipe", label: "Equipe", icon: UsersRound },
   { to: "/integracoes/mcp", label: "MCP", icon: Plug },
   { to: "/automacao", label: "Envios automáticos", icon: AiIcon, roles: ["admin"] },
+  { to: "/interno", label: "Chat interno", icon: MessagesSquare },
   { to: "/whatsapp", label: "Conectar", icon: WhatsAppIcon, roles: ["admin"] },
 ];
 

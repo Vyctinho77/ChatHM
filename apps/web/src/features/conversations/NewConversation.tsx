@@ -13,7 +13,8 @@ import { useContactOpener } from "./store";
 export function NewConversationModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const navigate = useNavigate();
   const opener = useContactOpener();
-  const { contacts } = useContacts();
+  // A lista inteira de contatos só é baixada quando a janela abre (ela fica montada o tempo todo na lista de conversas).
+  const { contacts } = useContacts({ enabled: open });
   const [term, setTerm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
