@@ -41,15 +41,41 @@ func (s *Service) transcribeNow(msgID, convID string, audio []byte, durationSec 
 	}
 }
 
-func (s *Service) setTranscript(ctx context.Context, msgID, convID, state, text string) {
+// setTranscript grava o estado e o texto. Não avisa as telas: a equipe não vê a transcrição (só os agentes de IA, pelo MCP).
+func (s *Service) setTranscript(ctx context.Context, msgID, _, state, text string) {
 	if state == "done" {
 		_, _ = s.db.Exec(ctx, `UPDATE messages SET payload = payload || jsonb_build_object('transcriptState', $2::text, 'transcript', $3::text) WHERE id = $1`, msgID, state, text)
 	} else {
 		_, _ = s.db.Exec(ctx, `UPDATE messages SET payload = payload || jsonb_build_object('transcriptState', $2::text) WHERE id = $1`, msgID, state)
 	}
-	if to, err := s.visibleUsers(ctx, s.db, convID); err == nil {
-		s.publishMessage(ctx, EventMessageUpdated, msgID, to)
+}
+
+// Transcript é o que se sabe da transcrição de uma mensagem de voz: State = pending | done | empty | failed | toolong.
+type Transcript struct {
+	State string
+	Text  string
+}
+
+// Transcripts devolve a transcrição das mensagens de voz indicadas (só as que têm estado). Quem chama já conferiu a visibilidade das mensagens.
+func (s *Service) Transcripts(ctx context.Context, ids []string) (map[string]Transcript, error) {
+	out := map[string]Transcript{}
+	if len(ids) == 0 {
+		return out, nil
 	}
+	rows, err := s.db.Query(ctx, `SELECT id::text, payload->>'transcriptState', coalesce(payload->>'transcript', '') FROM messages
+		WHERE id = ANY($1::uuid[]) AND payload ? 'transcriptState'`, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var t Transcript
+		if rows.Scan(&id, &t.State, &t.Text) == nil {
+			out[id] = t
+		}
+	}
+	return out, rows.Err()
 }
 
 // BackfillTranscripts transcreve, ao iniciar, os áudios recebidos nos últimos 7 dias que ainda não têm texto (e os que ficaram "pending" por um

@@ -289,6 +289,7 @@ func (m *MCP) pendingList(ctx context.Context, p Principal, v conversations.View
 			item["assignee"] = c.Assignee.Name
 		}
 		if msgs, merr := m.convs.Messages(ctx, v, c.ID, 200); merr == nil {
+			m.addTranscripts(ctx, msgs)
 			var lastIn conversations.Message
 			for _, mm := range msgs {
 				if str(mm["direction"]) == "in" {

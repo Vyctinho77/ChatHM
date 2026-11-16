@@ -98,6 +98,7 @@ func (m *MCP) server(p Principal) *mcp.Server {
 			if err != nil {
 				return nil, friendly(err)
 			}
+			m.addTranscripts(ctx, msgs)
 			contactID := ""
 			if c, cerr := m.convs.Get(ctx, v, in.ConversationID); cerr == nil {
 				contactID = c.Contact.ID
@@ -489,8 +490,11 @@ func msgView(m conversations.Message, p Principal, contactID string) any {
 			if t := str(m["transcript"]); t != "" {
 				media["transcript"] = t
 			}
-			if str(m["transcriptState"]) == "pending" {
+			switch st := str(m["transcriptState"]); st {
+			case "pending":
 				media["transcriptPending"] = true // ainda transcrevendo: leia de novo em instantes
+			case "failed", "toolong", "empty":
+				media["transcriptUnavailable"] = st // failed: não deu; toolong: áudio longo demais; empty: sem fala
 			}
 		}
 		if len(media) > 0 {

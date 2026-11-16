@@ -91,8 +91,9 @@ são conferidos, então uma tecla trocada é recusada) e **id do cliente no Asaa
   id do Asaas num contato, as cobranças dele que estavam sem vínculo passam a ser dele. O vínculo que a equipe escolheu à mão nunca é trocado.
 Código: `conversations/taxid.go`, `aiaccess/tools.go` (`find_contact`), `aiaccess/write.go` (`set_contact_reference`), `automation/charges.go` (vínculo pelo id).
 
-**Áudios transcritos.** Cada mensagem de voz recebida é transcrita no servidor (whisper.cpp local, gratuito; veja [audio.md](audio.md)). `read_messages` traz o texto em
-`media.transcript` da mensagem de áudio (`media.transcriptPending: true` enquanto transcreve: leia de novo em instantes). O texto passa pelo mesmo filtro de privacidade das mensagens.
+**Áudios transcritos (só para agentes).** Cada mensagem de voz recebida é transcrita no servidor (whisper.cpp local, gratuito; veja [audio.md](audio.md)). A transcrição **não aparece para a equipe**:
+só o agente a lê, em `read_messages` e `list_pending_replies`, em `media.transcript` da mensagem de áudio (`media.transcriptPending: true` enquanto transcreve: leia de novo em instantes;
+`media.transcriptUnavailable`: `failed`, `toolong` ou `empty`). O texto passa pelo mesmo filtro de privacidade das mensagens.
 
 ### Privacidade das respostas (todas as etapas)
 

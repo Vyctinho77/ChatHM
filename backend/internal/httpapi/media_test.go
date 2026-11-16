@@ -454,8 +454,8 @@ func (f fakeTranscriber) Transcribe(_ context.Context, _ []byte, _ int) (string,
 }
 func (f fakeTranscriber) MaxSeconds() int { return f.max }
 
-// Mensagem de voz recebida: aparece na hora e o texto chega depois (pending → done), na tela e no MCP.
-func TestInboundVoiceMessageGetsTranscribed(t *testing.T) {
+// Mensagem de voz recebida: é transcrita em segundo plano, mas a transcrição é SÓ dos agentes de IA (MCP). A equipe não a vê.
+func TestInboundVoiceMessageTranscriptIsOnlyForAgents(t *testing.T) {
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		t.Skip("ffmpeg não instalado")
 	}
@@ -464,16 +464,15 @@ func TestInboundVoiceMessageGetsTranscribed(t *testing.T) {
 	expect(t, w.admin.do("PUT", "/api/v1/ai/settings", map[string]any{"enabled": true, "maskDocuments": true, "allowWrite": true}), 200)
 	tok := w.mkScopedToken(w.admin, "leitor", "read")
 
-	voice := func(name string, dur int) string {
+	voice := func(name string) {
 		p := itoa(int(phoneSeq.Add(1)))
 		m := inbound("V-"+p, p, name, "")
 		m.Kind = whatsapp.KindAudio
-		m.Payload = map[string]any{"durationSec": dur}
+		m.Payload = map[string]any{"durationSec": 12}
 		m.Download = func(context.Context) ([]byte, error) { return testWAV(), nil }
 		w.e.wa.Receive(m)
-		return name
 	}
-	lastMsg := func(name string) map[string]any {
+	staffMsg := func(name string) map[string]any {
 		c := conv(t, w.admin, name)
 		if c == nil {
 			return nil
@@ -481,39 +480,52 @@ func TestInboundVoiceMessageGetsTranscribed(t *testing.T) {
 		ms := w.admin.do("GET", "/api/v1/conversations/"+c["id"].(string)+"/messages", nil).body["messages"].([]any)
 		return ms[len(ms)-1].(map[string]any)
 	}
-
-	voice("Cliente Voz Um", 12)
-	eventually(t, "transcrição", func() bool {
-		m := lastMsg("Cliente Voz Um")
-		return m != nil && m["transcriptState"] == "done"
-	})
-	m := lastMsg("Cliente Voz Um")
-	if m["kind"] != "audio" || m["transcript"] != "Oi, já paguei o boleto de novembro." {
-		t.Fatalf("mensagem de voz: %v", m)
-	}
-	// O agente (MCP) lê o texto junto dos metadados do áudio.
-	id := conv(t, w.admin, "Cliente Voz Um")["id"].(string)
-	msgs, _ := w.tool(tok, "read_messages", map[string]any{"conversation_id": id})
-	var media map[string]any
-	for _, x := range msgs["messages"].([]any) {
-		if mm := x.(map[string]any); mm["kind"] == "audio" {
-			media = mm["media"].(map[string]any)
+	agentMedia := func(name string) map[string]any {
+		c := conv(t, w.admin, name)
+		if c == nil {
+			return nil
 		}
-	}
-	if media == nil || media["transcript"] != "Oi, já paguei o boleto de novembro." {
-		t.Fatalf("o MCP deveria trazer a transcrição: %v", msgs)
+		msgs, _ := w.tool(tok, "read_messages", map[string]any{"conversation_id": c["id"].(string)})
+		for _, x := range msgs["messages"].([]any) {
+			if mm := x.(map[string]any); mm["kind"] == "audio" {
+				media, _ := mm["media"].(map[string]any)
+				return media
+			}
+		}
+		return nil
 	}
 
-	// Áudio acima do limite (a duração vale a medida no próprio áudio, 1 s aqui; limite 0): não transcreve e diz por quê.
+	voice("Cliente Voz Um")
+	eventually(t, "transcrição para o agente", func() bool {
+		md := agentMedia("Cliente Voz Um")
+		return md != nil && md["transcript"] == "Oi, já paguei o boleto de novembro."
+	})
+	// A equipe vê o áudio normal, sem a transcrição nem o estado.
+	m := staffMsg("Cliente Voz Um")
+	if m["kind"] != "audio" || m["url"] == nil || m["transcript"] != nil || m["transcriptState"] != nil {
+		t.Fatalf("a equipe não pode ver a transcrição: %v", m)
+	}
+	// Nem na lista de conversas (última mensagem).
+	if lm := conv(t, w.admin, "Cliente Voz Um")["lastMessage"].(map[string]any); lm["transcript"] != nil || lm["transcriptState"] != nil {
+		t.Fatalf("a última mensagem da lista não pode trazer a transcrição: %v", lm)
+	}
+
+	// Limite (a duração vale a medida no próprio áudio, 1 s aqui; limite 0): o agente fica sabendo por quê.
 	w.e.svcs.Conversations.SetTranscriber(fakeTranscriber{text: "x", max: 0})
-	voice("Cliente Voz Longo", 900)
-	eventually(t, "áudio longo", func() bool { m := lastMsg("Cliente Voz Longo"); return m != nil && m["transcriptState"] == "toolong" })
+	voice("Cliente Voz Longo")
+	eventually(t, "áudio longo", func() bool {
+		md := agentMedia("Cliente Voz Longo")
+		return md != nil && md["transcriptUnavailable"] == "toolong"
+	})
 
-	// Falha do transcritor: a mensagem de voz continua normal, marcada como falha, sem texto.
+	// Falha do transcritor: o áudio continua normal para a equipe; o agente vê que não deu.
 	w.e.svcs.Conversations.SetTranscriber(fakeTranscriber{err: errors.New("whisper caiu"), max: 600})
-	voice("Cliente Voz Falha", 5)
-	eventually(t, "falha", func() bool { m := lastMsg("Cliente Voz Falha"); return m != nil && m["transcriptState"] == "failed" })
-	if m := lastMsg("Cliente Voz Falha"); m["transcript"] != nil || m["url"] == nil {
-		t.Fatalf("o áudio deve continuar tocável, sem texto: %v", m)
+	voice("Cliente Voz Falha")
+	eventually(t, "falha", func() bool {
+		md := agentMedia("Cliente Voz Falha")
+		return md != nil && md["transcriptUnavailable"] == "failed"
+	})
+	if m := staffMsg("Cliente Voz Falha"); m["url"] == nil || m["transcriptState"] != nil {
+		t.Fatalf("o áudio deve continuar tocável: %v", m)
 	}
 }

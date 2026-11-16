@@ -222,21 +222,6 @@ function Pop({ animate, children, ...rest }: { animate?: boolean; children: Reac
   );
 }
 
-/** A fala do áudio, transcrita no servidor (só mensagens de voz recebidas). */
-function Transcript({ m, term }: { m: Extract<Message, { kind: "audio" }>; term?: string }) {
-  if (m.transcriptState === "pending") return <p className="mt-1 text-[11.5px] italic opacity-70">Transcrevendo…</p>;
-  if (m.transcriptState === "toolong") return <p className="mt-1 text-[11.5px] italic opacity-70">Áudio longo demais para transcrever.</p>;
-  if (!m.transcript) return null;
-  return (
-    <div className="mt-1.5 border-t border-current/15 pt-1.5">
-      <p className="text-[10.5px] font-medium uppercase tracking-wide opacity-60">Transcrição</p>
-      <p className="whitespace-pre-wrap break-words text-[13px] leading-snug">
-        <Highlight text={m.transcript} term={term} />
-      </p>
-    </div>
-  );
-}
-
 function DocumentCard({ m, onOpen, term }: { m: Extract<Message, { kind: "document" }>; onOpen?: (id: string) => void; term?: string }) {
   const fileName = m.fileName || "Documento";
   const kind = docKind(m.fileName, m.mimeType, m.docType);
@@ -519,7 +504,6 @@ export function MessageBubble({
               metadata={<Meta m={m} />}
             />
           {m.historical && !m.url && <p className="mt-1 text-[11px] opacity-70">Áudio do histórico · arquivo não importado</p>}
-            <Transcript m={m} term={term} />
           </div>
         )}
 

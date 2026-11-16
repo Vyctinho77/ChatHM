@@ -30,11 +30,11 @@ e [filtros Web Audio](https://www.w3.org/TR/webaudio/#BiquadFilterNode).
 ## Transcrição das mensagens de voz recebidas (11/2026)
 
 Cada mensagem de voz que o cliente manda é transcrita **na própria máquina**, em segundo plano, com o [whisper.cpp](https://github.com/ggml-org/whisper.cpp)
-(código aberto; sem custo e sem enviar o áudio a nenhum serviço). A mensagem aparece na hora, com "Transcrevendo…", e o texto chega depois por tempo real,
-sob o áudio ("Transcrição"). O agente de IA lê o mesmo texto em `read_messages` (`media.transcript`, com o mesmo filtro de privacidade das mensagens; `media.transcriptPending`
-enquanto não termina).
+(código aberto; sem custo e sem enviar o áudio a nenhum serviço). **A transcrição é só para os agentes de IA:** ela não aparece na tela da equipe (nem por tempo real, nem na lista
+ou na busca) e só chega ao agente pelo MCP, em `read_messages` e `list_pending_replies` (`media.transcript`; `media.transcriptPending` enquanto não termina;
+`media.transcriptUnavailable` = `failed`, `toolong` ou `empty` quando não houve texto). O texto passa pelo mesmo filtro de privacidade das mensagens.
 
-- **Estados** (`transcriptState` na mensagem): `pending`, `done`, `empty` (sem fala), `failed` (o áudio continua tocável, só sem texto) e `toolong` (acima de 10 minutos).
+- **Estados** (`transcriptState`, guardado na mensagem e nunca enviado à tela): `pending`, `done`, `empty` (sem fala), `failed` (o áudio continua tocável, só sem texto) e `toolong` (acima de 10 minutos).
 - **Como funciona:** o ffmpeg converte para WAV 16 kHz mono e o `whisper-cli` lê. Um áudio por vez (usa metade dos núcleos), em prioridade baixa (`nice`), fila em memória.
   Ao iniciar, o servidor transcreve também os áudios dos últimos 7 dias que ainda não têm texto. Código: `internal/transcribe`, `conversations/transcript.go`.
 - **Memória:** o modelo `small` quantizado deve usar entre 0,5 e 1 GB enquanto transcreve (estimativa; **medir na VPS depois de publicar**, olhando o container do app durante um áudio). Na VPS de
@@ -45,5 +45,5 @@ enquanto não termina).
   nada mais muda. Ajustes: `WHISPER_THREADS`, `WHISPER_MAX_SECONDS` (padrão 600).
 - **Qualidade:** o modelo "small" entende bem o português falado, mas erra nomes próprios, números e ruído forte; trate o texto como apoio, não como registro exato. Para mais
   precisão, troque para o modelo `medium` (mais lento e mais pesado) em `WHISPER_MODEL`/`WHISPER_MODEL_SHA256` no build.
-- **Não faz:** a busca de mensagens ainda não procura dentro da transcrição; áudios enviados pela equipe não são transcritos.
+- **Não faz:** áudios enviados pela equipe não são transcritos; a busca de mensagens não procura dentro da transcrição.
 

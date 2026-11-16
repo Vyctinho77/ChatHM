@@ -597,6 +597,9 @@ func (r msgRow) message() Message {
 		m["authorName"] = r.sender
 	}
 	delete(m, "senderJid") // interno: só serve para citar a mensagem no WhatsApp
+	// A transcrição do áudio é só para os agentes de IA (MCP): a equipe não a vê, nem na tela nem por tempo real. O MCP a busca por Transcripts.
+	delete(m, "transcript")
+	delete(m, "transcriptState")
 	if q, ok := m["quoted"].(map[string]any); ok {
 		delete(q, "senderJid")
 	}
