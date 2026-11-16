@@ -108,6 +108,7 @@ func convertMessage(ctx context.Context, cli *whatsmeow.Client, e *events.Messag
 		out.Payload["width"] = img.GetWidth()
 		out.Payload["height"] = img.GetHeight()
 		out.Download = func(ctx context.Context) ([]byte, error) { return cli.Download(ctx, img) }
+		out.MediaRef = mediaRef(whatsapp.KindImage, &waE2E.Message{ImageMessage: img})
 	case m.GetAudioMessage() != nil:
 		a := m.GetAudioMessage()
 		out.Kind = whatsapp.KindAudio
@@ -116,6 +117,7 @@ func convertMessage(ctx context.Context, cli *whatsmeow.Client, e *events.Messag
 		out.Payload["sizeBytes"] = a.GetFileLength()
 		out.Payload["voiceNote"] = a.GetPTT()
 		out.Download = func(ctx context.Context) ([]byte, error) { return cli.Download(ctx, a) }
+		out.MediaRef = mediaRef(whatsapp.KindAudio, &waE2E.Message{AudioMessage: a})
 		if wf := a.GetWaveform(); len(wf) > 0 {
 			bars := make([]float64, len(wf))
 			for i, v := range wf {
@@ -134,6 +136,7 @@ func convertMessage(ctx context.Context, cli *whatsmeow.Client, e *events.Messag
 		out.Payload["mimeType"] = d.GetMimetype()
 		out.Payload["sizeBytes"] = d.GetFileLength()
 		out.Download = func(ctx context.Context) ([]byte, error) { return cli.Download(ctx, d) }
+		out.MediaRef = mediaRef(whatsapp.KindDocument, &waE2E.Message{DocumentMessage: d})
 	case m.GetLocationMessage() != nil:
 		l := m.GetLocationMessage()
 		out.Kind = whatsapp.KindLocation
@@ -157,6 +160,7 @@ func convertMessage(ctx context.Context, cli *whatsmeow.Client, e *events.Messag
 		out.Payload["width"], out.Payload["height"] = st.GetWidth(), st.GetHeight()
 		out.Payload["animated"] = st.GetIsAnimated()
 		out.Download = func(ctx context.Context) ([]byte, error) { return cli.Download(ctx, st) }
+		out.MediaRef = mediaRef(whatsapp.KindSticker, &waE2E.Message{StickerMessage: st})
 	case m.GetContactMessage() != nil || m.GetContactsArrayMessage() != nil:
 		out.Kind, out.Payload["label"] = whatsapp.KindUnsupported, "Contato"
 	case m.GetLiveLocationMessage() != nil:

@@ -68,6 +68,8 @@ type InboundMessage struct {
 	Payload    map[string]any // metadados (mídia, localização); nunca o binário
 	// Download baixa o arquivo da mídia (nil quando a mensagem não tem arquivo).
 	Download func(ctx context.Context) ([]byte, error) `json:"-"`
+	// MediaRef: a referência para baixar a mídia depois (e pedir o reenvio ao celular se o WhatsApp já a apagou). Nil sem mídia.
+	MediaRef *MediaRef `json:"-"`
 }
 
 // InboundQuote é a mensagem que a recebida responde (citação).

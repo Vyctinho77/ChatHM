@@ -296,6 +296,30 @@ func (m *Manager) Connected() bool {
 	return st.State == StateConnected && !st.Preparing
 }
 
+// FetchMedia e RequestMediaRetry repassam ao provedor, se ele sabe (re)baixar mídia.
+func (m *Manager) FetchMedia(ctx context.Context, ref MediaRef) ([]byte, error) {
+	f, ok := m.p.(MediaFetcher)
+	if !ok {
+		return nil, errors.ErrUnsupported
+	}
+	return f.FetchMedia(ctx, ref)
+}
+
+func (m *Manager) RequestMediaRetry(ctx context.Context, ref MediaRef, msg MediaMessage) error {
+	f, ok := m.p.(MediaFetcher)
+	if !ok {
+		return errors.ErrUnsupported
+	}
+	return f.RequestMediaRetry(ctx, ref, msg)
+}
+
+// SetMediaRetryHandler define quem processa as respostas do celular aos pedidos de reenvio de mídia.
+func (m *Manager) SetMediaRetryHandler(h MediaRetryHandler) {
+	if n, ok := m.p.(MediaRetryNotifier); ok {
+		n.SetMediaRetryHandler(h)
+	}
+}
+
 func (m *Manager) NewMessageID() string { return m.p.NewMessageID() }
 
 func (m *Manager) SendText(ctx context.Context, chatJID, messageID, text string) error {

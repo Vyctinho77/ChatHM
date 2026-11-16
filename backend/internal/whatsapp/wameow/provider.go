@@ -55,6 +55,7 @@ type Provider struct {
 	historyProgress whatsapp.HistoryProgress
 	contactsSyncing bool
 	groupNames      map[types.JID]groupNameEntry
+	onMediaRetry    whatsapp.MediaRetryHandler
 }
 
 func (p *Provider) HasSession(ctx context.Context) (bool, error) {
@@ -412,6 +413,8 @@ func (p *Provider) handle(cli *whatsmeow.Client) func(any) {
 			if r, ok := convertReceipt(e); ok {
 				p.h.OnReceipt(r)
 			}
+		case *events.MediaRetry:
+			go p.mediaRetry(cli, e) // resposta do celular a um pedido de reenvio de mídia
 		}
 	}
 }
