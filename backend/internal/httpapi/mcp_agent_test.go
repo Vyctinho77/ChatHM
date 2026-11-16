@@ -1,11 +1,14 @@
 package httpapi
 
 import (
+	"encoding/json"
+	"net/http"
 	"sort"
 	"testing"
 	"time"
 
 	"github.com/vyctinho77/chathm/backend/internal/aiaccess"
+	"github.com/vyctinho77/chathm/backend/internal/whatsapp"
 )
 
 // agentTokens liga todos os interruptores e cria um token de cada tipo (todos da pessoa administradora).
@@ -274,5 +277,225 @@ func TestWaitForRepliesReturnsAsSoonAsAReplyArrives(t *testing.T) {
 	w.tool(toks["attend"], "mark_replies", map[string]any{"items": []map[string]any{{"conversation_id": id, "status": "resolved"}}})
 	if o, _ = w.tool(toks["attend"], "wait_for_replies", map[string]any{"timeout_seconds": 1}); o["timedOut"] != true {
 		t.Fatalf("após baixa: %v", o)
+	}
+}
+
+// Quem não tem endereço público consulta o ChatHM por HTTP simples (GET /mcp/replies), sem cliente MCP.
+func TestRepliesOverPlainHTTP(t *testing.T) {
+	w, toks := agentTokens(t)
+	get := func(token, query string) (int, map[string]any) {
+		req, _ := http.NewRequest("GET", w.e.srv.URL+"/mcp/replies"+query, nil)
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var out map[string]any
+		_ = json.NewDecoder(res.Body).Decode(&out)
+		return res.StatusCode, out
+	}
+	if st, _ := get("", ""); st != 401 {
+		t.Fatalf("sem token: %d", st)
+	}
+	if st, _ := get("chm_invalido", ""); st != 401 {
+		t.Fatalf("token inválido: %d", st)
+	}
+
+	phone := w.receive("Cliente Http", "Oi")
+	id := mustConv(t, w.dani, "Cliente Http")["id"].(string)
+	expect(t, w.send(w.dani, id, "Olá!"), 201)
+	if out, _ := w.tool(toks["attend"], "send_as_attendant", map[string]any{"conversation_id": id, "text": "Seu DAS vence dia 20."}); out["ok"] != true {
+		t.Fatalf("envio da IA: %v", out)
+	}
+	start := time.Now()
+	if st, o := get(toks["attend"], "?wait=1"); st != 200 || o["timedOut"] != true || o["total"] != float64(0) || time.Since(start) < time.Second {
+		t.Fatalf("sem resposta: %d %v", st, o)
+	}
+	go func() {
+		time.Sleep(1200 * time.Millisecond)
+		w.receiveFrom(phone, "Cliente Http", "Já paguei, obrigado!")
+	}()
+	start = time.Now()
+	st, o := get(toks["attend"], "?wait=40")
+	if st != 200 || o["timedOut"] != false || o["total"] != float64(1) || time.Since(start) > 15*time.Second {
+		t.Fatalf("com resposta: %d %v (%v)", st, o, time.Since(start))
+	}
+	item := o["conversations"].([]any)[0].(map[string]any)
+	if item["conversationId"] != id || item["lastReply"].(map[string]any)["text"] != "Já paguei, obrigado!" {
+		t.Fatalf("item: %v", item)
+	}
+	if o["aviso"] == nil {
+		t.Fatalf("falta o aviso de conteúdo de terceiros: %v", o)
+	}
+}
+
+// O WhatsApp costuma avisar a leitura só da última mensagem: as enviadas antes dela na conversa também passam a lidas; as depois, não.
+func TestReadReceiptAlsoMarksEarlierMessagesAsRead(t *testing.T) {
+	w := setupWorld(t)
+	w.receive("Cliente Cadeia", "Oi")
+	id := mustConv(t, w.ana, "Cliente Cadeia")["id"].(string)
+	for _, txt := range []string{"um", "dois", "tres", "quatro"} {
+		expect(t, w.send(w.ana, id, txt), 201)
+	}
+	sent := w.e.wa.Sent()
+	statuses := func() map[string]string {
+		out := map[string]string{}
+		for _, x := range w.ana.do("GET", "/api/v1/conversations/"+id+"/messages", nil).body["messages"].([]any) {
+			m := x.(map[string]any)
+			if m["direction"] == "out" {
+				out[m["text"].(string)], _ = m["status"].(string)
+			}
+		}
+		return out
+	}
+	// Leitura da TERCEIRA: a primeira, a segunda e a terceira ficam lidas; a quarta continua como estava.
+	w.e.wa.Receipt(whatsapp.ReceiptRead, sent[2].MessageID)
+	eventually(t, "leitura em cadeia", func() bool { s := statuses(); return s["um"] == "read" && s["dois"] == "read" && s["tres"] == "read" })
+	if s := statuses(); s["quatro"] == "read" || s["quatro"] == "delivered" {
+		t.Fatalf("a mensagem seguinte não foi lida: %v", s)
+	}
+	// Entrega da quarta não mexe nas lidas (nunca retrocede).
+	w.e.wa.Receipt(whatsapp.ReceiptDelivered, sent[3].MessageID)
+	eventually(t, "entrega da última", func() bool { return statuses()["quatro"] == "delivered" })
+	if s := statuses(); s["um"] != "read" || s["tres"] != "read" {
+		t.Fatalf("status retrocedeu: %v", s)
+	}
+}
+
+func agentToken(t *testing.T, w *world, name, provider string, scopes ...string) string {
+	t.Helper()
+	r := w.admin.do("POST", "/api/v1/ai/tokens", map[string]any{"name": name, "provider": provider, "scopes": scopes})
+	expect(t, r, 201)
+	return r.body["token"].(string)
+}
+
+// message_status: o agente vê se a mensagem chegou e se foi lida antes de reenviar; check_send diz o que bloquearia o envio.
+func TestMessageStatusAndCheckSend(t *testing.T) {
+	w, toks := agentTokens(t)
+	phone := w.receive("Cliente Status", "Oi")
+	_ = phone
+	id := mustConv(t, w.dani, "Cliente Status")["id"].(string)
+	expect(t, w.send(w.dani, id, "Olá!"), 201)
+	tok := toks["attend"]
+
+	// Antes de enviar: o envio como atendente passaria.
+	chk, isErr := w.tool(tok, "check_send", map[string]any{"conversation_id": id})
+	if isErr || chk["wouldSend"] != true || len(chk["blockers"].([]any)) != 0 || chk["contact"].(map[string]any)["lastCustomerMessageAt"] == nil {
+		t.Fatalf("check_send attendant: %v", chk)
+	}
+	// Automático: a categoria não está liberada e a conversa está com a Dani, e as duas coisas aparecem juntas ou em sequência.
+	chk, isErr = w.tool(toks["automate"], "check_send", map[string]any{"conversation_id": id, "mode": "automatic", "category": "aviso"})
+	codes := map[string]bool{}
+	for _, b := range chk["blockers"].([]any) {
+		codes[b.(map[string]any)["code"].(string)] = true
+	}
+	if isErr || chk["wouldSend"] != false || len(codes) == 0 {
+		t.Fatalf("check_send automatic deveria bloquear: %v", chk)
+	}
+	if isErr, msg := w.toolCall(toks["automate"], "check_send", map[string]any{"conversation_id": id, "mode": "automatic"}); !isErr || msg == "" {
+		t.Fatalf("automatic sem category deve explicar o erro: %v %q", isErr, msg)
+	}
+
+	out, _ := w.tool(tok, "send_as_attendant", map[string]any{"conversation_id": id, "text": "Seu DAS vence dia 20."})
+	if out["ok"] != true || out["messageId"] == nil {
+		t.Fatalf("envio: %v", out)
+	}
+	msgID := out["messageId"].(string)
+	ext := w.e.wa.Sent()[len(w.e.wa.Sent())-1].MessageID
+
+	st, isErr := w.tool(tok, "message_status", map[string]any{"message_id": msgID})
+	if isErr || st["arrived"] != false || st["read"] != false || st["andamento"] == nil || st["customerWroteAfter"] != false {
+		t.Fatalf("recém-enviada: %v", st)
+	}
+	w.e.wa.Receipt(whatsapp.ReceiptDelivered, ext)
+	eventually(t, "entregue", func() bool {
+		st, _ = w.tool(tok, "message_status", map[string]any{"message_id": msgID})
+		return st["status"] == "delivered"
+	})
+	if st["arrived"] != true || st["read"] != false || st["deliveredAt"] == nil {
+		t.Fatalf("entregue: %v", st)
+	}
+	w.e.wa.Receipt(whatsapp.ReceiptRead, ext)
+	eventually(t, "lida", func() bool {
+		st, _ = w.tool(tok, "message_status", map[string]any{"message_id": msgID})
+		return st["status"] == "read"
+	})
+	if st["read"] != true || st["readAt"] == nil {
+		t.Fatalf("lida: %v", st)
+	}
+	// read_messages também traz os recibos.
+	msgs, _ := w.tool(tok, "read_messages", map[string]any{"conversation_id": id})
+	found := false
+	for _, x := range msgs["messages"].([]any) {
+		if m := x.(map[string]any); m["id"] == msgID && m["readAt"] != nil && m["deliveredAt"] != nil {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("read_messages sem recibos: %v", msgs)
+	}
+	// Mensagem do cliente não tem entrega; id inventado e quem não vê a conversa recebem a mesma recusa.
+	if isErr, _ := w.toolCall(tok, "message_status", map[string]any{"message_id": "00000000-0000-0000-0000-000000000000"}); !isErr {
+		t.Fatal("id inexistente deveria ser recusado")
+	}
+	anaTok := w.mkScopedToken(w.ana, "ana", "read")
+	if isErr, _ := w.toolCall(anaTok, "message_status", map[string]any{"message_id": msgID}); !isErr {
+		t.Fatal("quem não vê a conversa não pode consultar")
+	}
+}
+
+// Dois agentes da mesma pessoa e do mesmo provedor: cada um com o seu nome, a sua fila de pendentes e o seu "isYou".
+func TestTwoAgentsOfTheSamePersonStaySeparate(t *testing.T) {
+	w, _ := agentTokens(t)
+	fin := agentToken(t, w, "HM Financeiro", "claude", "attend")
+	chefao := agentToken(t, w, "Chefão", "claude", "attend")
+	phone := w.receive("Cliente Dois", "Oi")
+	id := mustConv(t, w.dani, "Cliente Dois")["id"].(string)
+	expect(t, w.send(w.dani, id, "Olá!"), 201)
+	if out, _ := w.tool(fin, "send_as_attendant", map[string]any{"conversation_id": id, "text": "Seu boleto vence dia 20."}); out["ok"] != true {
+		t.Fatalf("envio: %v", out)
+	}
+	fromOf := func(tok string) map[string]any {
+		msgs, _ := w.tool(tok, "read_messages", map[string]any{"conversation_id": id})
+		for _, x := range msgs["messages"].([]any) {
+			if f := x.(map[string]any)["from"].(map[string]any); f["type"] == "ai" {
+				return f
+			}
+		}
+		t.Fatal("sem mensagem de IA")
+		return nil
+	}
+	if f := fromOf(fin); f["agent"] != "HM Financeiro" || f["isYou"] != true {
+		t.Fatalf("para o próprio agente: %v", f)
+	}
+	if f := fromOf(chefao); f["agent"] != "HM Financeiro" || f["isYou"] != false {
+		t.Fatalf("o outro agente da mesma pessoa não é você: %v", f)
+	}
+	// Quem enviou a mensagem aparece pelo nome na própria conversa para a equipe.
+	var shown string
+	for _, x := range w.dani.do("GET", "/api/v1/conversations/"+id+"/messages", nil).body["messages"].([]any) {
+		if m := x.(map[string]any); m["automated"] == true {
+			shown, _ = m["aiAgent"].(string)
+		}
+	}
+	if shown != "HM Financeiro" {
+		t.Fatalf("a equipe vê aiAgent = %q", shown)
+	}
+	// Respostas pendentes são por agente: marcar num não baixa no outro.
+	w.receiveFrom(phone, "Cliente Dois", "Obrigado!")
+	for name, tok := range map[string]string{"fin": fin, "chefao": chefao} {
+		if o, _ := w.tool(tok, "list_pending_replies", map[string]any{}); o["total"] != float64(1) {
+			t.Fatalf("%s deveria ver 1 pendente: %v", name, o)
+		}
+	}
+	w.tool(fin, "mark_replies", map[string]any{"items": []map[string]any{{"conversation_id": id, "status": "resolved"}}})
+	if o, _ := w.tool(fin, "list_pending_replies", map[string]any{}); o["total"] != float64(0) {
+		t.Fatalf("fin deveria ter baixado: %v", o)
+	}
+	if o, _ := w.tool(chefao, "list_pending_replies", map[string]any{}); o["total"] != float64(1) {
+		t.Fatalf("a baixa do fin não pode apagar a do Chefão: %v", o)
 	}
 }

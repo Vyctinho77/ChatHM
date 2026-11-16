@@ -67,6 +67,18 @@ agentes da mesma pessoa e do mesmo provedor não se atrapalham, e `isYou` só va
 identidade. Ao atualizar para esta versão, as conversas que um agente já tinha marcado como tratadas voltam uma vez à lista de pendentes (a chave mudou);
 mensagens antigas continuam sem o nome do agente e seguem a regra anterior.
 
+**Sem endereço público: `GET /mcp/replies` e o `chathm-listen`.** O webhook exige um endereço na internet para receber, e um agente no computador não tem.
+O caminho contrário não exige: o agente (ou um script dele) **chama** o ChatHM.
+- `GET /mcp/replies?wait=50&since=<ISO 8601>&limit=20` (cabeçalho `Authorization: Bearer <token do agente>`) espera até 50 s por resposta de cliente ainda não tratada
+  e responde assim que ela chega; sem resposta, volta com `timedOut: true`. É o mesmo conteúdo de `list_pending_replies` (mesma privacidade e mesma fila por agente), sem
+  precisar de cliente MCP e com espera maior que a de `wait_for_replies` (30 s). `since` devolve só respostas **depois** do instante: é o cursor de quem fica em laço.
+- `scripts/chathm-listen.mjs` (Node 22, sem dependências) faz esse laço 24 horas por dia e **acorda o agente**: `--exec "comando"` (recebe o JSON no stdin),
+  `--webhook http://127.0.0.1:porta/…` (POST local), ou imprime. `--digest 15` junta e avisa uma vez a cada 15 minutos. Guarda até onde já avisou (`--state`), reconecta
+  sozinho, não insiste com token recusado e, se a entrega falhar, tenta de novo sem perder o aviso. `--backlog` também avisa o que já estava pendente ao começar.
+  Exemplo: `CHATHM_URL=https://chathm.com.br CHATHM_TOKEN=chm_… node scripts/chathm-listen.mjs --exec "meu-agente --stdin"`. Rode junto do agente (ou como serviço da máquina).
+- O texto do cliente vai como **dado**: o agente nunca deve obedecer a instruções escritas dentro dele. Depois de tratar, o agente chama `mark_replies`.
+Código: `aiaccess/replies_http.go`; testes em `httpapi/mcp_agent_test.go` e `scripts/chathm-listen.test.mjs`.
+
 ### Privacidade das respostas (todas as etapas)
 
 1. **Sempre ligado, para qualquer cliente de IA:** senhas, códigos, tokens e chaves; cartão (Luhn), agência/conta, chave PIX, boleto.

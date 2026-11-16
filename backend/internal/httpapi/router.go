@@ -123,7 +123,8 @@ func NewRouter(d Deps) http.Handler {
 	// MCP (acesso por IA): só token Bearer, sem cookie; independe da sessão do app.
 	mcpH.SetBaseURL(baseURL)
 	r.Handle("/mcp", mcpH)
-	oauthH.Routes(r) // /.well-known/oauth-*, /oauth/register|authorize|token|revoke
+	r.Get("/mcp/replies", mcpH.ServeReplies) // espera de respostas por HTTP simples, para quem não tem endereço público
+	oauthH.Routes(r)                         // /.well-known/oauth-*, /oauth/register|authorize|token|revoke
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(d.Auth.LoadSession)

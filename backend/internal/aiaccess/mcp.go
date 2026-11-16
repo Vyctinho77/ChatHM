@@ -72,38 +72,47 @@ func writeJSONError(w http.ResponseWriter, status int, code, msg string) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": code, "message": msg}})
 }
 
-// ServeHTTP autentica o token Bearer e entrega a requisição ao servidor MCP.
-func (m *MCP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+// authenticate confere a origem, o token Bearer e o limite de chamadas. Se algo falha, já respondeu ao cliente e devolve false.
+func (m *MCP) authenticate(w http.ResponseWriter, r *http.Request) (Principal, bool) {
 	w.Header().Set("Cache-Control", "no-store")
 	// Contra DNS rebinding: navegadores enviam Origin; clientes de IA em servidor não.
 	if o := r.Header.Get("Origin"); o != "" && !m.allowedOrigins[strings.TrimRight(o, "/")] {
 		writeJSONError(w, http.StatusForbidden, "origin_not_allowed", "Origem não permitida.")
-		return
+		return Principal{}, false
 	}
 	authz := r.Header.Get("Authorization")
 	raw, ok := strings.CutPrefix(authz, "Bearer ")
 	if !ok || strings.TrimSpace(raw) == "" {
 		w.Header().Set("WWW-Authenticate", m.challenge(r, false))
 		writeJSONError(w, http.StatusUnauthorized, "unauthorized", "Envie o token de acesso no cabeçalho Authorization: Bearer.")
-		return
+		return Principal{}, false
 	}
 	p, err := m.svc.Authenticate(r.Context(), strings.TrimSpace(raw))
 	switch {
 	case errors.Is(err, ErrDisabled):
 		writeJSONError(w, http.StatusForbidden, "ai_disabled", "O acesso por IA está desligado neste escritório.")
-		return
+		return Principal{}, false
 	case errors.Is(err, ErrBadToken):
 		w.Header().Set("WWW-Authenticate", m.challenge(r, true))
 		writeJSONError(w, http.StatusUnauthorized, "invalid_token", "Token inválido, expirado ou revogado.")
-		return
+		return Principal{}, false
 	case err != nil:
 		m.log.Error("mcp: autenticando token", "err", err)
 		writeJSONError(w, http.StatusInternalServerError, "internal", "Erro interno.")
-		return
+		return Principal{}, false
 	}
 	if !m.svc.Allow(p.TokenID) {
 		w.Header().Set("Retry-After", "30")
 		writeJSONError(w, http.StatusTooManyRequests, "rate_limited", "Muitas chamadas. Tente de novo em instantes.")
+		return Principal{}, false
+	}
+	return p, true
+}
+
+// ServeHTTP autentica o token Bearer e entrega a requisição ao servidor MCP.
+func (m *MCP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	p, ok := m.authenticate(w, r)
+	if !ok {
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)

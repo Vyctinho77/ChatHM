@@ -75,7 +75,7 @@ export function WebhookCard() {
             Quando o cliente responde a uma mensagem enviada por IA, o ChatHM avisa o endereço configurado, sem esperar o agente perguntar. O aviso diz <strong>quem respondeu, em qual
             conversa e fila</strong>; o texto da mensagem não vai (o agente lê pelo MCP, com as proteções de privacidade, usando <code>list_pending_replies</code>).
           </p>
-          <p><strong>Sem endereço público?</strong> Um app no computador pode chamar <code>wait_for_replies</code> em laço, em vez de usar o webhook.</p>
+          <p><strong>Sem endereço público?</strong> Não precisa de webhook: rode no computador do agente <code>node scripts/chathm-listen.mjs --exec "…"</code> (com <code>CHATHM_URL</code> e o token do agente). Ele fica chamando o ChatHM o dia todo e acorda o seu agente quando o cliente responde, na hora ou em resumo a cada X minutos (<code>--digest</code>). Detalhes em <code>docs/mcp.md</code>.</p>
           <p><strong>Conferir a assinatura.</strong> Cada aviso é um POST em JSON com o cabeçalho <code>X-ChatHM-Signature: t=&lt;unix&gt;,v1=&lt;hex&gt;</code>. Calcule o HMAC-SHA256 de <code>&lt;t&gt;.&lt;corpo exato&gt;</code> com o segredo e compare com <code>v1</code>; recuse se <code>t</code> for de mais de 5 minutos atrás.</p>
           <p>Outros cabeçalhos: <code>X-ChatHM-Event</code> (<code>message.received</code> ou <code>webhook.test</code>) e <code>X-ChatHM-Delivery</code> (id, para ignorar repetidos). Responda 2xx para confirmar; senão o ChatHM tenta de novo (10 s, 1 min, 5 min, 30 min e 2 h). Respostas em rajada chegam juntas num só aviso, com a contagem.</p>
         </InfoTip>
