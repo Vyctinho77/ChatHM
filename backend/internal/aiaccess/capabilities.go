@@ -26,7 +26,7 @@ var toolCapabilities = map[string]capability{
 	// leitura
 	"list_conversations": capRead, "get_conversation": capRead, "read_messages": capRead, "search": capRead, "list_contacts": capRead,
 	"get_contact": capRead, "list_queues": capRead, "queue_overview": capRead, "list_tags": capRead, "list_agenda": capRead, "list_people": capRead,
-	"my_access": capRead, "list_pending_replies": capRead, "wait_for_replies": capRead,
+	"my_access": capRead, "list_pending_replies": capRead, "wait_for_replies": capRead, "message_status": capRead,
 	// controle do próprio agente (o que ele já tratou); não altera nada do cliente nem da conversa
 	"mark_replies": capRead,
 	// alterações
@@ -38,7 +38,7 @@ var toolCapabilities = map[string]capability{
 	"send_as_attendant": capAttend,
 	// envios automáticos e cobranças
 	"send_automatic_message": capAutomate, "cancel_automatic_send": capAutomate, "list_automatic_sends": capAutomate, "automation_status": capAutomate,
-	"list_charges": capAutomate, "list_documents": capAutomateOrAttend, "get_send_guidelines": capAutomateOrAttend,
+	"list_charges": capAutomate, "list_documents": capAutomateOrAttend, "get_send_guidelines": capAutomateOrAttend, "check_send": capAutomateOrAttend,
 }
 
 // ToolCapabilities devolve (nome → capacidade) para os testes.

@@ -21,3 +21,41 @@ func TestAwaitingFilter(t *testing.T) {
 		t.Fatal("sem mensagem não está aguardando")
 	}
 }
+
+func TestSortAwaitingOldestFirst(t *testing.T) {
+	mk := func(id, dir string, ago time.Duration) conversations.Conversation {
+		return conversations.Conversation{ID: id, LastMessage: map[string]any{"direction": dir, "sentAt": time.Now().Add(-ago).UTC().Format(time.RFC3339Nano)}}
+	}
+	// Misturado de propósito: espera curta, conversa sem espera no meio, espera longa, e outras.
+	all := []conversations.Conversation{
+		mk("novo", "in", 5*time.Minute),
+		mk("nossa1", "out", 2*time.Hour),
+		mk("antigo", "in", 3*time.Hour),
+		mk("nossa2", "out", time.Minute),
+		mk("meio", "in", 90*time.Minute),
+		mk("nossa3", "out", 10*time.Hour),
+		mk("maisantigo", "in", 26*time.Hour),
+	}
+	sortAwaiting(all)
+	var got []string
+	for _, c := range all {
+		if awaitingSince(c) != nil {
+			got = append(got, c.ID)
+		}
+	}
+	want := []string{"maisantigo", "antigo", "meio", "novo"}
+	if len(got) != len(want) {
+		t.Fatalf("%v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("ordem %v, esperava %v", got, want)
+		}
+	}
+	// Quem não espera nada vai depois de quem espera.
+	for i := 0; i < len(want); i++ {
+		if awaitingSince(all[i]) == nil {
+			t.Fatalf("conversa sem espera apareceu antes de quem espera: %v", all[i].ID)
+		}
+	}
+}

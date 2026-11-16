@@ -11,6 +11,7 @@ import (
 // registerAgent: ferramentas que o agente usa sobre si mesmo e sobre o seu fluxo de trabalho (não alteram dados do cliente).
 func (m *MCP) registerAgent(s *mcp.Server, p Principal, v conversations.Viewer) {
 	m.registerReplies(s, p, v)
+	m.registerDelivery(s, p, v)
 	type none struct{}
 	addTool(m, s, p, "my_access", "Mostra quem você é neste servidor e o que este token pode fazer: perfil, escopos, cada capacidade (disponível ou não, o motivo e como liberar), privacidade e limites. Chame no começo: a lista de ferramentas é a mesma para todos os tokens, e o que o token não pode usar é recusado.",
 		func(ctx context.Context, _ none) (any, error) {

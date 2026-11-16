@@ -52,6 +52,13 @@ automático** um endereço que recebe um POST quando o cliente responde:
 de cliente ainda não tratada; se nada chegar, volta com `timedOut: true`. Chame em laço e dê baixa com `mark_replies`. Devolve o mesmo que `list_pending_replies`.
 Código: `aiaccess/webhook.go` (entrega e proteções), `aiaccess/replies.go`, `aiaccess/agent_tools.go`; migração `00032`.
 
+**Entrega, leitura e checagem antes de enviar.**
+- `message_status(message_id)` diz se uma mensagem do escritório chegou e se o cliente leu: `status` (pending, sent, delivered, read, failed), `andamento` em palavras, `deliveredAt`, `readAt`, `playedAt` (áudio), `arrived`, `read` e se o cliente escreveu depois. Mensagem enviada há mais de 10 minutos sem entrega traz um aviso (reenviar duplicaria se ela chegar depois). `read_messages` também passa a trazer `deliveredAt`, `readAt` e `playedAt` nas mensagens enviadas.
+- Recibos: quando o cliente lê uma mensagem, as enviadas **antes** dela na mesma conversa também passam a lidas (o WhatsApp costuma avisar só da última).
+- `check_send(conversation_id|contact_id, mode, category?)` responde, sem enviar nada, se um envio passaria agora: `wouldSend`, `blockers` (mesmos códigos das recusas reais: `opt_out`, `group`, `paused`, `rate`, `dialog_active`, `assigned`, `snoozed`, `category_off`, `client_daily`, `min_interval`…), `notes` (fora do horário: o envio espera na fila), `window.nextOpensAt`, os limites e há quantas horas o cliente escreveu. `mode` é `attendant` (padrão) ou `automatic` (exige `category`). No modo automático o bloqueio do contato mostra o primeiro motivo que o servidor encontra.
+- `list_conversations` com `filter: awaiting` agora vem de fato da que espera há mais tempo para a mais nova (a ordenação anterior se perdia quando havia conversas que não aguardam resposta).
+Código: `aiaccess/delivery_tools.go`, `automation/preflight.go`.
+
 ### Privacidade das respostas (todas as etapas)
 
 1. **Sempre ligado, para qualquer cliente de IA:** senhas, códigos, tokens e chaves; cartão (Luhn), agência/conta, chave PIX, boleto.

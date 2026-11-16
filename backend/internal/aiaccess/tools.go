@@ -48,10 +48,7 @@ func (m *MCP) server(p Principal) *mcp.Server {
 			total := 0
 			awaiting := strings.HasPrefix(strings.ToLower(in.Filter), "awaiting")
 			if awaiting { // a que espera há mais tempo primeiro
-				sort.SliceStable(all, func(i, j int) bool {
-					a, b := awaitingSince(all[i]), awaitingSince(all[j])
-					return a != nil && b != nil && a.Before(*b)
-				})
+				sortAwaiting(all)
 			}
 			for _, c := range all {
 				if c.Status == "closed" || !matchFilter(c, in.Filter, p.UserID) {
@@ -422,7 +419,7 @@ func msgView(m conversations.Message, p Principal, contactID string) any {
 		v["deleted"] = true
 		return v
 	}
-	for _, k := range []string{"status", "authorName", "editedAt"} {
+	for _, k := range []string{"status", "authorName", "editedAt", "deliveredAt", "readAt", "playedAt"} { // recibos: só em mensagens que o escritório enviou
 		if s := str(m[k]); s != "" {
 			v[k] = s
 		}
@@ -456,6 +453,21 @@ func msgView(m conversations.Message, p Principal, contactID string) any {
 		}
 	}
 	return v
+}
+
+// sortAwaiting põe primeiro quem espera resposta há mais tempo; quem não espera (a última mensagem é nossa) vai para o fim.
+// A comparação precisa ser uma ordem de verdade: tratar "sem espera" como igual a todos (como era) embaralha o resultado.
+func sortAwaiting(all []conversations.Conversation) {
+	sort.SliceStable(all, func(i, j int) bool {
+		a, b := awaitingSince(all[i]), awaitingSince(all[j])
+		switch {
+		case a == nil:
+			return false
+		case b == nil:
+			return true
+		}
+		return a.Before(*b)
+	})
 }
 
 // awaitingSince: quando o cliente escreveu a última mensagem (a conversa espera resposta nossa); nil se a última foi nossa.

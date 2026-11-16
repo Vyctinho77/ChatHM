@@ -45,6 +45,14 @@ func (s *Service) attendOn(ctx context.Context) (bool, error) {
 	return on, nil
 }
 
+// attendRates: quantas mensagens o atendente autônomo mandou nos últimos 10 minutos e nas últimas 24 horas (para o teto de velocidade).
+func (s *Service) attendRates(ctx context.Context) (recent, today int, err error) {
+	err = s.db.QueryRow(ctx, `
+		SELECT count(*) FILTER (WHERE sent_at > $1::timestamptz - interval '10 minutes'), count(*) FILTER (WHERE sent_at > $1::timestamptz - interval '24 hours')
+		  FROM messages WHERE payload->>'aiMode' = 'attend'`, s.now()).Scan(&recent, &today)
+	return recent, today, err
+}
+
 // SendAsAttendant envia agora, na hora, e devolve o resultado do envio.
 func (s *Service) SendAsAttendant(ctx context.Context, a Actor, in AttendInput) (AttendResult, error) {
 	on, err := s.attendOn(ctx)
@@ -75,10 +83,8 @@ func (s *Service) SendAsAttendant(ctx context.Context, a Actor, in AttendInput) 
 	if optOut {
 		return AttendResult{}, refuse("opt_out", "Este cliente pediu para não receber mensagens automáticas (PARAR).")
 	}
-	var recent, today int
-	if err := s.db.QueryRow(ctx, `
-		SELECT count(*) FILTER (WHERE sent_at > $1::timestamptz - interval '10 minutes'), count(*) FILTER (WHERE sent_at > $1::timestamptz - interval '24 hours')
-		  FROM messages WHERE payload->>'aiMode' = 'attend'`, s.now()).Scan(&recent, &today); err != nil {
+	recent, today, err := s.attendRates(ctx)
+	if err != nil {
 		return AttendResult{}, err
 	}
 	if recent >= attendPer10Min || today >= attendPerDay {
