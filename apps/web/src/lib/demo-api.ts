@@ -21,6 +21,7 @@ const users: U[] = [
   { id: uid(), email: "admin@hm.com.br", name: "Admin HM", role: "admin", isActive: true, mfaEnabled: false, theme: "system", password: "demo", lastLoginAt: null, createdAt: now() },
   { id: uid(), email: "heliton@hm.com.br", name: "Heliton Souza", role: "agent", isActive: true, mfaEnabled: false, theme: "system", password: "demo", lastLoginAt: null, createdAt: now() },
   { id: uid(), email: "paula@hm.com.br", name: "Paula Reis", role: "agent", isActive: true, mfaEnabled: false, theme: "system", password: "demo", lastLoginAt: null, createdAt: now() },
+  { id: "u-outro", email: "marina@hm.com.br", name: "Marina", role: "agent", isActive: true, mfaEnabled: false, theme: "system", password: "demo", lastLoginAt: null, createdAt: now() },
 ];
 const teams: T[] = ["Clientes novos", "Emissão de notas", "Folha de pagamento"].map((name) => ({ id: uid(), name, description: "", createdAt: now() }));
 const members = new Set<string>([`${teams[2]!.id}:${users[1]!.id}`, `${teams[1]!.id}:${users[2]!.id}`]);

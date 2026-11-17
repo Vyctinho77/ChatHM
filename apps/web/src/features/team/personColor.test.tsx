@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AssigneeChip } from "@/features/conversations/AssigneeChip";
 import { PersonName } from "./PersonName";
-import { COLOR_KEYS, autoColorKey, colorInkVar, colorVar, isColorKey, resolveColorKey } from "./personColor";
+import { AUTO_KEYS, assignColors, autoColorKey, colorInkVar, colorVar, isColorKey, resolveColorKey } from "./personColor";
 
 const withPeople = (ui: React.ReactElement, people: { id: string; color: string }[] = []) => {
   const qc = new QueryClient();
@@ -12,14 +12,42 @@ const withPeople = (ui: React.ReactElement, people: { id: string; color: string 
 };
 
 describe("cor do nome das pessoas", () => {
-  it("a automática é sempre a mesma para a mesma pessoa e sai da paleta", () => {
+  it("a automática é sempre a mesma para a mesma pessoa e é sempre uma cor viva (nunca cinza ou marrom)", () => {
     for (const id of ["a", "b", "c", "0f2c1e6a-7b53-4b4e-9c0a-111122223333"]) {
       expect(autoColorKey(id)).toBe(autoColorKey(id));
-      expect(COLOR_KEYS).toContain(autoColorKey(id));
+      expect(AUTO_KEYS).toContain(autoColorKey(id));
     }
-    // Com muita gente, a paleta toda aparece (a distribuição não colapsa numa cor só).
+    expect(AUTO_KEYS).not.toContain("grafite");
+    expect(AUTO_KEYS).not.toContain("marrom");
     const used = new Set(Array.from({ length: 200 }, (_, i) => autoColorKey(`pessoa-${i}`)));
-    expect(used.size).toBeGreaterThanOrEqual(10);
+    expect(used.size).toBe(AUTO_KEYS.length); // a distribuição usa as cores vivas todas
+    expect([...used].every((k) => k !== "grafite" && k !== "marrom")).toBe(true);
+  });
+
+  it("a equipe recebe cores diferentes entre si, e as escolhidas ficam reservadas", () => {
+    const people = Array.from({ length: 10 }, (_, i) => ({ id: `pessoa-${i}`, color: "" }));
+    const map = assignColors(people);
+    expect(new Set(map.values()).size).toBe(10); // ninguém repete enquanto houver cor viva livre
+    // Uma equipe pequena fica bem espaçada em tom: nenhuma dupla parecida (como laranja ao lado de vermelho).
+    const hue: Record<string, number> = { verde: 142, azul: 216, roxo: 272, rosa: 334, laranja: 24, ambar: 42, ciano: 190, vermelho: 4, lima: 78, indigo: 246 };
+    for (const n of [2, 3, 4, 5]) {
+      const ks = [...assignColors(people.slice(0, n)).values()];
+      let min = 360;
+      for (let i = 0; i < ks.length; i++) for (let j = i + 1; j < ks.length; j++) min = Math.min(min, Math.min(Math.abs(hue[ks[i]!]! - hue[ks[j]!]!), 360 - Math.abs(hue[ks[i]!]! - hue[ks[j]!]!)));
+      expect(min).toBeGreaterThanOrEqual(n <= 3 ? 80 : 45);
+    }
+    // A ordem da lista não muda o resultado, e o resultado é estável.
+    const shuffled = [...people].reverse();
+    expect([...assignColors(shuffled)].sort()).toEqual([...map].sort());
+    // Uma cor escolhida pelo administrador vale e não é dada a mais ninguém automaticamente.
+    const withChoice = assignColors([{ id: "ana", color: "azul" }, ...Array.from({ length: 9 }, (_, i) => ({ id: `p${i}`, color: "" }))]);
+    expect(withChoice.get("ana")).toBe("azul");
+    expect([...withChoice].filter(([id, k]) => id !== "ana" && k === "azul")).toHaveLength(0);
+    // Cor escolhida inválida ou vazia cai na automática; o cinza escolhido à mão é respeitado.
+    expect(assignColors([{ id: "x", color: "fucsia" }]).get("x")).toBe(autoColorKey("x"));
+    expect(assignColors([{ id: "x", color: "grafite" }]).get("x")).toBe("grafite");
+    // Com mais gente que cores, repete (não trava).
+    expect(assignColors(Array.from({ length: 30 }, (_, i) => ({ id: `m${i}` }))).size).toBe(30);
   });
 
   it("a cor escolhida vale; vazia ou fora da paleta cai na automática", () => {
