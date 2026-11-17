@@ -7,6 +7,7 @@ import { Download, LoaderCircle, X, ZoomIn, ZoomOut } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { formatBytes } from "@/lib/format";
 import type { Message } from "./types";
+import { applyReadingOrder } from "./pdfReadingOrder";
 import "./pdf-text-layer.css";
 
 GlobalWorkerOptions.workerSrc = workerSrc;
@@ -70,6 +71,9 @@ function PdfPage({
         t.style.setProperty("--total-scale-factor", String(scale));
         layer = new TextLayer({ textContentSource: page.streamTextContent(), container: t, viewport });
         await layer.render();
+        if (cancelled) return;
+        // A seleção segue a ordem do DOM: reordena os textos como a pessoa lê (linhas, esquerda→direita) em vez da ordem de desenho do PDF.
+        applyReadingOrder(t, layer.textDivs);
       } catch {
         /* renderização cancelada (zoom/fechar) ou página ilegível: fica em branco */
       }
