@@ -65,12 +65,17 @@ export function InfoTip({
     document.addEventListener("pointerdown", outside);
     document.addEventListener("keydown", key, true);
     window.addEventListener("resize", close);
-    window.addEventListener("scroll", close, true);
+    // Rolar a página fecha o balão; rolar o texto de dentro dele (balão alto) não.
+    const onScroll = (e: Event) => {
+      if (e.target instanceof Node && panel.current?.contains(e.target)) return;
+      close();
+    };
+    window.addEventListener("scroll", onScroll, true);
     return () => {
       document.removeEventListener("pointerdown", outside);
       document.removeEventListener("keydown", key, true);
       window.removeEventListener("resize", close);
-      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("scroll", onScroll, true);
     };
   }, [open]);
 
