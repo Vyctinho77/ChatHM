@@ -19,6 +19,7 @@ import { Composer } from "./Composer";
 import { getDraft, setDraft } from "./drafts";
 import { ImageViewer, type ViewableImage } from "./ImageViewer";
 import { MessageBubble } from "./MessageBubble";
+import { repeatedCaptionIds } from "./repeatedCaptions";
 import type { ViewablePdf } from "./PdfViewer";
 
 // pdf.js é pesado: só é baixado quando alguém abre um PDF.
@@ -159,6 +160,7 @@ export function ChatPanel({
   const renderAll = expanded || term.length > 0 || !!targetMsg;
   const startIdx = renderAll ? 0 : Math.max(0, all.length - windowSize);
   const shown = startIdx > 0 ? all.slice(startIdx) : all;
+  const repeatedCaptions = useMemo(() => repeatedCaptionIds(shown), [shown]);
   const anchorHeight = useRef(0);
   useLayoutEffect(() => {
     startIdxRef.current = startIdx;
@@ -592,6 +594,7 @@ export function ChatPanel({
                     contact={c.contact}
                     me={actions.me.name}
                     showAuthor={showAuthor}
+                    hideCaption={repeatedCaptions.has(m.id)}
                     startsGroup={startsGroup}
                     animateIn={new Date(m.sentAt).getTime() > openedAt}
                     term={term}

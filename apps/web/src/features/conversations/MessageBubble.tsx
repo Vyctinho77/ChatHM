@@ -124,7 +124,7 @@ function StickerBody({ m }: { m: Extract<Message, { kind: "sticker" }> }) {
  * Como no WhatsApp: a miniatura minúscula (vem junto com a mensagem) aparece desfocada na hora, a versão média carrega só quando o
  * balão chega perto da tela e entra suavemente. O original só é baixado ao abrir a foto.
  */
-function ProgressiveImage({ m }: { m: Extract<Message, { kind: "image" }> }) {
+function ProgressiveImage({ m, alt }: { m: Extract<Message, { kind: "image" }>; alt: string }) {
   const [loaded, setLoaded] = useState(false);
   const ratio = m.width && m.height ? m.width / m.height : undefined;
   return (
@@ -133,7 +133,7 @@ function ProgressiveImage({ m }: { m: Extract<Message, { kind: "image" }> }) {
       <img
         ref={(el) => { if (el?.complete && el.naturalWidth > 0) setLoaded(true); }}
         src={previewUrl(m.url)}
-        alt={m.caption ?? "Imagem"}
+        alt={alt}
         width={m.width}
         height={m.height}
         loading="lazy"
@@ -148,19 +148,23 @@ function ProgressiveImage({ m }: { m: Extract<Message, { kind: "image" }> }) {
 function ImageBody({
   m,
   showAuthor,
+  hideCaption,
   onOpen,
   term,
   renderAuthor,
 }: {
   m: Extract<Message, { kind: "image" }>;
   showAuthor: boolean;
+  /** A legenda aparece no último arquivo da sequência (ver repeatedCaptions.ts). */
+  hideCaption?: boolean;
   onOpen?: (id: string) => void;
   term?: string;
   renderAuthor?: (m: Message) => React.ReactNode;
 }) {
   const wantsAuthor = m.direction === "in" && m.group && showAuthor;
   const author = wantsAuthor ? (renderAuthor ? renderAuthor(m) : m.authorName ? <p className="text-[12.5px] font-semibold">{m.authorName}:</p> : null) : null;
-  const hasText = !!m.caption || !!author;
+  const caption = hideCaption ? undefined : m.caption;
+  const hasText = !!caption || !!author;
   return (
     <div className="w-72 max-w-full">
       {/* Imagem de ponta a ponta: o balão só tem uma borda fina em volta. */}
@@ -172,7 +176,7 @@ function ImageBody({
             aria-label="Abrir imagem"
             className="block w-full cursor-zoom-in"
           >
-            <ProgressiveImage m={m} />
+            <ProgressiveImage m={m} alt={caption ?? "Imagem"} />
           </button>
         ) : (
           <div
@@ -192,9 +196,9 @@ function ImageBody({
         <div className="w-0 min-w-full px-2 pb-1 pt-1.5">
           {author}
           <div className="flex flex-wrap items-end">
-            {m.caption && (
+            {caption && (
               <p className="whitespace-pre-wrap break-words">
-                <RichText text={m.caption} term={term} />
+                <RichText text={caption} term={term} />
               </p>
             )}
             <Meta m={m} />
@@ -347,6 +351,7 @@ function LocationCard({ m }: { m: Extract<Message, { kind: "location" }> }) {
 export function MessageBubble({
   m,
   showAuthor,
+  hideCaption,
   startsGroup = false,
   animateIn,
   onOpenImage,
@@ -373,6 +378,8 @@ export function MessageBubble({
   /** Nome de quem está usando o ChatHM (áudios enviados sem atendente identificado). */
   me?: string;
   showAuthor: boolean;
+  /** Arquivo enviado junto com outros de mesma legenda: o texto aparece só no último (ver repeatedCaptions.ts). */
+  hideCaption?: boolean;
   /** A primeira mensagem de cada sequência ganha uma cauda no lado do remetente. */
   startsGroup?: boolean;
   /** Abre o menu de ações com o botão direito. */
@@ -514,12 +521,12 @@ export function MessageBubble({
         {m.kind === "document" && (
           <div className="flex flex-col gap-1 pt-1">
             <DocumentCard m={m} onOpen={onOpenPdf} term={term} />
-            {m.caption && <p className="whitespace-pre-wrap break-words pt-1"><RichText text={m.caption} term={term} /></p>}
+            {m.caption && !hideCaption && <p className="whitespace-pre-wrap break-words pt-1"><RichText text={m.caption} term={term} /></p>}
             <Meta m={m} />
           </div>
         )}
 
-        {m.kind === "image" && <ImageBody m={m} showAuthor={showAuthor} onOpen={onOpenImage} term={term} renderAuthor={renderAuthor} />}
+        {m.kind === "image" && <ImageBody m={m} showAuthor={showAuthor} hideCaption={hideCaption} onOpen={onOpenImage} term={term} renderAuthor={renderAuthor} />}
         {m.kind === "sticker" && <StickerBody m={m} />}
 
         {m.kind === "unsupported" && (

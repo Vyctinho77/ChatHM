@@ -5,11 +5,11 @@ import { MemoryRouter } from "react-router";
 import { MessageBubble } from "./MessageBubble";
 import type { Message } from "./types";
 
-const bubble = (m: Record<string, unknown>) =>
+const bubble = (m: Record<string, unknown>, hideCaption = false) =>
   renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter>
-        <MessageBubble m={{ id: "m1", conversationId: "c", direction: "in", sentAt: "2026-11-12T13:00:00Z", ...m } as Message} showAuthor={false} />
+        <MessageBubble m={{ id: "m1", conversationId: "c", direction: "in", sentAt: "2026-11-12T13:00:00Z", ...m } as Message} showAuthor={false} hideCaption={hideCaption} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -25,5 +25,24 @@ describe("mídia sem arquivo: o que a tela diz", () => {
       expect(bubble({ ...m, historical: true, mediaState: "retrying" })).toContain("pedindo o arquivo ao celular");
       expect(bubble({ ...m, historical: true, mediaState: "expired" })).toContain("não está mais disponível");
     }
+  });
+});
+
+describe("legenda repetida em arquivos enviados juntos", () => {
+  const pdf = { kind: "document", fileName: "DARF PIS.pdf", mimeType: "application/pdf", caption: "Bom dia, segue em anexo as guias" };
+  const photo = { kind: "image", url: "/api/v1/attachments/x", caption: "Bom dia, segue em anexo as guias" };
+
+  it("mostra a legenda normalmente", () => {
+    expect(bubble(pdf)).toContain("segue em anexo as guias");
+    expect(bubble(photo)).toContain("segue em anexo as guias");
+  });
+
+  it("com a legenda ocultada, o arquivo continua aparecendo e o texto some", () => {
+    const d = bubble(pdf, true);
+    expect(d).toContain("DARF PIS.pdf");
+    expect(d).not.toContain("segue em anexo as guias");
+    const i = bubble(photo, true);
+    expect(i).toContain("Abrir imagem");
+    expect(i).not.toContain("segue em anexo as guias");
   });
 });
