@@ -83,13 +83,13 @@ describe("InternalChatPanel", () => {
 describe("Sidebar entry", () => {
   const side = (unread: number) => wrap(seeded(unread), <Sidebar me={me} />);
 
-  it("lists the internal chat below Envios automáticos for everyone", () => {
+  it("lists the internal chat below Atendimento por IA for everyone", () => {
     const html = side(0);
-    expect(html.indexOf("Envios automáticos")).toBeGreaterThan(-1);
-    expect(html.indexOf("Chat interno")).toBeGreaterThan(html.indexOf("Envios automáticos"));
+    expect(html.indexOf("Atendimento por IA")).toBeGreaterThan(-1);
+    expect(html.indexOf("Chat interno")).toBeGreaterThan(html.indexOf("Atendimento por IA"));
     const agent = renderToStaticMarkup(<QueryClientProvider client={seeded()}><MemoryRouter><Sidebar me={{ ...me, user: { ...me.user, role: "agent" } }} /></MemoryRouter></QueryClientProvider>);
     expect(agent).toContain("Chat interno");
-    expect(agent).not.toContain("Envios automáticos"); // só administradores
+    expect(agent).not.toContain("Atendimento por IA"); // só administradores
   });
 
   it("shows the unread badge and names it for screen readers", () => {

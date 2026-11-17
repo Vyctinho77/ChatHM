@@ -17,7 +17,7 @@ export const mainNav: NavItem[] = [
 export const secondaryNav: NavItem[] = [
   { to: "/equipe", label: "Equipe", icon: UsersRound },
   { to: "/integracoes/mcp", label: "MCP", icon: Plug },
-  { to: "/automacao", label: "Envios automáticos", icon: AiIcon, roles: ["admin"] },
+  { to: "/automacao", label: "Atendimento por IA", icon: AiIcon, roles: ["admin"] },
   { to: "/interno", label: "Chat interno", icon: MessagesSquare },
   { to: "/whatsapp", label: "Conectar", icon: WhatsAppIcon, roles: ["admin"] },
 ];
