@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "motion/react";
-import { getDocument, GlobalWorkerOptions, TextLayer, type PDFDocumentLoadingTask, type PDFDocumentProxy, type RenderTask } from "pdfjs-dist";
+import { getDocument, GlobalWorkerOptions, OPS, TextLayer, type PDFDocumentLoadingTask, type PDFDocumentProxy, type RenderTask } from "pdfjs-dist";
 import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { Check, ChevronDown, ChevronUp, Download, KeyRound, LoaderCircle, Maximize2, MoveHorizontal, Search, X, ZoomIn, ZoomOut } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { formatBytes } from "@/lib/format";
 import type { Message } from "./types";
 import { applyReadingOrder } from "./pdfReadingOrder";
+import { installTextLayerSelection } from "./pdfSelection";
+import { extractLines, type Lines } from "./pdfCells";
 import { findMatches, type Match } from "./pdfSearch";
 import { findAccessKeys, formatAccessKey } from "./pdfAccessKey";
 import "./pdf-text-layer.css";
@@ -99,8 +101,21 @@ function PdfPage({
         await layer.render();
         if (cancelled) return;
         divs.current = layer.textDivs; // na ordem do PDF (a mesma da busca), antes de reordenar o DOM
+        // Marcador que impede a seleção de "pular" ao arrastar sobre espaços sem texto (ver pdfSelection.ts). O núcleo do pdf.js não o cria.
+        const endOfContent = document.createElement("div");
+        endOfContent.className = "endOfContent";
+        t.append(endOfContent);
         // A seleção segue a ordem do DOM: reordena os textos como a pessoa lê (linhas, esquerda→direita) em vez da ordem de desenho do PDF.
-        applyReadingOrder(t, layer.textDivs);
+        // As bordas desenhadas na página (células de formulário/DANFE) dizem quais textos são do mesmo campo.
+        let lines: Lines | undefined;
+        try {
+          const ops = await page.getOperatorList();
+          lines = extractLines(ops.fnArray, ops.argsArray, OPS, (x, y) => viewport.convertToViewportPoint(x, y) as [number, number]);
+        } catch {
+          lines = undefined; // sem bordas: vale só a ordem de leitura
+        }
+        if (cancelled) return;
+        applyReadingOrder(t, layer.textDivs, lines, { width: viewport.width, height: viewport.height });
         setTick((n) => n + 1);
       } catch {
         /* renderização cancelada (zoom/fechar) ou página ilegível: fica em branco */
@@ -139,15 +154,7 @@ function PdfPage({
       style={{ width, height: Math.round(width * (own ?? ratio)) }}
     >
       <canvas ref={canvas} className="absolute inset-0 size-full" />
-      <div
-        ref={text}
-        className="pdf-text-layer"
-        onPointerDown={() => {
-          const el = text.current;
-          el?.classList.add("selecting");
-          window.addEventListener("pointerup", () => el?.classList.remove("selecting"), { once: true });
-        }}
-      />
+      <div ref={text} className="pdf-text-layer" />
     </div>
   );
 }
@@ -265,6 +272,9 @@ export function PdfViewer({ pdf, onClose }: { pdf: ViewablePdf; onClose: () => v
     ro.observe(box); // dispara já na primeira observação
     return () => ro.disconnect();
   }, [box]);
+
+  // Seleção sem "pulos" ao arrastar sobre espaços sem texto (todas as páginas).
+  useEffect(() => (box ? installTextLayerSelection(box) : undefined), [box]);
 
   const zoomBy = useCallback((d: number) => {
     setZoom((z) => {

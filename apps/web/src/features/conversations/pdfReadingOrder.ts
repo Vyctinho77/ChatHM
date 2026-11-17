@@ -5,10 +5,13 @@
  * fiscais e formulários isso mistura rótulos e valores: arrastar de A até B seleciona também tudo que o PDF desenhou "entre" eles,
  * mesmo longe na tela. Aqui os textos são reordenados como se lê:
  *   1. palavras da mesma linha e próximas viram um trecho;
- *   2. trechos empilhados e alinhados à esquerda (rótulo + valor da mesma célula, parágrafos) viram um bloco/coluna;
+ *   2. trechos empilhados na mesma coluna (rótulo + valor da mesma célula, parágrafos) viram um bloco;
  *   3. os blocos seguem de cima para baixo e da esquerda para a direita, e cada bloco é lido de cima para baixo.
  * Assim, selecionar um campo pega o rótulo e o valor dele, e não os campos vizinhos.
  */
+
+import type { Cell, Lines } from "./pdfCells";
+import { cellAt } from "./pdfCells";
 
 export type Box = { left: number; top: number; width: number; height: number };
 
@@ -60,12 +63,15 @@ function toSegments(boxes: Box[], lines: number[][]): Seg[] {
   return segs;
 }
 
-/** Devolve os índices das caixas em ordem de leitura. Elementos sem tamanho ficam no fim, na ordem original. */
-export function readingOrder(boxes: Box[]): number[] {
-  const idx = boxes.map((_, i) => i).filter((i) => boxes[i]!.width > 0 || boxes[i]!.height > 0);
+type Block = { head: Box; order: number[] };
+
+/** Blocos dos textos soltos (sem célula): trechos empilhados na mesma coluna viram um bloco. */
+function freeBlocks(boxes: Box[], idx: number[]): Block[] {
+  if (!idx.length) return [];
   const segs = toSegments(boxes, toLines(boxes, idx));
 
-  // Blocos: cada trecho se liga ao trecho logo acima dele quando estão alinhados à esquerda e quase encostados.
+  // Cada trecho se liga ao trecho logo acima dele quando estão na mesma coluna (os dois ocupam a mesma faixa horizontal, como as
+  // linhas de um parágrafo) e a distância vertical é de poucas linhas de texto.
   const sorted = segs.map((_, i) => i).sort((a, b) => segs[a]!.top - segs[b]!.top || segs[a]!.left - segs[b]!.left);
   const parent = new Map<number, number>();
   const hasChild = new Set<number>();
@@ -78,9 +84,11 @@ export function readingOrder(boxes: Box[]): number[] {
       if (p === s) break;
       const above = segs[p]!;
       if (hasChild.has(p)) continue;
+      const hp = above.bottom - above.top;
       const gap = cur.top - above.bottom;
-      const tol = Math.max(3, 0.4 * Math.min(h, above.bottom - above.top));
-      if (Math.abs(above.left - cur.left) <= tol && gap >= -0.5 * h && gap <= Math.max(h, above.bottom - above.top) && gap < bestGap) {
+      const overlap = Math.min(above.right, cur.right) - Math.max(above.left, cur.left);
+      const narrow = Math.min(above.right - above.left, cur.right - cur.left);
+      if (overlap >= 0.4 * narrow && gap >= -0.5 * h && gap <= 3 * Math.max(h, hp) && gap < bestGap) {
         best = p;
         bestGap = gap;
       }
@@ -90,40 +98,67 @@ export function readingOrder(boxes: Box[]): number[] {
       hasChild.add(best);
     }
   }
-  const blocks = new Map<number, number[]>(); // raiz → trechos de cima para baixo
+  const byRoot = new Map<number, number[]>(); // raiz → trechos de cima para baixo
   for (const s of sorted) {
     let root = s;
     while (parent.has(root)) root = parent.get(root)!;
-    blocks.set(root, [...(blocks.get(root) ?? []), s]);
+    byRoot.set(root, [...(byRoot.get(root) ?? []), s]);
   }
+  return [...byRoot.entries()].map(([root, list]) => {
+    const h = segs[root]!;
+    return { head: { left: h.left, top: h.top, width: h.right - h.left, height: h.bottom - h.top }, order: list.flatMap((s) => segs[s]!.members) };
+  });
+}
 
-  // Blocos em linhas (pelo primeiro trecho) e, na linha, da esquerda para a direita.
-  const roots = [...blocks.keys()];
-  const head = roots.map((r) => segs[r]!);
-  const rootLines = toLines(
-    head.map((s) => ({ left: s.left, top: s.top, width: s.right - s.left, height: s.bottom - s.top })),
-    head.map((_, i) => i),
-  );
-  const out: number[] = [];
-  for (const line of rootLines) {
-    for (const r of line) {
-      for (const s of blocks.get(roots[r]!)!) out.push(...segs[s]!.members);
+/**
+ * Devolve os índices das caixas em ordem de leitura. Elementos sem tamanho ficam no fim, na ordem original.
+ * `cells[i]` é a célula (retângulo desenhado no PDF) em que o texto i está, se houver: os textos de uma célula formam um bloco só.
+ */
+export function readingOrder(boxes: Box[], cells?: (Cell | undefined)[]): number[] {
+  const idx = boxes.map((_, i) => i).filter((i) => boxes[i]!.width > 0 || boxes[i]!.height > 0);
+  const inCell = new Map<string, { cell: Cell; items: number[] }>();
+  const free: number[] = [];
+  for (const i of idx) {
+    const c = cells?.[i];
+    if (!c) free.push(i);
+    else {
+      const e = inCell.get(c.id) ?? { cell: c, items: [] };
+      e.items.push(i);
+      inCell.set(c.id, e);
     }
+  }
+  const blocks: Block[] = [
+    ...[...inCell.values()].map(({ cell, items }) => ({
+      head: { left: cell.left, top: cell.top, width: cell.width, height: cell.height },
+      order: toLines(boxes, items).flat(),
+    })),
+    ...freeBlocks(boxes, free),
+  ];
+
+  // Blocos em linhas (pelo canto superior) e, na linha, da esquerda para a direita.
+  const out: number[] = [];
+  for (const line of toLines(blocks.map((b) => b.head), blocks.map((_, i) => i))) {
+    for (const b of line) out.push(...blocks[b]!.order);
   }
   const seen = new Set(out);
   for (let i = 0; i < boxes.length; i++) if (!seen.has(i)) out.push(i);
   return out;
 }
 
-/** Reposiciona os elementos de texto no DOM em ordem de leitura. `container` é a camada; o marcador `endOfContent` fica por último. */
-export function applyReadingOrder(container: HTMLElement, spans: HTMLElement[]): void {
+/**
+ * Reposiciona os elementos de texto no DOM em ordem de leitura. `container` é a camada; o marcador `endOfContent` fica por último.
+ * `lines`: bordas desenhadas na página (px da tela), para agrupar os textos por célula; `page`: tamanho da página (px).
+ */
+export function applyReadingOrder(container: HTMLElement, spans: HTMLElement[], lines?: Lines, page?: { width: number; height: number }): void {
   if (spans.length < 2) return;
   const origin = container.getBoundingClientRect();
   const boxes = spans.map((el) => {
     const r = el.getBoundingClientRect();
     return { left: r.left - origin.left, top: r.top - origin.top, width: r.width, height: r.height };
   });
-  const order = readingOrder(boxes);
+  const size = page ?? { width: origin.width, height: origin.height };
+  const cells = lines && (lines.h.length || lines.v.length) ? boxes.map((b) => cellAt(b.left + b.width / 2, b.top + b.height / 2, lines, size)) : undefined;
+  const order = readingOrder(boxes, cells);
   const end = container.querySelector(".endOfContent");
   const frag = document.createDocumentFragment();
   for (const i of order) frag.appendChild(spans[i]!);
