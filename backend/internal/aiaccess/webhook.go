@@ -315,9 +315,29 @@ func (s *Service) post(ctx context.Context, target, secret, event, deliveryID st
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 	if resp.StatusCode/100 != 2 {
-		return resp.StatusCode, fmt.Errorf("o receptor respondeu %d", resp.StatusCode)
+		return resp.StatusCode, fmt.Errorf("o receptor respondeu %d%s", resp.StatusCode, statusHint(resp.StatusCode))
 	}
 	return resp.StatusCode, nil
+}
+
+// statusHint explica em uma frase os códigos de erro mais comuns do receptor, para quem configura não precisar adivinhar.
+func statusHint(code int) string {
+	switch code {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return " (o receptor recusou: confira o segredo/assinatura ou o token que ele exige)"
+	case http.StatusNotFound:
+		return " (o endereço não existe: confira o caminho da URL)"
+	case http.StatusMethodNotAllowed:
+		return " (o endereço não aceita POST: use um endereço feito para receber avisos)"
+	case http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType:
+		return " (o receptor não aceitou o formato do aviso, JSON via POST)"
+	case http.StatusTooManyRequests:
+		return " (o receptor limitou as chamadas; o ChatHM tenta de novo)"
+	}
+	if code >= 500 {
+		return " (erro no lado do receptor; o ChatHM tenta de novo)"
+	}
+	return ""
 }
 
 // webhookError reduz o erro a algo curto e sem o endereço completo (que pode ter parâmetros).

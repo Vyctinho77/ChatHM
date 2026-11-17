@@ -53,13 +53,18 @@ export function MessageMenu({ message: m, x, y, onReply, onForward, onEdit, onDe
     const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("mousedown", down);
     document.addEventListener("keydown", key);
-    document.addEventListener("scroll", onClose, true);
+    // Rolar a conversa fecha o menu; rolar dentro do próprio menu não.
+    const scroll = (e: Event) => {
+      if (e.target instanceof Node && ref.current?.contains(e.target)) return;
+      onClose();
+    };
+    document.addEventListener("scroll", scroll, true);
     window.addEventListener("resize", onClose);
     window.addEventListener("blur", onClose);
     return () => {
       document.removeEventListener("mousedown", down);
       document.removeEventListener("keydown", key);
-      document.removeEventListener("scroll", onClose, true);
+      document.removeEventListener("scroll", scroll, true);
       window.removeEventListener("resize", onClose);
       window.removeEventListener("blur", onClose);
     };
