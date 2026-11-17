@@ -216,6 +216,49 @@ body {
   .typing-bubble-dot { animation: none; opacity: 0.7; }
 }
 
+/* Cores dos nomes das pessoas da equipe (paleta de 12, no app todo): sem balão, só o texto colorido. Cada uma tem o tom do tema claro e do escuro,
+   todos com contraste de pelo menos 4,6:1 sobre o painel, a lista selecionada e o balão. "-ink" é a versão para o balão recebido (branco nos dois temas). */
+:root {
+  --pc-verde: #1c6e3a;
+  --pc-verde-ink: #1c6e3a;
+  --pc-azul: #1f5ebd;
+  --pc-azul-ink: #1f5ebd;
+  --pc-roxo: #8439c6;
+  --pc-roxo-ink: #8439c6;
+  --pc-rosa: #b22a65;
+  --pc-rosa-ink: #b22a65;
+  --pc-laranja: #9c4911;
+  --pc-laranja-ink: #9c4911;
+  --pc-ambar: #7e5a07;
+  --pc-ambar-ink: #7e5a07;
+  --pc-ciano: #0e6a7c;
+  --pc-ciano-ink: #0e6a7c;
+  --pc-vermelho: #b82d23;
+  --pc-vermelho-ink: #b82d23;
+  --pc-lima: #4e6812;
+  --pc-lima-ink: #4e6812;
+  --pc-indigo: #4739c6;
+  --pc-indigo-ink: #4739c6;
+  --pc-marrom: #86573c;
+  --pc-marrom-ink: #86573c;
+  --pc-grafite: #5a626d;
+  --pc-grafite-ink: #5a626d;
+}
+.dark {
+  --pc-verde: #33cc6b;
+  --pc-azul: #6a9ce7;
+  --pc-roxo: #b588dd;
+  --pc-rosa: #e07ba7;
+  --pc-laranja: #e97d35;
+  --pc-ambar: #f2ad0d;
+  --pc-ciano: #19c3e6;
+  --pc-vermelho: #e57d76;
+  --pc-lima: #a3d926;
+  --pc-indigo: #9890df;
+  --pc-marrom: #c08f72;
+  --pc-grafite: #929aa5;
+}
+
 /* Barras de rolagem finas. */
 * {
   scrollbar-width: thin;

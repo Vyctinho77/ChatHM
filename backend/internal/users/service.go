@@ -44,6 +44,8 @@ type User struct {
 	LastLoginAt *time.Time `json:"lastLoginAt"`
 	CreatedAt   time.Time  `json:"createdAt"`
 	Teams       []TeamRef  `json:"teams"`
+	// Color: chave da paleta de cores do nome na equipe ("" = automática).
+	Color string `json:"color"`
 }
 
 type Service struct {
@@ -56,7 +58,7 @@ func NewService(db *pgxpool.Pool, hasher auth.Hasher) *Service {
 }
 
 const selectUser = `
-	SELECT u.id, u.email, u.name, u.role, u.is_active, u.mfa_enabled, u.last_login_at, u.created_at,
+	SELECT u.id, u.email, u.name, u.role, u.is_active, u.mfa_enabled, u.last_login_at, u.created_at, u.color,
 	       coalesce(json_agg(json_build_object('id', t.id, 'name', t.name) ORDER BY t.name)
 	                FILTER (WHERE t.id IS NOT NULL), '[]')
 	  FROM users u
@@ -66,7 +68,7 @@ const selectUser = `
 func scanUser(row pgx.Row) (User, error) {
 	var u User
 	var role string
-	err := row.Scan(&u.ID, &u.Email, &u.Name, &role, &u.IsActive, &u.MFAEnabled, &u.LastLoginAt, &u.CreatedAt, &u.Teams)
+	err := row.Scan(&u.ID, &u.Email, &u.Name, &role, &u.IsActive, &u.MFAEnabled, &u.LastLoginAt, &u.CreatedAt, &u.Color, &u.Teams)
 	u.Role = auth.Role(role)
 	return u, err
 }
@@ -190,6 +192,8 @@ func (s *Service) Create(ctx context.Context, actorID, ip string, in CreateInput
 }
 
 type UpdateInput struct {
+	// Color: chave da paleta (ColorKeys) ou "" para a cor automática.
+	Color    *string    `json:"color"`
 	Name     *string    `json:"name"`
 	Role     *auth.Role `json:"role"`
 	IsActive *bool      `json:"isActive"`
@@ -207,6 +211,9 @@ func (s *Service) Update(ctx context.Context, actorID, ip, id string, in UpdateI
 		if !validName(n) {
 			f["name"] = "Informe um nome de até 120 caracteres."
 		}
+	}
+	if in.Color != nil && !ValidColor(*in.Color) {
+		f["color"] = "Escolha uma das cores da lista (ou automática)."
 	}
 	if in.Role != nil && !in.Role.Valid() {
 		f["role"] = "Perfil deve ser administrador, gestor ou atendente."
@@ -265,8 +272,8 @@ func (s *Service) Update(ctx context.Context, actorID, ip, id string, in UpdateI
 		}
 
 		if _, err := tx.Exec(ctx, `
-			UPDATE users SET name = coalesce($2, name), role = $3, is_active = $4 WHERE id = $1`,
-			id, in.Name, newRole, newActive); err != nil {
+			UPDATE users SET name = coalesce($2, name), role = $3, is_active = $4, color = coalesce($5, color) WHERE id = $1`,
+			id, in.Name, newRole, newActive, in.Color); err != nil {
 			return err
 		}
 		if curActive && !newActive {
@@ -277,6 +284,9 @@ func (s *Service) Update(ctx context.Context, actorID, ip, id string, in UpdateI
 		meta := map[string]any{}
 		if in.Name != nil {
 			meta["name"] = true
+		}
+		if in.Color != nil {
+			meta["color"] = *in.Color
 		}
 		if newRole != curRole {
 			meta["role"] = newRole
@@ -392,12 +402,13 @@ type Person struct {
 	Name  string    `json:"name"`
 	Role  auth.Role `json:"role"`
 	Teams []string  `json:"teams"`
+	Color string    `json:"color"` // chave da paleta ("" = automática)
 }
 
 // People lista os usuários ativos do escritório.
 func (s *Service) People(ctx context.Context) ([]Person, error) {
 	rows, err := s.db.Query(ctx, `
-		SELECT u.id, u.name, u.role,
+		SELECT u.id, u.name, u.role, u.color,
 		       coalesce(array_agg(t.name::text ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL), '{}')
 		  FROM users u
 		  LEFT JOIN team_members tm ON tm.user_id = u.id
@@ -413,7 +424,7 @@ func (s *Service) People(ctx context.Context) ([]Person, error) {
 	for rows.Next() {
 		var p Person
 		var role string
-		if err := rows.Scan(&p.ID, &p.Name, &role, &p.Teams); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &role, &p.Color, &p.Teams); err != nil {
 			return nil, err
 		}
 		p.Role = auth.Role(role)

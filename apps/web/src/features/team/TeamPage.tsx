@@ -6,6 +6,8 @@ import { Menu, MenuItem } from "@/components/Menu";
 import { Page, PageHeader } from "@/components/list";
 import { ListSkeleton } from "@/components/Skeleton";
 import { Alert, Button, Field, IconButton, Modal, Spinner } from "@/components/ui";
+import { COLOR_KEYS, COLOR_LABEL, colorVar, resolveColorKey } from "./personColor";
+import { PersonName } from "./PersonName";
 import { ApiError, errorMessage, type FieldErrors } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { useMe, type Role } from "@/features/auth/api";
@@ -130,7 +132,7 @@ function PeopleTab({ creating, onCloseCreate }: { creating: boolean; onCloseCrea
               <Avatar name={u.name} />
               <div className="min-w-0 flex-1">
                 <p className="flex items-center gap-2 font-medium">
-                  <span className="truncate">{u.name}</span>
+                  <PersonName id={u.id} className="truncate">{u.name}</PersonName>
                   {u.id === me?.user.id && <span className="shrink-0 text-xs text-muted">(você)</span>}
                   {u.mfaEnabled && <ShieldCheck className="size-4 shrink-0 text-brand-ink" aria-label="MFA ativo" />}
                 </p>
@@ -320,12 +322,50 @@ function InviteCodeModal({ result, onClose }: { result: InviteResult; onClose: (
   );
 }
 
+/** Cor do nome da pessoa na equipe: só o texto colorido, sem balão. "Automática" deixa o app escolher uma cor fixa para ela. */
+function ColorPicker({ userId, name, value, onChange }: { userId: string; name: string; value: string; onChange: (k: string) => void }) {
+  const shown = resolveColorKey(userId, value);
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="text-[13px] font-medium">Cor do nome</legend>
+      <p className="text-xs text-muted">
+        Como a equipe vê <span className="font-semibold" style={{ color: colorVar(shown) }}>{name}</span> nas conversas, no chat interno e nas listas. Vale para qualquer perfil.
+      </p>
+      <div role="radiogroup" aria-label="Cor do nome" className="flex flex-wrap items-center gap-1.5">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={value === ""}
+          onClick={() => onChange("")}
+          className={cn("h-7 rounded-full border px-2.5 text-xs", value === "" ? "border-accent bg-hover font-medium" : "border-line text-muted hover:bg-hover")}
+        >
+          Automática
+        </button>
+        {COLOR_KEYS.map((k) => (
+          <button
+            key={k}
+            type="button"
+            role="radio"
+            aria-checked={value === k}
+            aria-label={COLOR_LABEL[k]}
+            title={COLOR_LABEL[k]}
+            onClick={() => onChange(k)}
+            className={cn("size-7 rounded-full border-2 transition-transform hover:scale-110", value === k ? "border-fg" : "border-transparent")}
+            style={{ backgroundColor: colorVar(k) }}
+          />
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
   const update = useUpdateUser();
   const setTeams = useSetUserTeams();
   const [name, setName] = useState(user.name);
   const [role, setRole] = useState<Role>(user.role);
   const [active, setActive] = useState(user.isActive);
+  const [color, setColor] = useState(user.color ?? "");
   const current = user.teams.map((t) => t.id);
   const [teamIds, setTeamIds] = useState(current);
   const [error, setError] = useState("");
@@ -334,7 +374,7 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
     e.preventDefault();
     setError("");
     try {
-      await update.mutateAsync({ id: user.id, name, role, isActive: active });
+      await update.mutateAsync({ id: user.id, name, role, isActive: active, color });
       await setTeams.mutateAsync({ userId: user.id, current, next: teamIds });
       onClose();
     } catch (err) {
@@ -348,6 +388,7 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
         {error && <Alert>{error}</Alert>}
         <Field label="Nome" value={name} onChange={(e) => setName(e.target.value)} required />
         <RoleSelect value={role} onChange={setRole} />
+        <ColorPicker userId={user.id} name={name || user.name} value={color} onChange={setColor} />
         <TeamCheckboxes value={teamIds} onChange={setTeamIds} />
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" className="size-4" checked={active} onChange={(e) => setActive(e.target.checked)} />

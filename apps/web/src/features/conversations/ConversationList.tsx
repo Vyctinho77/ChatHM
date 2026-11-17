@@ -1,3 +1,4 @@
+import { PersonName } from "@/features/team/PersonName";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { AnimatePresence, motion } from "motion/react";
@@ -365,12 +366,22 @@ const ConversationRow = memo(function ConversationRow({
             </span>
             {/* Embaixo da hora: quem está atendendo (nomes grandes de cliente não escondem o responsável). */}
             {c.assignee && c.status !== "closed" && (
-              <span
-                className={cn("ml-auto max-w-[42%] shrink-0 truncate text-[11px]", c.assignee.id === myId ? "font-medium text-brand-ink" : "text-muted")}
-                title={c.assignee.id === myId ? "Você está atendendo" : `Atendendo: ${c.assignee.name}`}
-              >
+              <span className="ml-auto max-w-[42%] shrink-0 truncate text-[11px]" title={c.assignee.id === myId ? "Você está atendendo" : `Atendendo: ${c.assignee.name}`}>
                 <span className="sr-only">Atendendo: </span>
-                {c.assignee.id === myId ? "Você" : c.participants?.some((p) => p.id === myId) ? `${c.assignee.name.trim().split(/\s+/)[0]} + você` : c.assignee.name.trim().split(/\s+/)[0]}
+                {/* Cada nome na cor da pessoa (definida em Equipe), só o texto, sem balão. */}
+                {c.assignee.id === myId ? (
+                  <PersonName id={myId}>Você</PersonName>
+                ) : (
+                  <>
+                    <PersonName id={c.assignee.id}>{c.assignee.name.trim().split(/\s+/)[0]}</PersonName>
+                    {c.participants?.some((p) => p.id === myId) && (
+                      <>
+                        <span className="text-muted"> + </span>
+                        <PersonName id={myId}>você</PersonName>
+                      </>
+                    )}
+                  </>
+                )}
               </span>
             )}
             <AnimatePresence initial={false}>

@@ -30,7 +30,7 @@ describe("decideTransfer", () => {
 
 describe("TransferReminderDialog", () => {
   it("shows the reminder text, who gets it and the three choices", () => {
-    const html = renderToStaticMarkup(<TransferReminderDialog reminder={reminder} person={{ id: "p", name: "Bruno", role: "agent", teams: [] }} onConfirm={() => undefined} onCancel={() => undefined} />);
+    const html = renderToStaticMarkup(<TransferReminderDialog reminder={reminder} person={{ id: "p", name: "Bruno", role: "agent", teams: [], color: "" }} onConfirm={() => undefined} onCancel={() => undefined} />);
     expect(html).toContain("Cliente espera o contrato");
     expect(html).toContain("Bruno");
     expect(html).toContain("Transferir com o lembrete");

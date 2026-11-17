@@ -1,6 +1,7 @@
 import { Avatar } from "@/components/Avatar";
 import { Modal, Spinner } from "@/components/ui";
 import { usePeople } from "@/features/team/api";
+import { PersonName } from "@/features/team/PersonName";
 import { RoleBadge } from "./RoleBadge";
 import { roleOrder } from "./roles";
 
@@ -18,7 +19,7 @@ export function MembersDialog({ myId, onClose }: { myId: string; onClose: () => 
             <Avatar name={p.name} size="sm" />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium">
-                {p.name}
+                <PersonName id={p.id} className="font-medium">{p.name}</PersonName>
                 {p.id === myId && <span className="font-normal text-muted"> (você)</span>}
               </span>
               {p.teams.length > 0 && <span className="block truncate text-xs text-muted">{p.teams.join(", ")}</span>}

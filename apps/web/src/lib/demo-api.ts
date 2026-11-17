@@ -5,7 +5,7 @@ import { classify, normalize, normalizeKeyword, validWildcards, type DemoKeyword
 import type { Theme } from "./theme";
 
 type Role = "admin" | "agent";
-type U = { id: string; email: string; name: string; role: Role; isActive: boolean; mfaEnabled: boolean; theme: Theme; password: string; lastLoginAt: string | null; createdAt: string };
+type U = { id: string; email: string; name: string; color?: string; role: Role; isActive: boolean; mfaEnabled: boolean; theme: Theme; password: string; lastLoginAt: string | null; createdAt: string };
 type T = { id: string; name: string; description: string; createdAt: string };
 
 export class DemoError extends Error {
@@ -95,7 +95,7 @@ const me = (u: U) => ({
   mfaRequired: false,
   mfaSetupRequired: false,
 });
-const userView = (u: U) => ({ id: u.id, email: u.email, name: u.name, role: u.role, isActive: u.isActive, mfaEnabled: u.mfaEnabled, lastLoginAt: u.lastLoginAt, createdAt: u.createdAt, teams: teamsOf(u) });
+const userView = (u: U) => ({ id: u.id, email: u.email, name: u.name, role: u.role, isActive: u.isActive, mfaEnabled: u.mfaEnabled, lastLoginAt: u.lastLoginAt, createdAt: u.createdAt, teams: teamsOf(u), color: u.color ?? "" });
 const teamView = (t: T) => ({ ...t, memberCount: memberCount(t) });
 
 function requireSession(): U {
@@ -394,7 +394,7 @@ export async function demoApi(method: string, path: string, body: Body = {}): Pr
       return {
         people: users
           .filter((u) => u.isActive)
-          .map((u) => ({ id: u.id, name: u.name, role: u.role, teams: teamsOf(u).map((t) => t.name) }))
+          .map((u) => ({ id: u.id, name: u.name, role: u.role, teams: teamsOf(u).map((t) => t.name), color: u.color ?? "" }))
           .sort((a, b) => a.name.localeCompare(b.name)),
       };
     case "GET /users":
@@ -426,6 +426,7 @@ export async function demoApi(method: string, path: string, body: Body = {}): Pr
       if (losing && users.filter((x) => x.role === "admin" && x.isActive).length <= 1) throw new DemoError(409, "last_admin", "Deve existir ao menos um administrador ativo.");
       if (typeof body.name === "string") u.name = body.name.trim();
       if (body.role) u.role = body.role as Role;
+      if (typeof body.color === "string") u.color = body.color;
       if (typeof body.isActive === "boolean") u.isActive = body.isActive;
       if (session?.id === u.id && u.role !== "admin") session = u;
       return userView(u);

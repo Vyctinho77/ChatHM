@@ -12,6 +12,8 @@ export type User = {
   lastLoginAt: string | null;
   createdAt: string;
   teams: { id: string; name: string }[];
+  /** Chave da cor do nome (paleta em personColor.ts); vazio = automática. */
+  color: string;
 };
 
 export type Team = { id: string; name: string; description: string; memberCount: number; createdAt: string };
@@ -49,6 +51,7 @@ function useInvalidateAll() {
   return () => {
     void qc.invalidateQueries({ queryKey: teamKeys.users });
     void qc.invalidateQueries({ queryKey: teamKeys.teams });
+    void qc.invalidateQueries({ queryKey: ["people"] }); // nome, perfil e cor aparecem em todo o app pela lista de pessoas
   };
 }
 
@@ -62,7 +65,7 @@ export function useCreateUser() {
 export function useUpdateUser() {
   const done = useInvalidateAll();
   return useMutation({
-    mutationFn: ({ id, ...body }: { id: string; name?: string; role?: Role; isActive?: boolean }) =>
+    mutationFn: ({ id, ...body }: { id: string; name?: string; role?: Role; isActive?: boolean; color?: string }) =>
       patch<User>(`/users/${id}`, body),
     onSuccess: done,
   });
@@ -117,7 +120,7 @@ export function useTeamMembership(teamId: string) {
 }
 
 /** Pessoa do escritório (visível a qualquer usuário autenticado; sem e-mail). */
-export type Person = { id: string; name: string; role: Role; teams: string[] };
+export type Person = { id: string; name: string; role: Role; teams: string[]; color: string };
 
 export function usePeople() {
   return useQuery({

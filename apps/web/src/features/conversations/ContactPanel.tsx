@@ -9,6 +9,7 @@ import { formatTaxId } from "@/lib/taxId";
 import { cn } from "@/lib/cn";
 import { capabilities, useConversationActions, useTagCatalog } from "./store";
 import { AutomationOptOut } from "./AutomationOptOut";
+import { PersonName } from "@/features/team/PersonName";
 import { segmentClass, segmentLabel, type Conversation } from "./types";
 
 const statusLabel = { new: "Aguardando", in_progress: "Em atendimento", closed: "Encerrado" } as const;
@@ -54,7 +55,7 @@ export function ContactPanel({ conversation: c, onClose }: { conversation: Conve
           <Row
             icon={<UserRound />}
             label="Atendimento"
-            value={`${c.snoozedUntil ? "Adiado" : statusLabel[c.status]}${c.assignee ? ` · ${c.assignee.name}` : ""}`}
+            value={<>{c.snoozedUntil ? "Adiado" : statusLabel[c.status]}{c.assignee && <> · <PersonName id={c.assignee.id}>{c.assignee.name}</PersonName></>}</>}
           />
         </dl>
 
@@ -174,7 +175,7 @@ function FinancialRefs({ conversation: c }: { conversation: Conversation }) {
   );
 }
 
-function Row({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function Row({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
   return (
     <div className="flex gap-3">
       <span className="mt-0.5 text-muted [&>svg]:size-4">{icon}</span>

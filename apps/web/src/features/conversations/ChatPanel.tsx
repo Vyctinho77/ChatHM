@@ -10,6 +10,7 @@ import { ChatSkeleton } from "@/components/Skeleton";
 import { errorMessage, isRejection } from "@/lib/api";
 import { canSupervise, useMe } from "@/features/auth/api";
 import { AssigneeChip } from "./AssigneeChip";
+import { PersonName } from "@/features/team/PersonName";
 import { DropOverlay } from "./DropOverlay";
 import { useFileDrop } from "./useFileDrop";
 import { cn } from "@/lib/cn";
@@ -276,7 +277,7 @@ export function ChatPanel({
   } else if (mine) {
     banner = <>Você está atendendo</>;
   } else {
-    banner = <>Em atendimento por {c.assignee.name}</>;
+    banner = <>Em atendimento por <PersonName id={c.assignee.id}>{c.assignee.name}</PersonName></>;
   }
 
   /** Prévia usada para citar a mensagem numa resposta. */
@@ -363,7 +364,7 @@ export function ChatPanel({
               >
                 {segmentLabel(c)}
               </span>
-              {c.assignee && !closed && <AssigneeChip name={c.assignee.name} mine={mine} className="max-w-[9rem]" />}
+              {c.assignee && !closed && <AssigneeChip id={c.assignee.id} name={c.assignee.name} mine={mine} className="max-w-[9rem]" />}
               {!!c.participants?.length && !closed && (
                 <span title={`Também no atendimento: ${c.participants.map((p) => p.name).join(", ")}`} className="max-w-[10rem] shrink-0 truncate text-[11px] text-muted">
                   + {c.participants.map((p) => (p.id === actions.me.id ? "você" : p.name.trim().split(/\s+/)[0])).join(", ")}
