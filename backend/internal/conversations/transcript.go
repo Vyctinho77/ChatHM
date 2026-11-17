@@ -9,9 +9,6 @@ import (
 	"github.com/vyctinho77/chathm/backend/internal/transcribe"
 )
 
-// BuildProbe: constante só para medir o tempo de uma construção incremental (commit desfeito em seguida).
-const BuildProbe = 1
-
 // Transcrição das mensagens de voz recebidas. Roda em segundo plano, um áudio por vez, e nunca atrasa a mensagem: ela aparece na hora e o
 // texto chega depois (o app é avisado por tempo real). O estado fica no payload: transcriptState = pending | done | empty | failed | toolong.
 
