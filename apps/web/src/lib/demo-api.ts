@@ -167,6 +167,13 @@ export async function demoApi(method: string, path: string, body: Body = {}): Pr
       session = null;
       return { installCode: "DEMO7-K2M9X" };
     }
+    case "GET /maintenance/duplicates":
+      requireAdmin();
+      return { applied: false, contactsRenamed: 136, contactsMerged: 216, contactsSkipped: 0, duplicateMessages: 1541, filesRemoved: 986, conversationsRemoved: 0 };
+    case "POST /maintenance/duplicates":
+      requireAdmin();
+      if (String(body.confirm ?? "").trim().toUpperCase() !== "CORRIGIR") throw invalid({ confirm: "Digite CORRIGIR para confirmar." });
+      return { applied: true, contactsRenamed: 136, contactsMerged: 216, contactsSkipped: 0, duplicateMessages: 1541, filesRemoved: 986, conversationsRemoved: 0 };
     case "GET /office/access":
       requireAdmin();
       return { token: "DEMO-K2M9-X7QP", allowedDomain: "" };

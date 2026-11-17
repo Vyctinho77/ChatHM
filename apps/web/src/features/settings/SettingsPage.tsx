@@ -7,6 +7,7 @@ import { APP_VERSION } from "@/lib/version";
 import { DEMO } from "@/lib/env";
 import { regenerateRecoveryCodes, useMe } from "@/features/auth/api";
 import { ThemeSwitcher } from "@/features/shell/ThemeSwitcher";
+import { DuplicatesCard } from "./DuplicatesCard";
 import { HandoverCard } from "./HandoverCard";
 import { MicrophoneSettings } from "./MicrophoneSettings";
 import { SoundSettings } from "./SoundSettings";
@@ -66,6 +67,15 @@ export function SettingsPage() {
         {me.user.mfaEnabled && <RecoveryCodes />}
 
         <ChangePassword />
+
+        {me.user.role === "admin" && (
+          <Card
+            title="Duplicatas"
+            info="Ao reconectar o WhatsApp, o mesmo chat pode chegar por dois endereços (o número e um identificador oculto) e as mensagens, os arquivos e até o contato ficam repetidos. Aqui você vê o que está repetido e, se quiser, corrige: fica uma cópia de cada e os contatos são unidos. Antes de corrigir, mostra o que será feito."
+          >
+            <DuplicatesCard />
+          </Card>
+        )}
 
         {me.user.role === "admin" && <HandoverCard />}
 

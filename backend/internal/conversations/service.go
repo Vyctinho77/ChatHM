@@ -253,6 +253,7 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 	if m.Timestamp.IsZero() {
 		m.Timestamp = time.Now()
 	}
+	m = s.resolveLIDContact(ctx, m)
 	if m.EditOf != "" || m.RevokeOf != "" {
 		return false, s.ingestChange(ctx, m) // altera uma mensagem existente; não cria nenhuma
 	}
@@ -274,7 +275,7 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 	err := database.InTx(ctx, s.db, func(tx pgx.Tx) error {
 		var dup bool
 		if err := tx.QueryRow(ctx,
-			`SELECT EXISTS (SELECT 1 FROM messages WHERE chat_jid = $1 AND external_id = $2)`,
+			`SELECT EXISTS (SELECT 1 FROM messages WHERE `+sameMessage("")+`)`,
 			m.ChatJID, m.ExternalID).Scan(&dup); err != nil {
 			return err
 		}
@@ -285,7 +286,7 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 			if m.Historical && m.Download != nil && m.Kind == whatsapp.KindDocument {
 				err := tx.QueryRow(ctx, `
 					SELECT m.id::text, m.conversation_id::text FROM messages m
-					 WHERE m.chat_jid = $1 AND m.external_id = $2
+					 WHERE `+sameMessage("m.")+`
 					   AND NOT EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id)
 					   AND coalesce(m.payload->>'mediaState', '') <> 'blocked'`, m.ChatJID, m.ExternalID).Scan(&retryID, &retryConv)
 				if err != nil && !errors.Is(err, pgx.ErrNoRows) {

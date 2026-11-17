@@ -158,6 +158,7 @@ func NewRouter(d Deps) http.Handler {
 			r.Group(func(r chi.Router) {
 				r.Use(auth.RequireAdmin)
 				usersH.AdminRoutes(r)
+				convsH.AdminRoutes(r)
 				d.Auth.AdminRoutes(r)
 				if d.Instance != nil {
 					instance.NewHandler(d.Instance, d.Auth).Routes(r)

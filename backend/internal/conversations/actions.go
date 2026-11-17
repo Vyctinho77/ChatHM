@@ -112,7 +112,7 @@ func (s *Service) ingestChange(ctx context.Context, m whatsapp.InboundMessage) e
 		// O eco de uma edição do WhatsApp traz a assinatura que só o cliente vê.
 		var author string
 		err := s.db.QueryRow(ctx, `SELECT sender_name FROM messages
-			WHERE chat_jid = $1 AND external_id = $2 AND direction = 'out' AND sender_user_id IS NOT NULL`,
+			WHERE `+sameMessage("")+` AND direction = 'out' AND sender_user_id IS NOT NULL`,
 			m.ChatJID, m.EditOf).Scan(&author)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return err
@@ -122,7 +122,7 @@ func (s *Service) ingestChange(ctx context.Context, m whatsapp.InboundMessage) e
 		}
 		err = s.db.QueryRow(ctx, `
 			UPDATE messages SET body = $3, edited_at = now()
-			 WHERE chat_jid = $1 AND external_id = $2 AND deleted_at IS NULL AND kind IN ('text', 'image', 'document')
+			 WHERE `+sameMessage("")+` AND deleted_at IS NULL AND kind IN ('text', 'image', 'document')
 			   AND body <> $3
 			RETURNING id::text, conversation_id::text`, m.ChatJID, m.EditOf, m.Body).Scan(&msgID, &convID)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -137,7 +137,7 @@ func (s *Service) ingestChange(ctx context.Context, m whatsapp.InboundMessage) e
 			err := tx.QueryRow(ctx, `
 				UPDATE messages SET deleted_at = now(), body = '',
 				       payload = payload - 'quoted' - 'thumb' - 'lat' - 'lng' - 'name' - 'address' - 'fileName' - 'waveform' - 'label'
-				 WHERE chat_jid = $1 AND external_id = $2 AND deleted_at IS NULL
+				 WHERE `+sameMessage("")+` AND deleted_at IS NULL
 				RETURNING id::text, conversation_id::text`, m.ChatJID, m.RevokeOf).Scan(&msgID, &convID)
 			if err != nil {
 				return err

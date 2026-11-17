@@ -58,7 +58,7 @@ func (s *Service) registerDupRef(ctx context.Context, m whatsapp.InboundMessage)
 	var id string
 	err := s.db.QueryRow(ctx, `
 		SELECT m.id::text FROM messages m
-		 WHERE m.chat_jid = $1 AND m.external_id = $2 AND m.deleted_at IS NULL
+		 WHERE `+sameMessage("m.")+` AND m.deleted_at IS NULL
 		   AND NOT EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id)
 		   AND coalesce(m.payload->>'mediaState', '') <> 'blocked'`, m.ChatJID, m.ExternalID).Scan(&id)
 	if err != nil {
@@ -284,7 +284,7 @@ func (s *Service) OnMediaRetry(ev whatsapp.MediaRetryEvent) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	r, err := s.loadRef(ctx, `m.chat_jid = $1 AND m.external_id = $2 AND r.status = 'retry_requested'`, ev.ChatJID, ev.MessageID)
+	r, err := s.loadRef(ctx, sameMessage("m.")+` AND r.status = 'retry_requested'`, ev.ChatJID, ev.MessageID)
 	if err != nil {
 		return // não foi um pedido nosso (ou já tratado)
 	}
