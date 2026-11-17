@@ -49,6 +49,9 @@ type Masker struct {
 	Emails    bool
 	Addresses bool // CEP
 	Strict    bool // nomes reduzidos; observações internas removidas
+	// OwnPhone deixa à vista o campo "phone" do cadastro do contato (telefone inteiro), mesmo com Phones ligado. Só o campo: números
+	// escritos dentro de mensagens e observações continuam ocultos.
+	OwnPhone bool
 }
 
 // Text aplica as regras a um texto livre.
@@ -188,7 +191,7 @@ func (m Masker) Walk(v any, oauth bool) any { return m.walk(v, "", oauth) }
 func (m Masker) walk(v any, key string, oauth bool) any {
 	switch x := v.(type) {
 	case string:
-		if structural(key) {
+		if structural(key) || (key == "phone" && m.OwnPhone) {
 			return x
 		}
 		out := m.Text(x)
@@ -218,4 +221,17 @@ func (m Masker) walk(v any, key string, oauth bool) any {
 		return x
 	}
 	return v
+}
+
+// phoneMatchKey: DDD + 8 últimos dígitos de um telefone brasileiro (ignora o +55 e o nono dígito, para o mesmo celular escrito de jeitos
+// diferentes casar). Vazio se não parecer um telefone com DDD.
+func phoneMatchKey(s string) (ddd, last8 string) {
+	d := onlyDigits(s)
+	if len(d) > 11 && strings.HasPrefix(d, "55") {
+		d = d[2:]
+	}
+	if len(d) != 10 && len(d) != 11 {
+		return "", ""
+	}
+	return d[:2], d[len(d)-8:]
 }

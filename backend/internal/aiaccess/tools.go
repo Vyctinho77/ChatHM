@@ -201,15 +201,26 @@ func (m *MCP) server(p Principal) *mcp.Server {
 	type findIn struct {
 		TaxID   string `json:"tax_id,omitempty" jsonschema:"CPF ou CNPJ do cliente, com ou sem pontuação"`
 		AsaasID string `json:"asaas_id,omitempty" jsonschema:"id do cliente no Asaas (cus_...)"`
+		Phone   string `json:"phone,omitempty" jsonschema:"celular do cliente (DDD + número, com ou sem +55 e com ou sem o nono dígito)"`
 	}
-	addTool(m, s, p, "find_contact", "Acha o contato do ChatHM pelo CNPJ/CPF ou pelo id do cliente no Asaas (use o que o cadastro financeiro já tem, sem casar por telefone). Devolve os contatos que você pode ver com essa referência (um cliente pode ter vários números) e a conversa aberta de cada um. Se nada vier, o vínculo ainda não existe: ache o contato por search/list_contacts e grave com set_contact_reference.",
+	addTool(m, s, p, "find_contact", "Acha o contato do ChatHM pelo CNPJ/CPF, pelo id do cliente no Asaas OU pelo celular (informe só um deles). Prefira o CNPJ/CPF ou o id do Asaas quando o cadastro financeiro tiver; o celular serve para casar o cliente do Asaas com o contato (aceita +55 e com ou sem o nono dígito). Devolve os contatos que você pode ver e a conversa aberta de cada um (um cliente pode ter vários números). Se nada vier, o vínculo ainda não existe: ache o contato por search/list_contacts e grave com set_contact_reference.",
 		func(ctx context.Context, in findIn) (any, error) {
-			if (in.TaxID == "") == (in.AsaasID == "") {
-				return nil, errors.New("informe tax_id OU asaas_id")
+			given := 0
+			for _, x := range []string{in.TaxID, in.AsaasID, in.Phone} {
+				if x != "" {
+					given++
+				}
 			}
-			var tax, asaas string
+			if given != 1 {
+				return nil, errors.New("informe tax_id, asaas_id OU phone (só um deles)")
+			}
+			var tax, asaas, wantDDD, want8 string
 			var err error
-			if in.TaxID != "" {
+			if in.Phone != "" {
+				if wantDDD, want8 = phoneMatchKey(in.Phone); want8 == "" {
+					return nil, errors.New("phone inválido: informe DDD + número (ex.: 92 99999-0000)")
+				}
+			} else if in.TaxID != "" {
 				if tax, err = conversations.NormalizeTaxID(in.TaxID); err != nil || tax == "" {
 					return nil, errors.New("tax_id inválido: informe um CPF (11 números) ou um CNPJ (14 números) correto")
 				}
@@ -222,6 +233,12 @@ func (m *MCP) server(p Principal) *mcp.Server {
 			}
 			out := []any{}
 			for _, c := range all {
+				if want8 != "" {
+					if d, l := phoneMatchKey(c.Phone); d == wantDDD && l == want8 && c.Kind != "group" {
+						out = append(out, contactView(c.Contact, c.ConversationID))
+					}
+					continue
+				}
 				if (tax != "" && c.TaxID == tax) || (asaas != "" && c.AsaasID == asaas) {
 					out = append(out, contactView(c.Contact, c.ConversationID))
 				}

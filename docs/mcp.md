@@ -95,6 +95,13 @@ Código: `conversations/taxid.go`, `aiaccess/tools.go` (`find_contact`), `aiacce
 só o agente a lê, em `read_messages` e `list_pending_replies`, em `media.transcript` da mensagem de áudio (`media.transcriptPending: true` enquanto transcreve: leia de novo em instantes;
 `media.transcriptUnavailable`: `failed`, `toolong` ou `empty`). O texto passa pelo mesmo filtro de privacidade das mensagens.
 
+### Telefone do cliente para a IA que cobra (11/2026)
+O Asaas fica só no computador do agente (a chave nunca passa pelo ChatHM). Para casar o cliente do Asaas com o contato certo, a IA precisa do
+celular dele. Antes, "Ocultar telefones" cortava o número (`…1234`) em tudo; agora há **MCP → Privacidade → Mostrar o telefone do cliente no
+cadastro** (`ai_settings.show_contact_phone`, desligada por padrão): só o campo `phone` do cadastro sai inteiro; números escritos dentro de
+mensagens e observações seguem ocultos. Não vale para clientes OAuth e fica desligada no modo estrito.
+`find_contact` também aceita `phone` (com ou sem +55, com ou sem o nono dígito), além de `tax_id` e `asaas_id`.
+
 ### Privacidade das respostas (todas as etapas)
 
 1. **Sempre ligado, para qualquer cliente de IA:** senhas, códigos, tokens e chaves; cartão (Luhn), agência/conta, chave PIX, boleto.

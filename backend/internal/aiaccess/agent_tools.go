@@ -47,7 +47,7 @@ func (m *MCP) registerAgent(s *mcp.Server, p Principal, v conversations.Viewer) 
 				"privacy": map[string]any{
 					"alwaysHidden":  "senhas, códigos, tokens, chaves, cartão, conta bancária, PIX e boleto",
 					"maskDocuments": st.MaskDocuments || p.OAuth, "maskPhones": st.MaskPhones || p.OAuth, "maskEmails": st.MaskEmails || p.OAuth,
-					"strictNames": st.StrictPrivacy,
+					"strictNames": st.StrictPrivacy, "contactPhoneVisible": st.ShowContactPhone && !st.StrictPrivacy && !p.OAuth,
 				},
 				"limits": map[string]any{"readsPerMinute": m.svc.rateLimit(), "writesPerMinute": 20},
 				"notifications": map[string]any{

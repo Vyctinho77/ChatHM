@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/Skeleton";
 import { useMe } from "@/features/auth/api";
 import { DomainInput } from "./DomainInput";
 
-type AiSettings = { enabled: boolean; maskDocuments: boolean; maskPhones: boolean; allowWrite: boolean; allowSend: boolean; allowAutomation?: boolean; allowAttend?: boolean; maskEmails: boolean; strictPrivacy: boolean; allowOauth: boolean; oauthRedirectHosts: string[] };
+type AiSettings = { enabled: boolean; maskDocuments: boolean; maskPhones: boolean; allowWrite: boolean; allowSend: boolean; allowAutomation?: boolean; allowAttend?: boolean; showContactPhone?: boolean; maskEmails: boolean; strictPrivacy: boolean; allowOauth: boolean; oauthRedirectHosts: string[] };
 type Grant = { id: string; client: string; level: "read" | "write" | "send"; createdAt: string; lastUsedAt?: string; owner?: string };
 type AiToken = {
   id: string;
@@ -385,6 +385,14 @@ export function AiAccessCard() {
           <div className="divide-y divide-line/60 border-t border-line/60">
             <Toggle checked={s.maskDocuments} disabled={save.isPending} onChange={v => change({ maskDocuments: v })} label="Ocultar CPF e CNPJ" info={{ body: "Documentos são substituídos por uma indicação de dado oculto." }} />
             <Toggle checked={s.maskPhones} disabled={save.isPending} onChange={v => change({ maskPhones: v })} label="Ocultar telefones" info={{ body: "Exibe apenas os quatro últimos dígitos." }} />
+            <Toggle
+              checked={!!s.showContactPhone}
+              disabled={save.isPending || s.strictPrivacy}
+              onChange={v => change({ showContactPhone: v })}
+              label="Mostrar o telefone do cliente no cadastro"
+              hint={s.strictPrivacy ? "Desligado pela proteção adicional." : undefined}
+              info={{ body: "A IA vê o número completo do campo telefone do cadastro do contato (por exemplo, para achar o cliente no Asaas). Números escritos dentro das mensagens continuam ocultos, e aplicativos conectados por login nunca recebem o telefone." }}
+            />
             <Toggle checked={s.maskEmails} disabled={save.isPending} onChange={v => change({ maskEmails: v })} label="Ocultar e-mails" />
             <Toggle checked={s.strictPrivacy} disabled={save.isPending} onChange={v => change({ strictPrivacy: v })} label="Proteção adicional" info={{ body: "Abrevia sobrenomes e oculta as observações internas dos contatos." }} />
           </div>

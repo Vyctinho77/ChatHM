@@ -120,3 +120,59 @@ func TestWalkKeepsStructureAndDropsFieldsForOAuth(t *testing.T) {
 		t.Fatalf("shortName: %q %q", shortName("Madalena"), shortName("Ana  Maria de Souza"))
 	}
 }
+
+func TestOwnPhoneShowsOnlyTheContactFieldNotNumbersInsideText(t *testing.T) {
+	doc := func() any {
+		return map[string]any{
+			"contact": map[string]any{"id": "c1", "name": "Cliente Fone", "phone": "+5592991916633"},
+			"text":    "liga para 92 98800-1111 por favor",
+		}
+	}
+	// Com "Ocultar telefones" ligado e a opção desligada: tudo mascarado.
+	hidden := Masker{Phones: true}.Walk(doc(), false).(map[string]any)
+	if hidden["contact"].(map[string]any)["phone"] != "…6633" {
+		t.Fatalf("campo do cadastro deveria ficar cortado: %v", hidden)
+	}
+	// Com a opção ligada: o campo do cadastro sai inteiro; o número dentro da mensagem continua oculto.
+	shown := Masker{Phones: true, OwnPhone: true}.Walk(doc(), false).(map[string]any)
+	if shown["contact"].(map[string]any)["phone"] != "+5592991916633" {
+		t.Fatalf("campo do cadastro deveria sair inteiro: %v", shown)
+	}
+	if s := shown["text"].(string); strings.Contains(s, "98800-1111") || !strings.Contains(s, "…1111") {
+		t.Fatalf("número dentro da mensagem deve continuar oculto: %q", s)
+	}
+	// Cliente OAuth nunca recebe o telefone, mesmo com a opção ligada; o modo estrito também não libera.
+	if _, ok := (Masker{Phones: true, OwnPhone: true}).Walk(doc(), true).(map[string]any)["contact"].(map[string]any)["phone"]; ok {
+		t.Fatal("OAuth não pode receber o telefone")
+	}
+	st := Settings{ShowContactPhone: true, StrictPrivacy: true, MaskPhones: true}
+	if MaskerFor(st, Principal{}).OwnPhone {
+		t.Fatal("modo estrito não libera o telefone")
+	}
+	if !MaskerFor(Settings{ShowContactPhone: true, MaskPhones: true}, Principal{}).OwnPhone {
+		t.Fatal("opção ligada deveria liberar para token pessoal")
+	}
+	if MaskerFor(Settings{ShowContactPhone: true, MaskPhones: true}, Principal{OAuth: true}).OwnPhone {
+		t.Fatal("OAuth nunca libera")
+	}
+}
+
+func TestPhoneMatchKeyIgnoresCountryCodeAndNinthDigit(t *testing.T) {
+	cases := map[string][2]string{
+		"+55 92 99191-6633": {"92", "91916633"},
+		"5592991916633":     {"92", "91916633"},
+		"(92) 99191-6633":   {"92", "91916633"},
+		"92 9191-6633":      {"92", "91916633"}, // sem o nono dígito
+		"+559291916633":     {"92", "91916633"},
+	}
+	for in, want := range cases {
+		if d, l := phoneMatchKey(in); d != want[0] || l != want[1] {
+			t.Errorf("phoneMatchKey(%q) = %q %q, esperava %v", in, d, l, want)
+		}
+	}
+	for _, bad := range []string{"", "123", "99191-6633", "+1 415 555 2671 99"} {
+		if _, l := phoneMatchKey(bad); l != "" {
+			t.Errorf("phoneMatchKey(%q) deveria ser inválido", bad)
+		}
+	}
+}

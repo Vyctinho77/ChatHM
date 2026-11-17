@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -574,5 +575,68 @@ func TestContactReferencesFindAndLinkCharges(t *testing.T) {
 	}
 	if c := o["contacts"].([]any)[0].(map[string]any); c["document"] == "529.982.247-25" {
 		t.Fatalf("o documento deveria sair mascarado: %v", c)
+	}
+}
+
+// A IA que cobra no Asaas precisa do telefone do cadastro para casar o cliente; números escritos em mensagens seguem ocultos.
+func TestContactPhoneVisibleToAgentOnlyAsCadastroField(t *testing.T) {
+	w, toks := agentTokens(t)
+	set := func(show, strict bool) {
+		expect(t, w.admin.do("PUT", "/api/v1/ai/settings", map[string]any{"enabled": true, "maskDocuments": true, "maskPhones": true, "maskEmails": true,
+			"allowWrite": true, "allowSend": true, "showContactPhone": show, "strictPrivacy": strict}), 200)
+	}
+	p := w.receive("Cliente Telefone", "me ligue no 92 98800-1111 por favor")
+	cid := mustConv(t, w.admin, "Cliente Telefone")["contact"].(map[string]any)["id"].(string)
+	phoneOf := func() string {
+		o, isErr := w.tool(toks["read"], "get_contact", map[string]any{"id": cid})
+		if isErr {
+			t.Fatalf("get_contact: %v", o)
+		}
+		s, _ := o["phone"].(string)
+		return s
+	}
+
+	set(false, false)
+	if got := phoneOf(); got != "…"+p[len(p)-4:] {
+		t.Fatalf("com a opção desligada o telefone sai cortado: %q", got)
+	}
+	set(true, false)
+	if got := phoneOf(); strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, got) != p || strings.Contains(got, "…") {
+		t.Fatalf("com a opção ligada o telefone do cadastro sai inteiro: %q (esperava os dígitos %s)", got, p)
+	}
+	// O número escrito DENTRO da mensagem continua oculto.
+	o, _ := w.tool(toks["read"], "read_messages", map[string]any{"conversation_id": mustConv(t, w.admin, "Cliente Telefone")["id"].(string)})
+	text := o["messages"].([]any)[0].(map[string]any)["text"].(string)
+	if strings.Contains(text, "98800-1111") || !strings.Contains(text, "…1111") {
+		t.Fatalf("número dentro da mensagem deveria continuar oculto: %q", text)
+	}
+	// O modo estrito não libera.
+	set(true, true)
+	if got := phoneOf(); got != "…"+p[len(p)-4:] {
+		t.Fatalf("no modo estrito o telefone sai cortado: %q", got)
+	}
+	set(true, false)
+
+	// find_contact por celular: com e sem +55, com e sem o nono dígito.
+	digits := p[2:] // DDD + número (o p tem o 55 na frente)
+	ddd, rest := digits[:2], digits[2:]
+	for _, q := range []string{"+" + p, p, digits, ddd + " " + rest, ddd + rest[len(rest)-8:]} {
+		o, isErr := w.tool(toks["read"], "find_contact", map[string]any{"phone": q})
+		if isErr || o["total"] != float64(1) || o["contacts"].([]any)[0].(map[string]any)["id"] != cid {
+			t.Fatalf("find_contact por celular %q: %v", q, o)
+		}
+	}
+	if o, _ := w.tool(toks["read"], "find_contact", map[string]any{"phone": "11 91111-2222"}); o["total"] != float64(0) {
+		t.Fatalf("celular desconhecido: %v", o)
+	}
+	for _, bad := range []map[string]any{{"phone": "123"}, {"phone": "92988001111", "tax_id": "11222333000181"}, {}} {
+		if isErr, _ := w.toolCall(toks["read"], "find_contact", bad); !isErr {
+			t.Fatalf("%v deveria ser recusado", bad)
+		}
 	}
 }
