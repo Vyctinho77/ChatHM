@@ -80,10 +80,19 @@ O Docker Manager não constrói imagens a partir de uma URL do GitHub, então a 
 3. Rode a suíte completa (backend com `-race` e web) no commit exato que será publicado.
 
 **Passo 1, construir a candidata** (`deploy/hostinger-build.yml`, com o commit no lugar de `COLE-AQUI-O-COMMIT`). Não toca na produção.
-Espere `BUILD_OK` nos logs (cerca de 2 min).
+Espere `BUILD_OK` nos logs (cerca de 20 s com o cache quente; ~2 min a frio).
 
 **Passo 2, trocar** (`deploy/hostinger-release.yml`). Valida a configuração, guarda a versão atual como `chathm:previous`, recria só o
 container do app, espera ficar saudável e, se não ficar, volta sozinho para a anterior. Sucesso = `DEPLOY_OK`; falha = `ROLLED_BACK`.
 Há alguns segundos de indisponibilidade enquanto o app reinicia.
 
 **Depois**: confira `https://<domínio>/readyz` e o arquivo `assets/index-*.js` da página, e apague os dois projetos auxiliares (não guardam estado).
+
+**Quanto demora (medido na VPS, 1 núcleo, Docker 29)**
+- **Construção quente** (mudança só no código do app): **~20 s**. O Dockerfile usa cache de módulos e de compilação do Go (`--mount=type=cache`): só recompila o que mudou (o Go caiu de 90–205 s para ~7 s). O front-end só empacota
+  (`vite build`, ~4 s): a checagem de tipos (`tsc`) não se repete na imagem, porque já roda no CI e na suíte antes de cada publicação.
+- **Construção fria** (primeira vez, ou depois de o cache ser limpo com `docker builder prune`/`docker system prune -a`): **~2 min**. Mudar o `go.mod`/`go.sum` ou o `pnpm-lock.yaml` também refaz a etapa de dependências (~35 s).
+  Mudar o whisper (`WHISPER_REF`/modelo) refaz a compilação dele (~5 min, uma vez).
+- **Troca**: o `HEALTHCHECK` confere a cada 2 s na partida (`--start-interval`) e o script confere a cada 2 s: o app fica "healthy" em poucos segundos (antes, o Docker só olhava depois de 30 s inteiros, e a troca levava ~33 s).
+- **Dica de quem acompanha**: consulte o estado do projeto auxiliar (`Exited`) a cada 15–20 s em vez de esperar um tempo fixo, e leia os logs só no fim. Dormir 4 minutos por garantia somava 1 a 3 minutos à toa em cada publicação.
+- O cache de build ocupa espaço (hoje ~6 GB de 47 GB). Se precisar liberar, `docker builder prune` apaga o cache (a próxima construção volta a ~2 min).
