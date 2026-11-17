@@ -2,6 +2,7 @@ package internalchat
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -256,6 +257,21 @@ func (h *Handler) attachment(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, r, err)
 		return
+	}
+	// ?format=m4a: o mesmo áudio em AAC, para aparelhos antigos que não tocam Ogg/Opus.
+	if r.URL.Query().Get("format") == "m4a" && strings.HasPrefix(a.MimeType, "audio/") {
+		conv, err := h.svc.AudioM4A(r.Context(), a)
+		if err != nil {
+			switch {
+			case errors.Is(err, context.Canceled):
+			case errors.Is(err, media.ErrUnavailable):
+				httpx.Error(w, http.StatusServiceUnavailable, "media_unavailable", "Não foi possível converter o áudio agora. Tente novamente em instantes.")
+			default:
+				httpx.Internal(w, r, err)
+			}
+			return
+		}
+		a = conv
 	}
 	hd := w.Header()
 	hd.Set("X-Content-Type-Options", "nosniff")

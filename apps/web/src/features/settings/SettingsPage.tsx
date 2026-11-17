@@ -8,6 +8,7 @@ import { DEMO } from "@/lib/env";
 import { regenerateRecoveryCodes, useMe } from "@/features/auth/api";
 import { ThemeSwitcher } from "@/features/shell/ThemeSwitcher";
 import { HandoverCard } from "./HandoverCard";
+import { MicrophoneSettings } from "./MicrophoneSettings";
 import { SoundSettings } from "./SoundSettings";
 import { TransferSettings } from "./TransferSettings";
 
@@ -70,6 +71,10 @@ export function SettingsPage() {
 
         <Card title="Sons e notificações" info="Efeitos ao enviar e receber mensagens e avisos sonoros de novas mensagens. As preferências ficam salvas neste navegador para a sua conta.">
           <SoundSettings />
+        </Card>
+
+        <Card title="Microfone" info="Ajusta a gravação das mensagens de voz e permite testar o microfone: grava 5 segundos, toca de volta e mostra a qualidade que o aparelho entrega. Se a voz sair oca, tente desligar a redução de ruído.">
+          <MicrophoneSettings />
         </Card>
 
         <Card title="Transferências" info="O que acontece com o seu lembrete quando você transfere uma conversa. A preferência fica salva neste navegador para a sua conta.">

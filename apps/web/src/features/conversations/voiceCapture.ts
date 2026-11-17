@@ -1,18 +1,22 @@
 import { silenceSoundsForRecording } from "@/lib/sounds";
+import { getVoicePrefs, type VoicePrefs } from "./voicePrefs";
 
-export const voiceConstraints: MediaTrackConstraints = {
-  channelCount: { ideal: 1 },
-  sampleRate: { ideal: 48_000 },
-  echoCancellation: { ideal: true },
-  noiseSuppression: { ideal: true },
-  // Evita que o ganho aumente o chiado durante pausas na fala.
-  autoGainControl: { ideal: false },
-};
+/** Restrições do microfone. Redução de ruído e eco seguem a preferência da pessoa (Configurações → Microfone); o ganho automático fica desligado. */
+export function voiceConstraints(prefs: VoicePrefs = getVoicePrefs()): MediaTrackConstraints {
+  return {
+    channelCount: { ideal: 1 },
+    sampleRate: { ideal: 48_000 },
+    echoCancellation: { ideal: prefs.echoCancellation },
+    noiseSuppression: { ideal: prefs.noiseSuppression },
+    // Evita que o ganho aumente o chiado durante pausas na fala.
+    autoGainControl: { ideal: false },
+  };
+}
 
 export type VoiceCapture = { stream: MediaStream; input: MediaStream; dispose: () => void };
 
 export async function openVoiceCapture(): Promise<VoiceCapture> {
-  const input = await navigator.mediaDevices.getUserMedia({ audio: voiceConstraints });
+  const input = await navigator.mediaDevices.getUserMedia({ audio: voiceConstraints() });
   const releaseSounds = silenceSoundsForRecording();
   document.querySelectorAll("audio").forEach(audio => audio.pause());
   let context: AudioContext | undefined;

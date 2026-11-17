@@ -8,6 +8,24 @@ import { decodeWave, shapeWave, speechWave } from "./waveform";
 
 const DEMO = import.meta.env.VITE_DEMO === "1";
 
+/** Aparelhos antigos (sobretudo iPhones) não tocam Ogg/Opus, o formato guardado. Eles recebem o mesmo áudio em AAC (.m4a), convertido pelo servidor. */
+let oggOpusUnsupported: boolean | undefined;
+function cannotPlayOggOpus(): boolean {
+  if (oggOpusUnsupported === undefined) {
+    try {
+      oggOpusUnsupported = typeof document !== "undefined" && document.createElement("audio").canPlayType('audio/ogg; codecs="opus"') === "";
+    } catch {
+      oggOpusUnsupported = false;
+    }
+  }
+  return oggOpusUnsupported;
+}
+
+/** Endereço da versão em AAC do áudio (só para anexos do servidor). */
+function m4aUrl(url: string): string {
+  return url.startsWith("/api/") ? `${url}${url.includes("?") ? "&" : "?"}format=m4a` : url;
+}
+
 /**
  * Player de mensagem de voz: foto de quem enviou com o ícone de microfone, play e barras finas, tudo
  * centralizado na altura do meio da foto. Recebido: foto à esquerda, verde enquanto não ouvido, azul depois
@@ -45,6 +63,13 @@ export function AudioPlayer({
   const waveBox = useRef<HTMLDivElement>(null);
   const heard = useHeard(id);
 
+  // Ogg/Opus primeiro; se o aparelho não toca (ou falha), tenta o AAC; se também falhar, avisa e oferece baixar.
+  const [useM4a, setUseM4a] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const retryPlay = useRef(false);
+  const m4a = !!url && (useM4a || cannotPlayOggOpus());
+  const src = url && m4a ? m4aUrl(url) : url;
+
   // Onda: a do provedor (realçada) → a decodificada do arquivo quando o áudio aparece na tela → uma parecida com fala.
   const [decoded, setDecoded] = useState<number[] | null>(null);
   const needsDecode = !waveform?.length && !!url;
@@ -55,7 +80,7 @@ export function AudioPlayer({
     const io = new IntersectionObserver((entries) => {
       if (!entries.some((e) => e.isIntersecting)) return;
       io.disconnect();
-      void decodeWave(url).then((w) => {
+      void decodeWave(src ?? url).then((w) => {
         if (!cancelled && w) setDecoded(w);
       });
     });
@@ -64,6 +89,7 @@ export function AudioPlayer({
       cancelled = true;
       io.disconnect();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- decodifica uma vez, quando o áudio aparece na tela
   }, [needsDecode, url]);
   const bars = useMemo(() => (waveform?.length ? shapeWave(waveform) : (decoded ?? speechWave(id))), [waveform, decoded, id]);
 
@@ -99,6 +125,31 @@ export function AudioPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reinicia só ao tocar/pausar
   }, [playing, url, durationSec]);
 
+  /** O aparelho não conseguiu tocar: tenta a versão em AAC (uma vez) e, se também não der, avisa. */
+  function fail() {
+    setPlaying(false);
+    if (m4a || !url || !url.startsWith("/api/")) {
+      setFailed(true);
+      return;
+    }
+    if (retryPlay.current) return; // erro e rejeição do play() chegam juntos: conta uma vez só
+    retryPlay.current = true;
+    setUseM4a(true);
+  }
+
+  // Depois de trocar para o AAC, continua de onde a pessoa pediu: tocar.
+  useEffect(() => {
+    if (!retryPlay.current || !useM4a) return;
+    retryPlay.current = false;
+    const el = audio.current;
+    if (!el) return;
+    el.load();
+    el.play().catch(() => {
+      setPlaying(false);
+      setFailed(true);
+    });
+  }, [useM4a]);
+
   function toggle() {
     if (!outgoing) markHeard(id);
     const el = audio.current;
@@ -106,7 +157,8 @@ export function AudioPlayer({
       if (el.paused) {
         // Só um áudio toca por vez.
         document.querySelectorAll("audio").forEach((a) => a !== el && a.pause());
-        el.play().catch(() => setPlaying(false));
+        setFailed(false);
+        el.play().catch(() => fail());
       } else {
         el.pause();
       }
@@ -148,14 +200,14 @@ export function AudioPlayer({
       {url && (
         <audio
           ref={audio}
-          src={url}
+          src={src}
           preload="metadata"
           onPlay={() => {
             setPlaying(true);
             if (!outgoing) markHeard(id);
           }}
           onPause={() => setPlaying(false)}
-          onError={() => setPlaying(false)}
+          onError={fail}
           onTimeUpdate={(e) => setPos(e.currentTarget.currentTime)}
           onEnded={() => {
             setPlaying(false);
@@ -205,6 +257,14 @@ export function AudioPlayer({
             />
           ))}
         </div>
+        {failed && url && (
+          <p className="text-[11px] leading-tight text-danger" role="alert">
+            Este aparelho não consegue tocar este áudio.{" "}
+            <a href={url} download className="underline">
+              Baixar
+            </a>
+          </p>
+        )}
         <div className="flex items-end justify-between gap-2">
           <span className="text-[11px] tabular-nums opacity-75">{formatDuration(playing || pos ? pos : durationSec)}</span>
           {metadata}

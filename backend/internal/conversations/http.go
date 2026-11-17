@@ -2,6 +2,7 @@ package conversations
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -251,6 +252,15 @@ func (h *Handler) attachment(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
+	// ?format=m4a: o mesmo áudio em AAC, para aparelhos antigos que não tocam Ogg/Opus.
+	if r.URL.Query().Get("format") == "m4a" && !a.Preview && strings.HasPrefix(a.MimeType, "audio/") {
+		conv, err := h.svc.AudioM4A(r.Context(), a)
+		if err != nil {
+			audioConvertError(w, r, err)
+			return
+		}
+		a = conv
+	}
 	hd := w.Header()
 	hd.Set("X-Content-Type-Options", "nosniff")
 	hd.Set("Content-Security-Policy", "sandbox; default-src 'none'")
@@ -276,6 +286,18 @@ func (h *Handler) attachment(w http.ResponseWriter, r *http.Request) {
 	}
 	hd.Set("Content-Disposition", mime.FormatMediaType(disp, map[string]string{"filename": downloadName(a.FileName, a.MimeType, chi.URLParam(r, "id"))}))
 	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(a.Data))
+}
+
+// audioConvertError responde a uma falha na conversão do áudio (sem ffmpeg: 503; pedido cancelado: nada a responder).
+func audioConvertError(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, context.Canceled):
+		return
+	case errors.Is(err, media.ErrUnavailable):
+		httpx.Error(w, http.StatusServiceUnavailable, "media_unavailable", "Não foi possível converter o áudio agora. Tente novamente em instantes.")
+	default:
+		httpx.Internal(w, r, err)
+	}
 }
 
 func (h *Handler) read(w http.ResponseWriter, r *http.Request) {

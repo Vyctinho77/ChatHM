@@ -60,6 +60,13 @@ describe("voice capture", () => {
     expect(release).toHaveBeenCalledOnce();
   });
 
+  it("follows the saved preference: noise suppression and echo cancellation can be turned off", async () => {
+    vi.stubGlobal("localStorage", { getItem: () => JSON.stringify({ noiseSuppression: false, echoCancellation: false }), setItem: () => undefined });
+    const capture = await openVoiceCapture();
+    expect(media).toHaveBeenCalledWith({ audio: expect.objectContaining({ noiseSuppression: { ideal: false }, echoCancellation: { ideal: false }, autoGainControl: { ideal: false } }) });
+    capture.dispose();
+  });
+
   it("keeps native capture available if the processing context is blocked", async () => {
     resume.mockRejectedValueOnce(new Error("blocked"));
     const capture = await openVoiceCapture();

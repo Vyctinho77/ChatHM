@@ -238,6 +238,54 @@ func TestSendAudioIsConvertedToOpus(t *testing.T) {
 	expect(t, w.attach(w.ana, id, "audio", "x.wav", []byte("não é áudio nenhum"), nil), 422)
 }
 
+// ?format=m4a entrega o mesmo áudio em AAC/MP4 para aparelhos que não tocam Ogg/Opus: com Range (iOS exige), ETag próprio,
+// e a mesma regra de acesso do arquivo original.
+func TestAudioDownloadAsM4AForOldDevices(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg não instalado")
+	}
+	w := setupWorld(t)
+	w.receive("Cliente M4A", "folha de pagamento")
+	id := mustConv(t, w.ana, "Cliente M4A")["id"].(string)
+	r := w.attach(w.ana, id, "audio", "gravacao.wav", testWAV(), nil)
+	expect(t, r, 201)
+	url := r.body["url"].(string)
+
+	st, hd, body := w.ana.raw(url + "?format=m4a")
+	if st != 200 || hd.Get("Content-Type") != "audio/mp4" || len(body) < 12 || string(body[4:8]) != "ftyp" {
+		t.Fatalf("m4a: %d %s %q", st, hd.Get("Content-Type"), body[:min(len(body), 12)])
+	}
+	_, hdOrig, _ := w.ana.raw(url)
+	if hd.Get("ETag") == "" || hd.Get("ETag") == hdOrig.Get("ETag") {
+		t.Fatalf("o ETag da versão convertida deveria ser próprio: %q vs %q", hd.Get("ETag"), hdOrig.Get("ETag"))
+	}
+	if !strings.Contains(hd.Get("Content-Disposition"), ".m4a") || hd.Get("Accept-Ranges") != "bytes" {
+		t.Fatalf("cabeçalhos: %q / %q", hd.Get("Content-Disposition"), hd.Get("Accept-Ranges"))
+	}
+	// Range (o Safari do iPhone pede o áudio por partes).
+	req, _ := http.NewRequest("GET", w.ana.base+url+"?format=m4a", nil)
+	req.Header.Set("Range", "bytes=0-99")
+	res, err := w.ana.hc.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	part, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusPartialContent || len(part) != 100 {
+		t.Fatalf("Range: %d com %d bytes", res.StatusCode, len(part))
+	}
+	// Quem não vê a conversa continua sem ver (nem o original, nem o convertido).
+	if st, _, _ := w.bia.raw(url + "?format=m4a"); st != 404 {
+		t.Fatalf("outra pessoa deveria receber 404, veio %d", st)
+	}
+	// Só áudio é convertido: um PDF ignora o parâmetro.
+	rd := w.attach(w.ana, id, "document", "ok.pdf", []byte("%PDF-1.4 ok"), nil)
+	expect(t, rd, 201)
+	if st, h2, _ := w.ana.raw(rd.body["url"].(string) + "?format=m4a"); st != 200 || h2.Get("Content-Type") != "application/octet-stream" {
+		t.Fatalf("documento com format=m4a: %d %s", st, h2.Get("Content-Type"))
+	}
+}
+
 func TestSendLocation(t *testing.T) {
 	w := setupWorld(t)
 	w.receive("Cliente Local", "folha de pagamento")
