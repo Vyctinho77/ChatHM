@@ -73,3 +73,12 @@
 .pdf-text-layer.selecting .endOfContent {
   top: 0;
 }
+
+/* Destaques da busca no PDF (CSS Custom Highlight API): todas as ocorrências em amarelo, a atual em laranja. */
+::highlight(pdf-find) {
+  background-color: rgb(255 214 0 / 0.55);
+}
+
+::highlight(pdf-find-current) {
+  background-color: rgb(255 120 0 / 0.75);
+}
