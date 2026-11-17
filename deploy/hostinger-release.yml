@@ -1,6 +1,6 @@
 # Hostinger (Docker Manager), passo 2 de 2: troca a imagem em produção com rollback automático.
 # Só recria o container do app (o Caddy não reinicia). Antes de mexer em qualquer coisa, valida o compose e as variáveis
-# do projeto "chathm". Guarda a versão atual como chathm:previous. Se o app não ficar "healthy" em 4 minutos, volta sozinho
+# do projeto "chathm". Guarda a versão atual como chathm:previous. Se o app não ficar "healthy" em 4 minutos (confere a cada 2 s), volta sozinho
 # para a versão anterior (ROLLED_BACK). Sucesso = DEPLOY_OK nos logs. Apague este projeto depois.
 # Rollback manual mais tarde: troque "chathm:candidate" por "chathm:previous" na linha de docker tag que a promove a latest e rode de novo.
 # (O "$$" é a forma de escrever "$" dentro de um compose.)
@@ -28,12 +28,12 @@ services:
         echo SWAP_START
         up
         i=0
-        while [ $$i -lt 48 ]; do
+        while [ $$i -lt 120 ]; do
           s=$$(docker inspect -f '{{.State.Health.Status}}' chathm-app-1 2>/dev/null)
           echo health=$$s
           if [ "$$s" = healthy ]; then echo DEPLOY_OK; docker image prune -f >/dev/null 2>&1; exit 0; fi
           if [ "$$s" = unhealthy ]; then break; fi
-          i=$$((i+1)); sleep 5
+          i=$$((i+1)); sleep 2
         done
         echo UNHEALTHY_ROLLING_BACK
         docker tag chathm:previous chathm:latest

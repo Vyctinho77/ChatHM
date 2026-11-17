@@ -6,14 +6,17 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/web/package.json apps/web/
 RUN pnpm install --frozen-lockfile --filter @chathm/web...
 COPY apps/web apps/web
-RUN pnpm --filter @chathm/web build
+# Só o empacotamento (vite): a checagem de tipos (tsc) já roda no CI e antes de cada publicação, e repeti-la aqui custava ~45 s numa VPS de 1 núcleo.
+RUN pnpm --filter @chathm/web exec vite build
 
 FROM golang:1.26-alpine AS api
 WORKDIR /src
 COPY backend/go.mod backend/go.sum ./
-RUN go mod download
+# Cache de módulos e de compilação do Go entre construções (BuildKit): mudando só o código do app, só o que mudou recompila (segundos, não minutos).
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY backend ./
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api
 
 # Transcrição das mensagens de voz: whisper.cpp (código aberto, roda na própria máquina, sem custo e sem enviar o áudio a ninguém).
 # Compila na máquina que constrói a imagem (-march=native): construa na mesma máquina em que ela vai rodar (é o caso da VPS).
@@ -44,5 +47,6 @@ ENV APP_ENV=production HTTP_ADDR=:8080 AUTO_MIGRATE=true WEB_DIR=/app/web STORAG
 USER app
 VOLUME /data
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://127.0.0.1:8080/readyz >/dev/null || exit 1
+# Na partida confere a cada 2 s (start-interval) e vira "healthy" assim que /readyz responde; antes o Docker só olhava depois de 30 s inteiros.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=30s --start-interval=2s CMD wget -qO- http://127.0.0.1:8080/readyz >/dev/null || exit 1
 ENTRYPOINT ["/app/api"]
