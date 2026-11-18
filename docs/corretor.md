@@ -17,7 +17,11 @@ Onde vale: mensagem do chat (e chat interno), legenda de anexo, lembrete pessoal
    gerado por `scripts/gen-pt-accents.py` a partir do dicionário **VERO pt-BR** (LGPL-3.0 ou MPL-2.0) e da **frequência de palavras de conversa**
    (OpenSubtitles 2024 via OPUS, ODC-BY). Só entra a palavra acentuada que existe na ortografia atual, cuja forma sem acento **não** é de uso comum
    ("esta", "pais", "para", "pra", "aqui" ficam como estão; "numero", "historia", "negocio" entram porque a acentuada domina a conversa).
-3. **Terminações seguras**: -ção/-ções, -são/-sões, -stão, -zões, -ível/-áveis (palavras que não existem sem acento).
+3. **Terminações** (`ptSuffixes.data.ts`, ~15 KB comprimidos): 564 regras de terminação **mineradas do VERO** por `scripts/gen-pt-suffixes.py` (cobrem
+   -ência/-ância, -ário/-ório, -ístico/-ítico/-ógico/-ético, -ção/-ções, -ável/-ível, -íssimo etc.: `pendencia` → `pendência`, `tecnologico` → `tecnológico`).
+   Cada regra tem apoio (≥40 palavras) e parcela dominante (≥90% das palavras que precisam de acento naquela terminação usam o mesmo). Palavras **válidas de uso comum**
+   que casam com a regra ficam como estão (lista de ~4 mil exceções: `evidencia`, `influencia`, `politica`); substantivos que o VERO aceita sem acento só por causa de um
+   verbo raro (`pendencia`, `gramatica`) continuam sendo corrigidos. Até o arquivo carregar, valem as terminações escritas à mão (-ção, -são, -ível, -ável...).
 4. **Erros de digitação** (`typos.ts`, ver abaixo): só quando a palavra digitada **não é palavra** e há uma palavra frequente a um engano de distância.
 
 Respeita maiúsculas ("Voce" → "Você", "NAO" → "NÃO"; siglas de 2 letras como "PE" não), e-mail, link, caminho, `@menção`, `#tag` e `{variável}`.
@@ -43,6 +47,22 @@ as ~25 mil palavras raras válidas do VERO que o algoritmo trocaria por engano, 
   ~99,9%; letra faltando ~83%; quase nunca troca por outra palavra (<0,5%). Palavras válidas raras do VERO: 0% trocadas (por causa da lista de exceções).
   Nomes, marcas, gírias e estrangeirismos que **não** estão no VERO nem na lista frequente é que podem ser trocados por engano: por isso o Backspace e o aprendizado.
 - Regerar: `scripts/gen-pt-typos.py` (gera os dados e o `typos.fixture.json`; o teste confere que o TypeScript concorda com o Python em ~1.200 casos).
+
+## Verificador de palavras: sublinhado e cartão no botão direito (só na caixa de mensagem)
+
+Palavras que **não existem** em português ganham um sublinhado vermelho ondulado, como num corretor do navegador, mas feito pelo ChatHM (igual em qualquer navegador).
+**Botão direito** em cima de uma palavra sublinhada abre um cartão com até 5 sugestões e "Ignorar esta palavra"; clicar numa sugestão troca a palavra e devolve o foco à caixa.
+Em qualquer outro lugar do campo, o botão direito abre o menu normal do navegador.
+
+- **O que "existe"**: o dicionário VERO inteiro (todas as formas, com e sem acento, ~2,7 milhões) num filtro de Bloom (`ptValid.bin`, **3,3 MB**, carregado sob demanda na
+  primeira vez que a pessoa digita e guardado pelo navegador por um ano), mais as palavras frequentes de conversa. Gerador: `scripts/gen-pt-bloom.py` (o teste confere
+  bit a bit que TypeScript e Python concordam). O filtro tem ~1% de falso positivo: ~1% das palavras inexistentes passam por existentes (nunca o contrário).
+- **Não sublinha**: a palavra em que o cursor está (ainda está sendo digitada), nomes (inicial maiúscula no meio da frase), siglas (TUDO MAIÚSCULO), palavras de 1 ou 2 letras,
+  e-mail, link, `@menção`, números, risadas e termos do escritório (`cnpj`, `darf`, `esocial`, `whatsapp`...), e as palavras que a pessoa mandou ignorar.
+- **Sugestões**: primeiro o que o corretor faria sozinho (acento ou erro de digitação), depois as palavras frequentes a 1 engano e, se faltar, a 2 enganos, da mais comum
+  para a menos comum, mantendo a capitalização. Palavras raras que não estão entre as ~30 mil frequentes não são sugeridas (e podem não ter sugestão).
+- O corretor do navegador fica desligado nesta caixa (`spellcheck=false`) para o sublinhado não aparecer duplicado.
+- **Ignorar esta palavra** usa o mesmo aprendizado do Backspace (vale 90 dias neste navegador).
 
 ## Medição (sem tela)
 
@@ -84,13 +104,15 @@ camada inteira com taxa alta = apertar o critério daquela camada. Depois regera
 - **Ctrl+Z** não desfaz uma correção (a troca é feita por código); o desfazer é o Backspace.
 - O que o corretor aprende fica no navegador (não segue a pessoa para outro computador).
 - Campos de administração (orientações da IA, descrição de raias) não têm o corretor.
+- O **sublinhado e o cartão** só existem na caixa de mensagem; legenda de anexo, lembrete e observação do cliente seguem com o corretor do navegador (e o mesmo corretor de acentos).
+- O dicionário de palavras pesa 3,3 MB na primeira vez (depois fica no navegador); sem ele carregado, nada é sublinhado.
 
 ## Próximos passos (ordem sugerida)
 
 1. ~~Erros de digitação com cuidado~~ **(feito: primeira versão, ver acima)**. Falta: sugerir (sem trocar sozinho) nos casos ambíguos e em letras erradas quaisquer; medir com texto real.
 2. **Maiúscula no começo da frase** e depois de ponto ("oi. tudo bem" → "Oi. Tudo bem"), opcional.
 3. **Ctrl+Z** que desfaz a correção (inserir pelo mecanismo nativo de edição do navegador em vez de trocar o valor).
-4. **Vocabulário do escritório**: palavras e nomes aprendidos (e os nomes dos clientes e da equipe, que o app já conhece) compartilhados sem tela: o corretor passa a não mexer neles automaticamente, e o aprendizado vai para a conta em vez do navegador.
+4. **Sublinhado nos outros campos** (legenda, lembrete, observação) e **vocabulário do escritório**: palavras e nomes aprendidos (e os nomes dos clientes e da equipe, que o app já conhece) compartilhados sem tela: o corretor passa a não mexer neles automaticamente, e o aprendizado vai para a conta em vez do navegador.
 5. ~~Medir~~ **(feito, ver "Medição")**. Falta: usar os números (rodar uma semana com a equipe, ler o relatório e podar a lista) e, se quiser, um aviso ao administrador quando uma camada passar de uma taxa de desfeitas.
 6. **Celular/IME**: validar com teclados Android/iOS (composição) em aparelhos reais; hoje o corretor não age durante composição.
 7. ~~Aviso na primeira vez~~ (retirado: o corretor é interno e discreto).
@@ -98,5 +120,5 @@ camada inteira com taxa alta = apertar o critério daquela camada. Depois regera
 
 ## Testes
 
-`typos.test.ts` (algoritmo, concordância com o gerador em ~1.200 casos, capitalização, contexto), `autocorrect.test.ts` (palavras, dicionário gerado, opções), `accentController.test.ts` (motor: cursor, Backspace, composição, envio),
+`spell.test.ts` (filtro de Bloom, palavras sublinhadas, sugestões), `typos.test.ts` (algoritmo, concordância com o gerador em ~1.200 casos, capitalização, contexto), `autocorrect.test.ts` (palavras, dicionário gerado, opções), `accentController.test.ts` (motor: cursor, Backspace, composição, envio),
 `writingPrefs.test.ts` (aprendizado e expiração), `autocorrectStats.test.ts` (contagem, lotes, falhas, privacidade) e, no servidor, `writing_test.go` (soma, relatório, validação, privacidade). No navegador de teste: digitação real, cursor no meio do texto, Backspace, aprendizado, Configurações.

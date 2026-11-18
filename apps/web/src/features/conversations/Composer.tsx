@@ -12,6 +12,8 @@ import type { OutgoingDraft } from "./store";
 import { AttachmentPreview, type AttachmentSelection } from "./AttachmentPreview";
 import { MentionPopup } from "./MentionPopup";
 import { useAccentTextarea } from "./useAccentTextarea";
+import { SpellBackdrop } from "./SpellCheck";
+import { useSpellcheck } from "./useSpellcheck";
 import { applyMention, extractMentions, filterPeople, findMentionQuery, mentionListId, mentionOptionId, type MentionPerson, type MentionRef } from "./mentions";
 
 const quickEmojis = ["😀", "😉", "🙏", "👍", "👏", "✅", "📄", "📎", "⏰", "💰", "🎉", "❤️"];
@@ -108,6 +110,17 @@ export function Composer({
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, [text]);
+
+  // Sublinhado das palavras que não existem e cartão de sugestões no botão direito.
+  const spell = useSpellcheck({
+    ref: ta, text, caret,
+    onReplace: (start, end, to) => {
+      update(text.slice(0, start) + to + text.slice(end));
+      const at = start + to.length;
+      setCaret(at);
+      requestAnimationFrame(() => { ta.current?.focus(); ta.current?.setSelectionRange(at, at); });
+    },
+  });
 
   const mentionQuery = mentionPeople ? findMentionQuery(text, caret) : null;
   if (!mentionQuery && dismissedAt !== null) setDismissedAt(null);
@@ -376,6 +389,8 @@ export function Composer({
           <input ref={imgInput} type="file" multiple accept="image/jpeg,image/png,image/webp" hidden onChange={onFile("image")} />
           <input ref={hdInput} type="file" multiple accept="image/jpeg,image/png,image/webp" hidden onChange={onFile("image", true)} />
 
+          <div className="relative mx-1 min-w-0 flex-1">
+          <SpellBackdrop text={text} unknown={spell.unknown} backdrop={spell.backdrop} className="px-2 py-2 text-[13.5px] leading-5" />
           <textarea
             ref={ta}
             rows={1}
@@ -388,9 +403,14 @@ export function Composer({
             {...(mentionPeople ? { role: "combobox", "aria-autocomplete": "list", "aria-expanded": mentionOpen, "aria-controls": mentionOpen ? mentionListId : undefined, "aria-activedescendant": mentionOpen ? mentionOptionId(mentionOptions[activeMention]!.id) : undefined } : {})}
             placeholder="Digite uma mensagem"
             aria-label="Mensagem"
+            onScroll={spell.onScroll}
+            onContextMenu={spell.onContextMenu}
             {...accent.attrs}
-            className="mx-1 max-h-40 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-[13.5px] leading-5 outline-none placeholder:text-muted focus-visible:outline-none"
+            spellCheck={false} // o sublinhado e o cartão de sugestões são do ChatHM (useSpellcheck); o do navegador ficaria duplicado
+            className="relative z-10 block max-h-40 min-h-9 w-full min-w-0 resize-none bg-transparent px-2 py-2 text-[13.5px] leading-5 outline-none placeholder:text-muted focus-visible:outline-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           />
+          {spell.card}
+          </div>
 
           <AnimatePresence mode="popLayout" initial={false}>
             <motion.span

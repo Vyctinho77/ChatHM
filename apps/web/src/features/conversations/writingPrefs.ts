@@ -72,6 +72,16 @@ export function recordUndo(w: string, now = Date.now()): WritingPrefs {
   return commit({ ...cur, undone: { ...cur.undone, [lower]: count } });
 }
 
+/** A pessoa mandou nunca corrigir nem sublinhar esta palavra (cartão do botão direito). Vale por IGNORE_DAYS dias, como o aprendizado. */
+export function ignoreWord(w: string, now = Date.now()): WritingPrefs {
+  const lower = word(w);
+  const cur = getWritingPrefs();
+  if (!validWord(lower)) return cur;
+  const { [lower]: _gone, ...undone } = cur.undone;
+  void _gone;
+  return commit({ ignored: { ...cur.ignored, [lower]: now }, undone });
+}
+
 /** Só para testes: esquece o que está em memória. */
 export const resetWritingPrefsCache = () => {
   cache = null;

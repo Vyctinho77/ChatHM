@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { getWritingPrefs, IGNORE_DAYS, ignoredWords, parseWritingPrefs, recordUndo, resetWritingPrefsCache, UNDO_LIMIT } from "./writingPrefs";
+import { getWritingPrefs, IGNORE_DAYS, ignoredWords, ignoreWord, parseWritingPrefs, recordUndo, resetWritingPrefsCache, UNDO_LIMIT } from "./writingPrefs";
 
 // Sem navegador (ambiente node): um localStorage de mentira.
 const store = new Map<string, string>();
@@ -51,6 +51,15 @@ describe("o que o corretor aprende", () => {
     recordUndo("tecnoprint", NOW);
     resetWritingPrefsCache();
     expect(Object.keys(getWritingPrefs().ignored)).toEqual(["tecnoprint"]);
+  });
+  it("'Ignorar esta palavra' (cartão do botão direito) vale na hora, para sempre até expirar, e limpa a contagem de desfeitas", () => {
+    recordUndo("tecnoprint", NOW);
+    expect(getWritingPrefs().undone).toEqual({ tecnoprint: 1 });
+    ignoreWord("  Tecnoprint ", NOW);
+    expect(getWritingPrefs()).toEqual({ ignored: { tecnoprint: NOW }, undone: {} });
+    ignoreWord("não é palavra!", NOW);
+    expect(Object.keys(getWritingPrefs().ignored)).toEqual(["tecnoprint"]);
+    expect(ignoredWords(NOW + DAY).has("tecnoprint")).toBe(true);
   });
   it("ignora o que não é palavra", () => {
     recordUndo("não é palavra!", NOW);

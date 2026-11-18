@@ -75,6 +75,11 @@ export function setTypoDictionary(words: readonly string[] | null, exceptions: I
 }
 export const isTypoDictionaryLoaded = () => dict !== null;
 
+/** As palavras frequentes (para o verificador de palavras): `has` = é uma delas (como escrita), `variants` = sem acento → acentuadas, `rank` = frequência. */
+export function getTypoVocabulary(): { has: (w: string) => boolean; variants: ReadonlyMap<string, string[]>; rank: ReadonlyMap<string, number> } | null {
+  return dict ? { has: (w) => dict!.rank.has(w), variants: dict.variants, rank: dict.rank } : null;
+}
+
 /** Carrega os dados (dois arquivos separados, ~150 KB comprimidos no total). Chamar de novo não baixa de novo. */
 export function loadTypoDictionary(): Promise<void> {
   loading ??= Promise.all([import("./ptWords.data"), import("./ptTypoExceptions.data")])
