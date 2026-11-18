@@ -6,8 +6,8 @@
  *
  * Três camadas, da mais forte para a mais fraca: a lista curada abaixo (sempre vale, inclusive gírias de chat como "ta" → "tá"), o dicionário
  * estendido (ptAccents.data.ts, ~4.700 palavras geradas do VERO pt-BR + frequência de conversa; carrega sob demanda) e as terminações
- * seguras (-ção, -são, -ível...). Abreviações de chat ("vc", "tb", "obg") só com a opção ligada. Palavras que a pessoa mandou ignorar
- * (ou que ela desfez duas vezes) nunca são corrigidas.
+ * seguras (-ção, -são, -ível...). Palavras cuja correção a pessoa desfez duas vezes deixam de ser corrigidas (por um tempo). Não há tela
+ * de configuração: o corretor é interno e só aparece nas caixas de texto.
  */
 
 // sem acento → com acento. Uma linha por assunto, só para ficar legível.
@@ -57,22 +57,8 @@ export function loadExtendedDictionary(): Promise<void> {
   return loading;
 }
 
-/** Abreviações de chat (só com a opção ligada). Sempre com 2+ letras: "n" e "q" sozinhos são ambíguos demais. */
-export const ABBREVIATIONS: ReadonlyMap<string, string> = new Map(
-  `vc:você vcs:vocês tb:também tbm:também obg:obrigado obgd:obrigado obgda:obrigada blz:beleza msg:mensagem msgs:mensagens hj:hoje
-ctz:certeza cmg:comigo ctg:contigo mt:muito mto:muito mta:muita td:tudo tds:todos qdo:quando qto:quanto dps:depois pfv:por-favor vlw:valeu`
-    .split(/\s+/).filter(Boolean).map((pair) => {
-      const [from, to] = pair.split(":") as [string, string];
-      return [from, to.replace("-", " ")];
-    }),
-);
-
 export type CorrectOptions = {
-  /** Põe acentos (padrão: sim). Falso = só abreviações. */
-  accents?: boolean;
-  /** Expande abreviações de chat (vc → você). Desligado por padrão. */
-  abbreviations?: boolean;
-  /** Palavras (minúsculas) que a pessoa mandou nunca corrigir. */
+  /** Palavras (minúsculas) que o corretor aprendeu a não corrigir (a pessoa desfez a correção duas vezes). */
   ignored?: ReadonlySet<string>;
 };
 
@@ -101,7 +87,7 @@ export function correctWord(word: string, opts: CorrectOptions = {}): string | n
   if (opts.ignored?.has(lower)) return null;
   const upper = word.length > 1 && word === word.toUpperCase();
   if (upper && word.length <= 2) return null; // "PE", "AI", "VC": sigla
-  const fixed = (opts.abbreviations ? ABBREVIATIONS.get(lower) : undefined) ?? (opts.accents === false ? null : accentedForm(lower));
+  const fixed = accentedForm(lower);
   if (!fixed) return null;
   if (word === lower) return fixed;
   if (upper) return fixed.toUpperCase();

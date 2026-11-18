@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ABBREVIATIONS, applyFix, correctWord, DICTIONARY, fixTail, fixWordEndingAt, isTrigger, setExtendedDictionary, undoFix } from "./autocorrect";
+import { applyFix, correctWord, DICTIONARY, fixTail, fixWordEndingAt, isTrigger, setExtendedDictionary, undoFix } from "./autocorrect";
 
 describe("corretor de acentos: palavras", () => {
   it("põe o acento nas palavras comuns", () => {
@@ -106,30 +106,18 @@ describe("corretor de acentos: dicionário estendido (gerado)", () => {
   });
   it("siglas de duas letras em maiúsculas não são mexidas", () => {
     expect(correctWord("PE")).toBeNull();
-    expect(correctWord("VC", { abbreviations: true })).toBeNull();
+    expect(correctWord("AI")).toBeNull();
     expect(correctWord("NAO")).toBe("NÃO");
   });
 });
 
-describe("corretor de acentos: opções", () => {
-  it("abreviações só com a opção ligada, mantendo a capitalização", () => {
-    expect(correctWord("vc")).toBeNull();
-    expect(correctWord("vc", { abbreviations: true })).toBe("você");
-    expect(correctWord("Vc", { abbreviations: true })).toBe("Você");
-    expect(correctWord("pfv", { abbreviations: true })).toBe("por favor");
-    expect(correctWord("tbm", { abbreviations: true })).toBe("também");
-    expect(correctWord("n", { abbreviations: true })).toBeNull(); // letra solta é ambígua demais
-    expect(correctWord("q", { abbreviations: true })).toBeNull();
-    for (const [from] of ABBREVIATIONS) expect(from.length).toBeGreaterThanOrEqual(2);
-  });
-  it("só abreviações (acentos desligados) e só acentos (abreviações desligadas)", () => {
-    expect(correctWord("voce", { accents: false })).toBeNull();
-    expect(correctWord("vc", { accents: false, abbreviations: true })).toBe("você");
-    expect(correctWord("vc", { accents: true })).toBeNull();
-  });
+describe("corretor de acentos: palavras aprendidas", () => {
   it("palavras ignoradas nunca são corrigidas", () => {
     expect(correctWord("voce", { ignored: new Set(["voce"]) })).toBeNull();
     expect(correctWord("Voce", { ignored: new Set(["voce"]) })).toBeNull();
     expect(fixTail("a gente fala voce", undefined, { ignored: new Set(["voce"]) })).toBe("a gente fala voce");
+  });
+  it("não existe expansão de abreviações: o corretor só acentua", () => {
+    for (const w of ["vc", "tb", "tbm", "obg", "blz", "hj", "pfv", "n", "q"]) expect(correctWord(w)).toBeNull();
   });
 });

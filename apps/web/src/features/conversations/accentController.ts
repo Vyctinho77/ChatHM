@@ -1,4 +1,4 @@
-import { getWritingPrefs } from "./writingPrefs";
+import { ignoredWords } from "./writingPrefs";
 import { applyFix, fixTail, fixWordEndingAt, isTrigger, undoFix, type CorrectOptions, type Fix, type Rejected } from "./autocorrect";
 
 /**
@@ -14,13 +14,13 @@ export class AccentController {
   private rejected: Rejected = null;
 
   /** `options` é lida a cada digitação (as preferências podem mudar com o campo aberto); `onUndo` avisa quando a pessoa desfaz uma correção. */
-  constructor(private options: () => (CorrectOptions & { enabled: boolean }), private onUndo?: (word: string) => void) {}
+  constructor(private options: () => CorrectOptions, private onUndo?: (word: string) => void) {}
 
   /** O campo mudou (`caret` já é a posição depois da digitação). Fechou uma palavra? Corrige. */
   input(value: string, caret: number, ev: InputInfo): AccentResult {
     this.last = null;
     const o = this.options();
-    if (o.enabled && !ev.isComposing && (ev.inputType === "insertText" || ev.inputType === "insertLineBreak") && ev.selectionEnd === caret) {
+    if (!ev.isComposing && (ev.inputType === "insertText" || ev.inputType === "insertLineBreak") && ev.selectionEnd === caret) {
       const typed = ev.inputType === "insertLineBreak" ? "\n" : ev.data ?? "";
       if (isTrigger(typed) && caret > 0 && value.charAt(caret - 1) === typed) {
         const fix = fixWordEndingAt(value, caret - 1, this.rejected, o);
@@ -48,8 +48,7 @@ export class AccentController {
 
   /** O texto na hora de enviar: corrige a última palavra, que ainda não foi "fechada". */
   finish(text: string): string {
-    const o = this.options();
-    return o.enabled ? fixTail(text, this.rejected, o) : text;
+    return fixTail(text, this.rejected, this.options());
   }
 
   /** Enviou ou trocou de conversa: esquece a última correção. */
@@ -59,8 +58,7 @@ export class AccentController {
   }
 }
 
-/** Para quem envia um texto sem passar pelo campo (legenda, lembrete): corrige a última palavra com as preferências de hoje. */
+/** Para quem envia um texto sem passar pelo campo (legenda, lembrete): corrige a última palavra com o que o corretor já aprendeu. */
 export function finishWithPrefs(text: string): string {
-  const p = getWritingPrefs();
-  return p.autoAccent || p.abbreviations ? fixTail(text, undefined, { accents: p.autoAccent, abbreviations: p.abbreviations, ignored: new Set(p.ignored) }) : text;
+  return fixTail(text, undefined, { ignored: ignoredWords() });
 }
