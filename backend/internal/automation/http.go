@@ -44,6 +44,8 @@ func (h *Handler) Routes(r chi.Router) {
 		r.Get("/automation/lanes", h.lanes)
 		r.Put("/automation/lanes/{key}", h.putLane)
 		r.Get("/automation/lane-drafts", h.laneDrafts)
+		r.Post("/automation/lane-drafts/{id}/approve", h.approveDraft)
+		r.Post("/automation/lane-drafts/{id}/discard", h.discardDraft)
 		r.Get("/automation/handoffs", h.handoffs)
 		h.chargeRoutes(r)
 	})
@@ -333,7 +335,7 @@ func (h *Handler) putLane(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) laneDrafts(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	list, err := h.svc.Drafts(r.Context(), q.Get("lane"), atoi(q.Get("limit")))
+	list, err := h.svc.Drafts(r.Context(), q.Get("lane"), q.Get("pending") == "1", atoi(q.Get("limit")))
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -349,4 +351,27 @@ func (h *Handler) handoffs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"handoffs": list})
+}
+
+func (h *Handler) approveDraft(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Text string `json:"text"` // vazio = envia o rascunho como a IA escreveu
+	}
+	if !httpx.Decode(w, r, &in) {
+		return
+	}
+	res, err := h.svc.ApproveDraft(r.Context(), auth.MustFromContext(r.Context()).UserID, httpx.ClientIP(r), chi.URLParam(r, "id"), in.Text)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, res)
+}
+
+func (h *Handler) discardDraft(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.DiscardDraft(r.Context(), auth.MustFromContext(r.Context()).UserID, httpx.ClientIP(r), chi.URLParam(r, "id")); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

@@ -1,16 +1,18 @@
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, FileText, MessageSquareWarning } from "lucide-react";
+import { Check, ChevronDown, FileText, MessageSquareWarning, Pencil, X } from "lucide-react";
+import { ProviderLogo } from "@/components/ProviderLogo";
+import { providerLabel } from "@/lib/providers";
 import { Alert, Button, Modal } from "@/components/ui";
 import { InfoTip } from "@/components/InfoTip";
 import { FormattedText } from "@/components/FormattedText";
 import { Skeleton } from "@/components/Skeleton";
-import { api, errorMessage, fieldErrors, get } from "@/lib/api";
+import { api, errorMessage, fieldErrors, get, post } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { DEMO } from "@/lib/env";
 import { useSegments } from "@/features/queues/api";
-import { STATE_HINT, STATE_LABEL, laneState, laneSummary, needsLiveConfirm, parseDomains, reasonLabel, validateLane, type Handoff, type Lane, type LaneDraft } from "./lanes";
+import { MAX_DRAFT_CHARS, OUTCOME_LABEL, STATE_HINT, STATE_LABEL, draftTextError, isOldDraft, laneState, laneSummary, needsLiveConfirm, parseDomains, reasonLabel, validateLane, type Handoff, type Lane, type LaneDraft } from "./lanes";
 
 const inputClass = "h-10 min-w-0 rounded-xl border border-line/60 bg-app/50 px-3 text-[13px] text-fg outline-none transition-colors placeholder:text-muted/60 hover:border-line focus:border-brand focus:ring-2 focus:ring-brand/15";
 const numberClass = "[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none";
@@ -37,7 +39,7 @@ function Row({ title, hint, children }: { title: string; hint?: ReactNode; child
 export function LanesTab() {
   const lanes = useQuery({ queryKey: ["automation", "lanes"], enabled: !DEMO, queryFn: async () => (await get<{ lanes: Lane[] }>("/automation/lanes")).lanes });
   const handoffs = useQuery({ queryKey: ["automation", "handoffs"], enabled: !DEMO, queryFn: async () => (await get<{ handoffs: Handoff[] }>("/automation/handoffs?open=1&limit=50")).handoffs, refetchInterval: 15000 });
-  const drafts = useQuery({ queryKey: ["automation", "lane-drafts"], enabled: !DEMO, queryFn: async () => (await get<{ drafts: LaneDraft[] }>("/automation/lane-drafts?limit=50")).drafts, refetchInterval: 15000 });
+  const drafts = useQuery({ queryKey: ["automation", "lane-drafts"], enabled: !DEMO, queryFn: async () => (await get<{ drafts: LaneDraft[] }>("/automation/lane-drafts?limit=100")).drafts, refetchInterval: 15000 });
   const segments = useSegments();
   if (DEMO) return <p className="text-sm text-muted">As raias da IA não estão disponíveis nesta demonstração.</p>;
   if (lanes.isPending) return <Skeleton className="h-24 w-full" />;
@@ -45,7 +47,8 @@ export function LanesTab() {
   const segName = (id: string) => segments.data?.find((s) => s.id === id)?.name;
   const laneLabel = (key: string) => lanes.data?.find((l) => l.key === key)?.label ?? key;
   const open = handoffs.data ?? [];
-  const list = drafts.data ?? [];
+  const list = (drafts.data ?? []).filter((d) => !d.outcome);
+  const reviewed = (drafts.data ?? []).filter((d) => !!d.outcome);
   return (
     <div className="flex flex-col gap-8">
       <section>
@@ -72,23 +75,70 @@ export function LanesTab() {
       </section>
 
       <section aria-label="Rascunhos em sombra">
-        <h3 className="mb-1 flex items-center gap-1.5 text-[13px] font-medium"><FileText className="size-4 text-muted" />Rascunhos em sombra</h3>
-        <p className="mb-3 text-xs text-muted">O que a IA enviaria se a raia estivesse valendo. Nada disso foi para o cliente.</p>
+        <h3 className="mb-1 flex items-center gap-1.5 text-[13px] font-medium"><FileText className="size-4 text-muted" />Rascunhos para revisar{list.length > 0 && <span className="rounded-full bg-amber-500/10 px-1.5 text-[10px] text-amber-700 dark:text-amber-200">{list.length}</span>}</h3>
+        <p className="mb-3 text-xs text-muted">O que a IA enviaria se a raia estivesse valendo. Nada disso foi para o cliente. Você pode enviar como está, editar e enviar, ou descartar.</p>
         {drafts.isPending && <Skeleton className="h-12 w-full" />}
         {drafts.isError && <Alert>Não foi possível carregar os rascunhos.</Alert>}
-        {drafts.isSuccess && list.length === 0 && <p className="border-t border-line/60 py-4 text-xs text-muted">Ainda não há rascunhos.</p>}
-        {list.map((d) => (
-          <article key={d.id} className="border-t border-line/60 py-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-[13px] font-medium">{d.contactName}</p>
-              <p className="text-[11px] text-muted">{laneLabel(d.lane)} · <When value={d.createdAt} /></p>
-            </div>
-            <p className="mt-3 whitespace-pre-wrap break-words border-l-2 border-brand/30 pl-3 text-[13px] leading-relaxed"><FormattedText text={d.body} /></p>
-            {d.conversationId && <Link to={`/conversas/${d.conversationId}`} className="mt-2 inline-block text-xs font-medium text-brand-ink hover:underline">Abrir a conversa</Link>}
-          </article>
-        ))}
+        {drafts.isSuccess && list.length === 0 && <p className="border-t border-line/60 py-4 text-xs text-muted">Nenhum rascunho esperando revisão.</p>}
+        {list.map((d) => <DraftCard key={d.id} draft={d} laneLabel={laneLabel(d.lane)} />)}
+        {reviewed.length > 0 && (
+          <details className="group mt-3 border-t border-line/60 pt-3">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs text-muted [&::-webkit-details-marker]:hidden">Já revisados ({reviewed.length})<ChevronDown className="size-4 transition-transform group-open:rotate-180" /></summary>
+            {reviewed.map((d) => (
+              <article key={d.id} className="border-t border-line/40 py-3 first:mt-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted"><span className="text-[13px] font-medium text-fg">{d.contactName}</span><span>{OUTCOME_LABEL[d.outcome ?? ""] ?? d.outcome} · {d.reviewedAt ? <When value={d.reviewedAt} /> : null}</span></div>
+                <p className="mt-2 line-clamp-3 whitespace-pre-wrap break-words text-xs leading-relaxed text-muted">{d.outcome === "edited" && d.finalBody ? d.finalBody : d.body}</p>
+              </article>
+            ))}
+          </details>
+        )}
       </section>
     </div>
+  );
+}
+
+function DraftCard({ draft: d, laneLabel }: { draft: LaneDraft; laneLabel: string }) {
+  const qc = useQueryClient();
+  const [text, setText] = useState<string | null>(null); // null = não está editando
+  const [error, setError] = useState("");
+  const done = () => { setError(""); setText(null); void qc.invalidateQueries({ queryKey: ["automation", "lane-drafts"] }); };
+  const send = useMutation({
+    mutationFn: () => post<{ status: string }>(`/automation/lane-drafts/${d.id}/approve`, text !== null ? { text: text.trim() } : {}),
+    onSuccess: done,
+    onError: (e) => setError(errorMessage(e)),
+  });
+  const discard = useMutation({
+    mutationFn: () => post<void>(`/automation/lane-drafts/${d.id}/discard`),
+    onSuccess: done,
+    onError: (e) => setError(errorMessage(e)),
+  });
+  const busy = send.isPending || discard.isPending;
+  const invalid = text !== null ? draftTextError(text) : "";
+  return (
+    <article aria-label={`Rascunho para ${d.contactName}`} className="border-t border-line/60 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[13px] font-medium">{d.contactName}</p>
+        <p className="flex items-center gap-1.5 text-[11px] text-muted"><ProviderLogo provider={d.provider} className="size-3.5" />{d.agent || providerLabel(d.provider)}<span aria-hidden>·</span>{laneLabel}<span aria-hidden>·</span><When value={d.createdAt} /></p>
+      </div>
+      {text === null ? (
+        <p className="mt-3 whitespace-pre-wrap break-words border-l-2 border-brand/30 pl-3 text-[13px] leading-relaxed"><FormattedText text={d.body} /></p>
+      ) : (
+        <div className="mt-3">
+          <textarea aria-label={`Mensagem para ${d.contactName}`} value={text} rows={5} maxLength={MAX_DRAFT_CHARS + 200} onChange={(e) => { setError(""); setText(e.target.value); }} aria-invalid={!!invalid} className={cn(inputClass, "h-auto w-full resize-y py-3 leading-relaxed", invalid && "border-danger")} />
+          <p className={cn("mt-1 text-[11px]", invalid ? "text-danger" : "text-muted")}>{invalid || `${text.trim().length}/${MAX_DRAFT_CHARS}`}</p>
+        </div>
+      )}
+      {isOldDraft(d.createdAt) && <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-200">Rascunho com mais de 1 dia: abra a conversa e confira antes de enviar.</p>}
+      {error && <div className="mt-3"><Alert>{error}{" "}<span className="opacity-80">Se a conversa já foi resolvida, descarte o rascunho.</span></Alert></div>}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button loading={send.isPending} disabled={busy || !!invalid} onClick={() => send.mutate()}><Check className="size-4" />{text === null ? "Enviar" : "Enviar editado"}</Button>
+        {text === null
+          ? <Button variant="ghost" disabled={busy} onClick={() => setText(d.body)}><Pencil className="size-3.5" />Editar</Button>
+          : <Button variant="ghost" disabled={busy} onClick={() => { setText(null); setError(""); }}>Cancelar edição</Button>}
+        <Button variant="ghost" loading={discard.isPending} disabled={busy} className="text-muted hover:text-danger" onClick={() => discard.mutate()}><X className="size-3.5" />Descartar</Button>
+        {d.conversationId && <Link to={`/conversas/${d.conversationId}`} className="ml-auto text-xs font-medium text-brand-ink hover:underline">Abrir a conversa</Link>}
+      </div>
+    </article>
   );
 }
 

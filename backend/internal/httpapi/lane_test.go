@@ -604,3 +604,120 @@ func TestLaneWakeOverPlainHTTPForTheListener(t *testing.T) {
 		t.Fatalf("com uma pessoa na conversa: %v", gone["total"])
 	}
 }
+
+func (e laneEnv) drafts(query string) []map[string]any {
+	e.w.e.t.Helper()
+	out := []map[string]any{}
+	for _, x := range e.w.admin.do("GET", "/api/v1/automation/lane-drafts"+query, nil).body["drafts"].([]any) {
+		out = append(out, x.(map[string]any))
+	}
+	return out
+}
+
+// Rascunhos da sombra: quem revisa envia (como o agente que escreveu), edita e envia, ou descarta.
+func TestLaneDraftReviewApproveEditDiscard(t *testing.T) {
+	e := laneSetup(t, "shadow", nil)
+	for i := 0; i < 3; i++ {
+		if o := e.send(goodReply + " " + strings.Repeat("x", i)); o["status"] != "sombra" {
+			t.Fatalf("em sombra: %v", o)
+		}
+	}
+	pending := e.drafts("?pending=1")
+	if len(pending) != 3 || pending[0]["agent"] != "atendente" || pending[0]["provider"] != "grok" || pending[0]["outcome"] != nil && pending[0]["outcome"] != "" {
+		t.Fatalf("pendentes: %v", pending)
+	}
+	byBody := map[string]string{}
+	for _, d := range pending {
+		byBody[strings.TrimSpace(d["body"].(string))] = d["id"].(string)
+	}
+	plain, edited, trash := byBody[goodReply+" "], byBody[goodReply+" x"], byBody[goodReply+" xx"]
+	if plain == "" {
+		plain = byBody[strings.TrimSpace(goodReply)]
+	}
+	if plain == "" || edited == "" || trash == "" {
+		t.Fatalf("ids: %v", byBody)
+	}
+	sent := len(e.w.e.wa.Sent())
+
+	// Aprovar como está: sai como o agente que escreveu (Grok), com o texto do rascunho.
+	r := e.w.admin.do("POST", "/api/v1/automation/lane-drafts/"+plain+"/approve", map[string]any{})
+	expect(t, r, 200)
+	if r.body["status"] != "enviado" || len(e.w.e.wa.Sent()) != sent+1 || !strings.HasSuffix(lastSent(t, e.w).Text, strings.TrimSpace(goodReply)) {
+		t.Fatalf("aprovado: %v / %q", r.body, lastSent(t, e.w).Text)
+	}
+	if got := scalar[string](t, e.w, `SELECT payload->>'aiProvider' FROM messages WHERE id = $1`, r.body["messageId"]); got != "grok" {
+		t.Fatalf("a mensagem leva o provedor do agente: %q", got)
+	}
+	if got := scalar[string](t, e.w, `SELECT payload->>'aiLane' FROM messages WHERE id = $1`, r.body["messageId"]); got != "certificado" {
+		t.Fatalf("a mensagem leva a raia: %q", got)
+	}
+	// Não envia duas vezes.
+	expect(t, e.w.admin.do("POST", "/api/v1/automation/lane-drafts/"+plain+"/approve", map[string]any{}), 409)
+	expect(t, e.w.admin.do("POST", "/api/v1/automation/lane-drafts/"+plain+"/discard", nil), 409)
+	if len(e.w.e.wa.Sent()) != sent+1 {
+		t.Fatal("aprovar de novo não pode reenviar")
+	}
+
+	// Editar e enviar: sai o texto editado.
+	r = e.w.admin.do("POST", "/api/v1/automation/lane-drafts/"+edited+"/approve", map[string]any{"text": "Texto revisado pela Ana: agende a validação por vídeo."})
+	expect(t, r, 200)
+	if !strings.HasSuffix(lastSent(t, e.w).Text, "Texto revisado pela Ana: agende a validação por vídeo.") {
+		t.Fatalf("editado: %q", lastSent(t, e.w).Text)
+	}
+	if got := scalar[string](t, e.w, `SELECT outcome || ':' || final_body FROM ai_lane_drafts WHERE id = $1`, edited); got != "edited:Texto revisado pela Ana: agende a validação por vídeo." {
+		t.Fatalf("registro do editado: %q", got)
+	}
+
+	// Descartar: nada sai.
+	sent = len(e.w.e.wa.Sent())
+	expect(t, e.w.admin.do("POST", "/api/v1/automation/lane-drafts/"+trash+"/discard", nil), 204)
+	if len(e.w.e.wa.Sent()) != sent {
+		t.Fatal("descartar não envia")
+	}
+	if got := e.drafts("?pending=1"); len(got) != 0 {
+		t.Fatalf("nada pendente: %v", got)
+	}
+	all := e.drafts("")
+	outcomes := map[string]int{}
+	for _, d := range all {
+		o, _ := d["outcome"].(string)
+		outcomes[o]++
+	}
+	if outcomes["approved"] != 1 || outcomes["edited"] != 1 || outcomes["discarded"] != 1 {
+		t.Fatalf("histórico: %v", outcomes)
+	}
+	// Só administrador; id desconhecido.
+	expect(t, e.w.ana.do("POST", "/api/v1/automation/lane-drafts/"+plain+"/approve", map[string]any{}), 403)
+	expect(t, e.w.admin.do("POST", "/api/v1/automation/lane-drafts/22222222-2222-4222-8222-222222222222/approve", map[string]any{}), 404)
+}
+
+// Entre o rascunho e a aprovação o mundo muda: uma pessoa assumiu, a conversa foi passada para a equipe ou o envio está pausado.
+func TestLaneDraftApprovalRechecksTheConversation(t *testing.T) {
+	e := laneSetup(t, "shadow", nil)
+	e.send(goodReply)
+	e.send(goodReply + " de novo")
+	ds := e.drafts("?pending=1")
+	if len(ds) != 2 {
+		t.Fatalf("rascunhos: %v", ds)
+	}
+	// Uma pessoa assume a conversa.
+	expect(t, e.w.send(e.w.ana, e.convID, "Oi, aqui é a Ana."), 201)
+	sent := len(e.w.e.wa.Sent())
+	r := e.w.admin.do("POST", "/api/v1/automation/lane-drafts/"+ds[0]["id"].(string)+"/approve", map[string]any{})
+	expect(t, r, 422)
+	if code := e.w.admin.do("POST", "/api/v1/automation/lane-drafts/"+ds[1]["id"].(string)+"/approve", map[string]any{}).body["error"].(map[string]any)["code"]; code != "humano_ativo" {
+		t.Fatalf("com uma pessoa na conversa: %v", code)
+	}
+	if len(e.w.e.wa.Sent()) != sent {
+		t.Fatal("nada pode ter saído")
+	}
+	// O rascunho continua pendente (não foi gasto) e pode ser descartado.
+	if got := e.drafts("?pending=1"); len(got) != 2 {
+		t.Fatalf("continuam pendentes: %v", got)
+	}
+	expect(t, e.w.admin.do("POST", "/api/v1/automation/lane-drafts/"+ds[0]["id"].(string)+"/discard", nil), 204)
+	// Envio pausado pelo administrador também barra a aprovação.
+	expect(t, e.w.admin.do("POST", "/api/v1/automation/pause", map[string]any{"paused": true, "reason": "teste"}), 204)
+	r = e.w.admin.do("POST", "/api/v1/automation/lane-drafts/"+ds[1]["id"].(string)+"/approve", map[string]any{})
+	expect(t, r, 422)
+}

@@ -1,6 +1,6 @@
 # Raia da IA (atendente autônomo com paredes)
 
-Status: **servidor (migração 43) e tela prontos, tudo desligado.** O aviso que acorda a IA está na seção 7. Veja "Próximos passos".
+Status: **servidor (migrações 43 e 44) e tela prontos.** Veja "Próximos passos".
 
 ## 1. A ideia
 
@@ -73,10 +73,17 @@ parede exige ("passada_para_humano"). O que acontece:
 - a conversa vai para a fila de destino da raia (`handoffSegmentId`), se houver, e o adiamento é desfeito;
 - a IA **fica em silêncio** naquela conversa até uma pessoa responder; quem responde vira responsável e a IA continua fora.
 
-## 4. Modo sombra
+## 4. Modo sombra e revisão dos rascunhos
 
 `mode = shadow` (padrão): o envio da IA vira um **rascunho** (`ai_lane_drafts`) e **nada vai ao cliente**; a resposta ao agente é `status: "sombra"`.
-As passagens para humano **acontecem** mesmo em sombra. Serve para ver, por uns dias, o que a IA faria antes de a raia valer. `mode = live` envia de verdade.
+As passagens para humano **acontecem** mesmo em sombra. `mode = live` envia de verdade.
+
+Em **Atendimento por IA → Raias → Rascunhos para revisar** o administrador pode, em cada rascunho: **Enviar** (como a IA escreveu), **Editar e enviar** ou **Descartar**.
+- A mensagem sai **como o agente que escreveu** (nome e logo do Grok, Claude etc.) e leva a raia.
+- Antes de enviar o servidor confere de novo a conversa: se uma pessoa assumiu, se foi passada para a equipe, se foi adiada, e os limites globais (pausa, PARAR, grupos, velocidade).
+  Se algo mudou, o envio é recusado, o rascunho **continua na lista** e pode ser descartado. Limites de rodadas, links e fontes não são refeitos: quem revisa decide.
+- Um rascunho só é enviado **uma vez** (dois cliques ou duas pessoas não duplicam). Rascunho com mais de 1 dia traz o aviso para conferir a conversa.
+- Os já revisados ficam em "Já revisados" com o que aconteceu (enviado, enviado com edição, descartado).
 
 ## 5. API (administrador)
 
@@ -84,7 +91,9 @@ As passagens para humano **acontecem** mesmo em sombra. Serve para ver, por uns 
 |---|---|
 | `GET /api/v1/automation/lanes` | lista as raias |
 | `PUT /api/v1/automation/lanes/{key}` | grava a configuração de uma raia |
-| `GET /api/v1/automation/lane-drafts?lane=&limit=` | rascunhos do modo sombra |
+| `GET /api/v1/automation/lane-drafts?lane=&pending=1&limit=` | rascunhos do modo sombra (`pending=1`: só os que esperam revisão) |
+| `POST /api/v1/automation/lane-drafts/{id}/approve` `{"text": "..."}` | envia o rascunho agora (texto vazio = como a IA escreveu; com `text`, o editado) |
+| `POST /api/v1/automation/lane-drafts/{id}/discard` | descarta (nada é enviado) |
 | `GET /api/v1/automation/handoffs?open=1&limit=` | passagens para humano (`answered` = uma pessoa já respondeu) |
 | `PUT /api/v1/ai/tokens/{id}/lane` `{"laneKey": "certificado"}` | prende o token (vazio solta). Só token do atendente autônomo |
 
@@ -128,6 +137,5 @@ a última mensagem do cliente (como **dado**, nunca instrução) e, na raiz, `la
 
 ## 8. Próximos passos
 
-1. **Aprovar, editar ou descartar** rascunhos da sombra pela tela (hoje é só leitura).
-2. **Manual do assunto e exemplos**: `get_lane_guidelines` e trechos de conversas boas já resolvidas por pessoas (mascarados, sem documentos).
-3. **Painel de atividade** e **pausa automática** por comportamento anormal (muitos `PARAR`, passagens, textos repetidos).
+1. **Manual do assunto e exemplos**: `get_lane_guidelines` e trechos de conversas boas já resolvidas por pessoas (mascarados, sem documentos).
+2. **Painel de atividade** e **pausa automática** por comportamento anormal (muitos `PARAR`, passagens, textos repetidos).

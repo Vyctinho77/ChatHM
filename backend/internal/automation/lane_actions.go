@@ -128,27 +128,31 @@ type Draft struct {
 	ContactName    string     `json:"contactName"`
 	Body           string     `json:"body"`
 	CreatedAt      time.Time  `json:"createdAt"`
-	Outcome        string     `json:"outcome,omitempty"`
+	Outcome        string     `json:"outcome,omitempty"` // vazio = ainda para revisar; approved | edited | discarded
 	ReviewedAt     *time.Time `json:"reviewedAt,omitempty"`
+	Provider       string     `json:"provider"`
+	Agent          string     `json:"agent"`
+	FinalBody      string     `json:"finalBody,omitempty"`
 }
 
 func (s *Service) saveDraft(ctx context.Context, a Actor, lane, convID, contactID, body string) (string, error) {
 	var id string
 	err := s.db.QueryRow(ctx, `
-		INSERT INTO ai_lane_drafts (lane_key, conversation_id, contact_id, token_id, body)
-		VALUES ($1, NULLIF($2, '')::uuid, $3, NULLIF($4, '')::uuid, $5) RETURNING id::text`, lane, convID, contactID, a.TokenID, body).Scan(&id)
+		INSERT INTO ai_lane_drafts (lane_key, conversation_id, contact_id, token_id, body, provider, app, agent)
+		VALUES ($1, NULLIF($2, '')::uuid, $3, NULLIF($4, '')::uuid, $5, $6, $7, $8) RETURNING id::text`, lane, convID, contactID, a.TokenID, body, a.Provider, a.App, a.Agent).Scan(&id)
 	return id, err
 }
 
-// Drafts lista os rascunhos da raia (os mais novos primeiro).
-func (s *Service) Drafts(ctx context.Context, lane string, limit int) ([]Draft, error) {
+// Drafts lista os rascunhos da raia (os mais novos primeiro). pendingOnly: só os que ainda esperam revisão.
+func (s *Service) Drafts(ctx context.Context, lane string, pendingOnly bool, limit int) ([]Draft, error) {
 	if limit < 1 || limit > 200 {
 		limit = 50
 	}
 	rows, err := s.db.Query(ctx, `
-		SELECT d.id::text, d.lane_key, coalesce(d.conversation_id::text, ''), d.contact_id::text, c.name, d.body, d.created_at, coalesce(d.outcome, ''), d.reviewed_at
+		SELECT d.id::text, d.lane_key, coalesce(d.conversation_id::text, ''), d.contact_id::text, c.name, d.body, d.created_at, coalesce(d.outcome, ''), d.reviewed_at,
+		       d.provider, d.agent, coalesce(d.final_body, '')
 		  FROM ai_lane_drafts d JOIN contacts c ON c.id = d.contact_id
-		 WHERE ($1 = '' OR d.lane_key = $1) ORDER BY d.created_at DESC LIMIT $2`, lane, limit)
+		 WHERE ($1 = '' OR d.lane_key = $1) AND (NOT $2 OR d.outcome IS NULL) ORDER BY d.created_at DESC LIMIT $3`, lane, pendingOnly, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -156,12 +160,106 @@ func (s *Service) Drafts(ctx context.Context, lane string, limit int) ([]Draft, 
 	out := []Draft{}
 	for rows.Next() {
 		var d Draft
-		if err := rows.Scan(&d.ID, &d.Lane, &d.ConversationID, &d.ContactID, &d.ContactName, &d.Body, &d.CreatedAt, &d.Outcome, &d.ReviewedAt); err != nil {
+		if err := rows.Scan(&d.ID, &d.Lane, &d.ConversationID, &d.ContactID, &d.ContactName, &d.Body, &d.CreatedAt, &d.Outcome, &d.ReviewedAt, &d.Provider, &d.Agent, &d.FinalBody); err != nil {
 			return nil, err
 		}
 		out = append(out, d)
 	}
 	return out, rows.Err()
+}
+
+// ApproveDraft (administrador) envia o rascunho agora, como o agente que o escreveu, com o texto original ou o editado.
+// Confere de novo a conversa (uma pessoa pode ter assumido, a conversa pode ter sido passada para a equipe ou encerrada) e os limites globais
+// do atendente (pausa, PARAR, grupos, velocidade); não refaz os limites de rodadas nem as regras do texto: quem revisa decide.
+func (s *Service) ApproveDraft(ctx context.Context, reviewerID, ip, draftID, editedText string) (AttendResult, error) {
+	text := strings.TrimSpace(editedText)
+	edited := text != ""
+	var d struct {
+		lane, convID, contactID, body, provider, app, agent, tokenID, owner string
+	}
+	// Reserva o rascunho (dois cliques ou duas pessoas não enviam duas vezes).
+	err := s.db.QueryRow(ctx, `
+		UPDATE ai_lane_drafts d SET outcome = CASE WHEN $2 THEN 'edited' ELSE 'approved' END, reviewed_by = $3::uuid, reviewed_at = now()
+		 WHERE d.id = $1 AND d.outcome IS NULL
+		RETURNING d.lane_key, coalesce(d.conversation_id::text, ''), d.contact_id::text, d.body, d.provider, d.app, d.agent, coalesce(d.token_id::text, ''),
+		          coalesce((SELECT t.user_id::text FROM api_tokens t WHERE t.id = d.token_id), '')`, draftID, edited, reviewerID).
+		Scan(&d.lane, &d.convID, &d.contactID, &d.body, &d.provider, &d.app, &d.agent, &d.tokenID, &d.owner)
+	if errors.Is(err, pgx.ErrNoRows) {
+		var exists bool
+		if qerr := s.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM ai_lane_drafts WHERE id = $1)`, draftID).Scan(&exists); qerr == nil && exists {
+			return AttendResult{}, ErrState // já foi enviado ou descartado
+		}
+		return AttendResult{}, ErrNotFound
+	}
+	if err != nil {
+		return AttendResult{}, err
+	}
+	release := func() { // não enviou: o rascunho volta para a revisão
+		_, _ = s.db.Exec(context.WithoutCancel(ctx), `UPDATE ai_lane_drafts SET outcome = NULL, reviewed_by = NULL, reviewed_at = NULL WHERE id = $1`, draftID)
+	}
+	if !edited {
+		text = d.body
+	}
+	owner := d.owner
+	if owner == "" {
+		owner = reviewerID
+	}
+	actor := Actor{UserID: owner, TokenID: d.tokenID, Provider: d.provider, App: d.app, Agent: d.agent, Lane: d.lane}
+	res, err := s.SendAsAttendant(ctx, actor, AttendInput{ContactID: d.contactID, ConversationID: d.convID, Text: text, reviewed: true})
+	if err != nil {
+		release()
+		return AttendResult{}, err
+	}
+	if res.Status != "enviado" {
+		release()
+		return res, refuse("whatsapp", "O WhatsApp não aceitou a mensagem. O rascunho continua aqui para você tentar de novo.")
+	}
+	_, _ = s.db.Exec(ctx, `UPDATE ai_lane_drafts SET final_body = $2, message_id = $3::uuid WHERE id = $1`, draftID, text, res.MessageID)
+	s.record(ctx, "ai.lane.draft.approve", draftID, map[string]any{"lane": d.lane, "edited": edited, "messageId": res.MessageID, "reviewer": reviewerID, "ip": ip})
+	return res, nil
+}
+
+// DiscardDraft (administrador) descarta o rascunho: nada é enviado.
+func (s *Service) DiscardDraft(ctx context.Context, reviewerID, ip, draftID string) error {
+	tag, err := s.db.Exec(ctx, `UPDATE ai_lane_drafts SET outcome = 'discarded', reviewed_by = $2::uuid, reviewed_at = now() WHERE id = $1 AND outcome IS NULL`, draftID, reviewerID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		var exists bool
+		if qerr := s.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM ai_lane_drafts WHERE id = $1)`, draftID).Scan(&exists); qerr == nil && exists {
+			return ErrState
+		}
+		return ErrNotFound
+	}
+	s.record(ctx, "ai.lane.draft.discard", draftID, map[string]any{"reviewer": reviewerID, "ip": ip})
+	return nil
+}
+
+// applyReviewed: o envio de um rascunho já revisado por uma pessoa. Só as regras da CONVERSA (aberta, sem passagem pendente, sem atendente humano, não adiada)
+// e os caracteres invisíveis/credenciais do texto; limites de rodadas, links e fontes não valem (a pessoa decidiu).
+func (s *Service) applyReviewed(ctx context.Context, a Actor, in AttendInput, text string) (string, error) {
+	lane, err := s.Lane(ctx, a.Lane)
+	if errors.Is(err, ErrNoLane) {
+		return "", refuse("raia_desligada", "A raia deste rascunho não existe mais.")
+	}
+	if err != nil {
+		return "", err
+	}
+	relaxed := Lane{Key: lane.Key, Label: lane.Label, Enabled: true, Mode: LaneLive, MaxTurns: 1000, MaxConsecutive: 1000, ContactDaily: 1000, HumanQuietMinutes: lane.HumanQuietMinutes}
+	f, err := s.laneFactsFor(ctx, in)
+	if errors.Is(err, errNoOpenConversation) {
+		f, err = s.laneFactsForContact(ctx, in.ContactID)
+	}
+	if err != nil {
+		return "", err
+	}
+	f.Inbound = nil // o que o cliente mandou já foi visto por quem revisou
+	d := decideLane(relaxed, f, text)
+	if d.Refusal != nil {
+		return "", d.Refusal
+	}
+	return d.Text, nil
 }
 
 // Handoff: uma passagem para humano, para a tela do administrador.

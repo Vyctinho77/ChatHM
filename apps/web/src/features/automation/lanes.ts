@@ -6,7 +6,10 @@ export type Lane = {
   maxTurns: number; maxConsecutive: number; contactDaily: number; humanQuietMinutes: number; staleHours: number;
   requireSources: boolean; allowedDomains: string[]; guidelines: string; updatedAt: string;
 };
-export type LaneDraft = { id: string; lane: string; conversationId: string; contactId: string; contactName: string; body: string; createdAt: string; outcome?: string };
+export type LaneDraft = {
+  id: string; lane: string; conversationId: string; contactId: string; contactName: string; body: string; createdAt: string;
+  outcome?: "approved" | "edited" | "discarded" | ""; reviewedAt?: string; provider: string; agent: string; finalBody?: string;
+};
 export type Handoff = { id: string; conversationId: string; lane: string; reason: string; summary: string; source: "ai" | "server"; createdAt: string; answered: boolean };
 
 export type LaneState = "off" | "shadow" | "live";
@@ -68,3 +71,18 @@ const REASON: Record<string, string> = {
   dados: "Dados do cliente", reclamacao: "Reclamação", preco: "Preço", pagamento: "Pagamento", juridico: "Assunto jurídico", duvida: "A IA ficou em dúvida", outro: "Outro motivo",
 };
 export const reasonLabel = (r: string) => REASON[r] ?? (r ? r.charAt(0).toUpperCase() + r.slice(1).replace(/_/g, " ") : "Outro motivo");
+
+export const MAX_DRAFT_CHARS = 1500; // limite do servidor para uma mensagem do atendente
+
+/** Rascunho com mais de 1 dia: a conversa pode ter mudado, a tela pede para conferir antes de enviar. */
+export const isOldDraft = (createdAt: string, now = Date.now()) => now - Date.parse(createdAt) > 24 * 3600 * 1000;
+
+export const OUTCOME_LABEL: Record<string, string> = { approved: "Enviado como a IA escreveu", edited: "Enviado com edição", discarded: "Descartado" };
+
+/** O texto editado pode ser enviado? (não vazio, dentro do limite e diferente de espaços) */
+export const draftTextError = (text: string): string => {
+  const t = text.trim();
+  if (!t) return "Escreva a mensagem.";
+  if (t.length > MAX_DRAFT_CHARS) return `No máximo ${MAX_DRAFT_CHARS} caracteres (${t.length}).`;
+  return "";
+};

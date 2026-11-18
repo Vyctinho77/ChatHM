@@ -33,6 +33,8 @@ type AttendInput struct {
 	DocumentID     string
 	// Sources: as páginas que a IA consultou para responder (mostradas ao cliente no fim da mensagem).
 	Sources []Source
+	// reviewed: rascunho da raia aprovado por uma pessoa (só ApproveDraft define; não existe pelo MCP).
+	reviewed bool
 }
 
 type AttendResult struct {
@@ -99,7 +101,13 @@ func (s *Service) SendAsAttendant(ctx context.Context, a Actor, in AttendInput) 
 	if recent >= attendPer10Min || today >= attendPerDay {
 		return AttendResult{}, refuse("rate", "Limite de velocidade atingido (%d mensagens em 10 minutos, %d por dia) para proteger o número do WhatsApp. Tente de novo em alguns minutos.", attendPer10Min, attendPerDay)
 	}
-	if a.Lane != "" {
+	if a.Lane != "" && in.reviewed {
+		final, lerr := s.applyReviewed(ctx, a, in, text)
+		if lerr != nil {
+			return AttendResult{}, lerr
+		}
+		text = final
+	} else if a.Lane != "" {
 		final, shadow, lerr := s.applyLane(ctx, a, in, text)
 		if lerr != nil {
 			return AttendResult{}, lerr

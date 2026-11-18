@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { laneState, laneSummary, needsLiveConfirm, parseDomains, reasonLabel, validateLane, type Lane } from "./lanes";
+import { draftTextError, isOldDraft, laneState, laneSummary, MAX_DRAFT_CHARS, needsLiveConfirm, OUTCOME_LABEL, parseDomains, reasonLabel, validateLane, type Lane } from "./lanes";
 
 const lane = (o: Partial<Lane> = {}): Lane => ({
   key: "certificado", label: "Certificado digital", enabled: false, mode: "shadow", canInitiate: false, segmentId: "", handoffSegmentId: "",
@@ -43,5 +43,24 @@ describe("raias: formulário", () => {
     expect(reasonLabel("pediu_humano")).toBe("Cliente pediu uma pessoa ou reclamou");
     expect(reasonLabel("licenca_especial")).toBe("Licenca especial");
     expect(reasonLabel("")).toBe("Outro motivo");
+  });
+});
+
+describe("rascunhos da sombra", () => {
+  it("avisa quando o rascunho é antigo", () => {
+    const now = Date.parse("2026-11-18T12:00:00Z");
+    expect(isOldDraft("2026-11-18T10:00:00Z", now)).toBe(false);
+    expect(isOldDraft("2026-11-17T11:59:00Z", now)).toBe(true);
+  });
+  it("confere o texto editado", () => {
+    expect(draftTextError("  ")).toBeTruthy();
+    expect(draftTextError("Olá!")).toBe("");
+    expect(draftTextError("x".repeat(MAX_DRAFT_CHARS))).toBe("");
+    expect(draftTextError("x".repeat(MAX_DRAFT_CHARS + 1))).toContain("1500");
+  });
+  it("descreve o que aconteceu com cada rascunho", () => {
+    expect(OUTCOME_LABEL.approved).toBe("Enviado como a IA escreveu");
+    expect(OUTCOME_LABEL.edited).toBe("Enviado com edição");
+    expect(OUTCOME_LABEL.discarded).toBe("Descartado");
   });
 });
