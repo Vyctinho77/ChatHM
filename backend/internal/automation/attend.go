@@ -26,9 +26,11 @@ const (
 
 // AttendInput: ContactID já foi validado contra a visibilidade de quem pede.
 type AttendInput struct {
-	ContactID  string
-	Text       string
-	DocumentID string
+	ContactID string
+	// ConversationID: a conversa a que a IA responde. Obrigatória (ou implícita pela conversa aberta do contato) para token preso a uma raia.
+	ConversationID string
+	Text           string
+	DocumentID     string
 }
 
 type AttendResult struct {
@@ -90,6 +92,19 @@ func (s *Service) SendAsAttendant(ctx context.Context, a Actor, in AttendInput) 
 	if recent >= attendPer10Min || today >= attendPerDay {
 		return AttendResult{}, refuse("rate", "Limite de velocidade atingido (%d mensagens em 10 minutos, %d por dia) para proteger o número do WhatsApp. Tente de novo em alguns minutos.", attendPer10Min, attendPerDay)
 	}
+	if a.Lane != "" {
+		final, shadow, lerr := s.applyLane(ctx, a, in, text)
+		if lerr != nil {
+			return AttendResult{}, lerr
+		}
+		if shadow != nil {
+			return *shadow, nil
+		}
+		text = final
+		if n := utf8.RuneCountInString(text); n > attendMaxRunes {
+			return AttendResult{}, refuse("text", "Com a apresentação da IA a mensagem passaria de %d caracteres; escreva menos.", attendMaxRunes)
+		}
+	}
 	var att *media.Processed
 	if in.DocumentID != "" {
 		d, ref, derr := s.guardDocument(ctx, in.DocumentID, in.ContactID)
@@ -116,7 +131,7 @@ func (s *Service) SendAsAttendant(ctx context.Context, a Actor, in AttendInput) 
 	msgID := uuid.NewString()
 	msg, err := s.convs.SendAutomated(ctx, conversations.AutomatedSend{
 		ID: msgID, ContactID: in.ContactID, Author: Author(st.Signature), Text: text, Att: att,
-		Provider: a.Provider, App: a.App, Agent: a.Agent, Attend: true, ActorID: a.UserID,
+		Provider: a.Provider, App: a.App, Agent: a.Agent, Attend: true, ActorID: a.UserID, Lane: a.Lane,
 	})
 	var blocked *conversations.ErrAutomatedBlocked
 	switch {
@@ -129,6 +144,6 @@ func (s *Service) SendAsAttendant(ctx context.Context, a Actor, in AttendInput) 
 	case err != nil:
 		return AttendResult{}, err
 	}
-	s.record(ctx, "automation.attend.send", msgID, map[string]any{"contactId": in.ContactID, "provider": a.Provider, "tokenId": a.TokenID, "length": utf8.RuneCountInString(text), "hasDocument": in.DocumentID != ""})
+	s.record(ctx, "automation.attend.send", msgID, map[string]any{"lane": a.Lane, "contactId": in.ContactID, "provider": a.Provider, "tokenId": a.TokenID, "length": utf8.RuneCountInString(text), "hasDocument": in.DocumentID != ""})
 	return AttendResult{MessageID: msgID, Status: "enviado"}, nil
 }

@@ -3,6 +3,7 @@ package aiaccess
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -30,6 +31,7 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Get("/ai/tokens", h.listTokens)
 	r.Post("/ai/tokens", h.createToken)
 	r.Delete("/ai/tokens/{id}", h.revokeToken)
+	r.With(auth.RequireAdmin).Put("/ai/tokens/{id}/lane", h.bindLane)
 	r.Get("/ai/oauth/preview", h.oauthPreview)
 	r.Post("/ai/oauth/authorize", h.oauthAuthorize)
 	r.Get("/ai/grants", h.listGrants)
@@ -129,6 +131,22 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) revokeToken(w http.ResponseWriter, r *http.Request) {
 	sess := auth.MustFromContext(r.Context())
 	if err := h.svc.Revoke(r.Context(), sess.UserID, sess.IsAdmin(), clientIP(r), chi.URLParam(r, "id")); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
+// bindLane (administrador): prende o token a uma raia (laneKey vazio solta).
+func (h *Handler) bindLane(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		LaneKey string `json:"laneKey"`
+	}
+	if !httpx.Decode(w, r, &in) {
+		return
+	}
+	sess := auth.MustFromContext(r.Context())
+	if err := h.svc.BindLane(r.Context(), sess.UserID, clientIP(r), chi.URLParam(r, "id"), strings.TrimSpace(in.LaneKey)); err != nil {
 		h.fail(w, r, err)
 		return
 	}

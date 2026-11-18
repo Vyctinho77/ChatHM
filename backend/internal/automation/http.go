@@ -41,6 +41,10 @@ func (h *Handler) Routes(r chi.Router) {
 		r.Get("/automation/documents", h.documents)
 		r.Post("/automation/documents", h.upload)
 		r.Delete("/automation/documents/{id}", h.deleteDocument)
+		r.Get("/automation/lanes", h.lanes)
+		r.Put("/automation/lanes/{key}", h.putLane)
+		r.Get("/automation/lane-drafts", h.laneDrafts)
+		r.Get("/automation/handoffs", h.handoffs)
 		h.chargeRoutes(r)
 	})
 }
@@ -53,7 +57,7 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.Validation(w, fe)
 	case errors.As(err, &ref):
 		httpx.Error(w, http.StatusUnprocessableEntity, ref.Code, ref.Message)
-	case errors.Is(err, ErrNotFound):
+	case errors.Is(err, ErrNotFound), errors.Is(err, ErrNoLane), errors.Is(err, ErrNoConversation):
 		httpx.Error(w, http.StatusNotFound, "not_found", "Registro não encontrado.")
 	case errors.Is(err, ErrState):
 		httpx.Error(w, http.StatusConflict, "invalid_state", "Isso não é possível no estado atual (o item pode estar em uso ou já ter saído).")
@@ -303,4 +307,46 @@ func (h *Handler) setOptOut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.NoContent(w)
+}
+
+func (h *Handler) lanes(w http.ResponseWriter, r *http.Request) {
+	list, err := h.svc.Lanes(r.Context())
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"lanes": list})
+}
+
+func (h *Handler) putLane(w http.ResponseWriter, r *http.Request) {
+	var in LaneInput
+	if !httpx.Decode(w, r, &in) {
+		return
+	}
+	l, err := h.svc.SaveLane(r.Context(), auth.MustFromContext(r.Context()).UserID, httpx.ClientIP(r), chi.URLParam(r, "key"), in)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, l)
+}
+
+func (h *Handler) laneDrafts(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	list, err := h.svc.Drafts(r.Context(), q.Get("lane"), atoi(q.Get("limit")))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"drafts": list})
+}
+
+func (h *Handler) handoffs(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	list, err := h.svc.Handoffs(r.Context(), q.Get("open") == "1", atoi(q.Get("limit")))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"handoffs": list})
 }

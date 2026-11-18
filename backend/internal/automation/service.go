@@ -72,6 +72,7 @@ type Actor struct {
 	Provider string // claude | chatgpt | grok | gemini | other
 	App      string
 	Agent    string // nome do agente (nome do token)
+	Lane     string // raia a que o token está preso (vazio = sem raia, regras do atendente autônomo livre)
 }
 
 // --- configurações ---------------------------------------------------------

@@ -42,6 +42,8 @@ type AutomatedSend struct {
 	// Attend: atendente autônomo (a IA age como um atendente). Aceita conversa em andamento, de outra pessoa ou adiada;
 	// continua recusando grupos e clientes que pediram para parar. A mensagem sai com o rótulo "atendimento por IA".
 	Attend bool
+	// Lane: a raia em que a IA falou (aparece na mensagem; serve para medir cada raia).
+	Lane string
 }
 
 // SendAutomated envia uma mensagem automática. Diferente de Send, ela:
@@ -77,6 +79,9 @@ func (s *Service) SendAutomated(ctx context.Context, in AutomatedSend) (Message,
 	payload := map[string]any{"automated": true, "aiProvider": in.Provider, "aiApp": in.App}
 	if in.Attend {
 		payload["aiMode"] = "attend"
+	}
+	if in.Lane != "" {
+		payload["aiLane"] = in.Lane
 	}
 	if in.SendID != "" {
 		payload["automationSendId"] = in.SendID

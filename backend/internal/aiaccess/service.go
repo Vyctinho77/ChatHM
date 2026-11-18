@@ -83,6 +83,7 @@ type Token struct {
 	Revoked    bool       `json:"revoked"`
 	Expired    bool       `json:"expired"`
 	Provider   string     `json:"provider"`        // claude | chatgpt | grok | gemini | other | ""
+	Lane       string     `json:"lane"`            // raia a que o token está preso ("" = nenhuma)
 	Owner      string     `json:"owner,omitempty"` // só na visão do administrador
 	OwnerID    string     `json:"ownerId,omitempty"`
 }
@@ -110,6 +111,8 @@ type Principal struct {
 	// Provider e App identificam a IA (a tela mostra a logo do provedor nas mensagens automáticas).
 	Provider string
 	App      string
+	// Lane: a raia a que este token do atendente autônomo está preso (docs/mcp-raia.md); vazio = sem raia.
+	Lane string
 	// Agent: o nome deste agente (o nome dado ao token, ex.: "HM Financeiro"; em conexões por login, o aplicativo). Distingue vários agentes da mesma pessoa e do mesmo provedor.
 	Agent string
 }
@@ -292,7 +295,7 @@ func (s *Service) Create(ctx context.Context, userID, ip, name string, ttlDays i
 func (s *Service) List(ctx context.Context, userID string, all bool) ([]Token, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT t.id::text, t.name, t.prefix, t.scopes, t.expires_at, t.created_at, t.last_used_at, t.revoked_at IS NOT NULL,
-		       t.expires_at <= now(), u.name, u.id::text, t.provider
+		       t.expires_at <= now(), u.name, u.id::text, t.provider, coalesce(t.lane_key, '')
 		  FROM api_tokens t JOIN users u ON u.id = t.user_id
 		 WHERE ($2::boolean OR t.user_id = $1)
 		 ORDER BY t.created_at DESC LIMIT 200`, userID, all)
@@ -303,7 +306,7 @@ func (s *Service) List(ctx context.Context, userID string, all bool) ([]Token, e
 	out := []Token{}
 	for rows.Next() {
 		var t Token
-		if err := rows.Scan(&t.ID, &t.Name, &t.Prefix, &t.Scopes, &t.ExpiresAt, &t.CreatedAt, &t.LastUsedAt, &t.Revoked, &t.Expired, &t.Owner, &t.OwnerID, &t.Provider); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.Prefix, &t.Scopes, &t.ExpiresAt, &t.CreatedAt, &t.LastUsedAt, &t.Revoked, &t.Expired, &t.Owner, &t.OwnerID, &t.Provider, &t.Lane); err != nil {
 			return nil, err
 		}
 		if !all {
@@ -349,13 +352,13 @@ func (s *Service) Authenticate(ctx context.Context, raw string) (Principal, erro
 	)
 	err := s.db.QueryRow(ctx, `
 		SELECT t.id::text, t.prefix, t.scopes, t.token_hash, t.last_used_at, u.id::text, u.name, u.role = 'admin', u.role = 'manager',
-		       t.kind, t.grant_id::text, c.name, t.provider, t.name
+		       t.kind, t.grant_id::text, c.name, t.provider, t.name, coalesce(t.lane_key, '')
 		  FROM api_tokens t JOIN users u ON u.id = t.user_id
 		  LEFT JOIN oauth_grants g ON g.id = t.grant_id AND g.revoked_at IS NULL
 		  LEFT JOIN oauth_clients c ON c.client_id = g.client_id
 		 WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND t.expires_at > now() AND u.is_active
 		   AND (t.kind = 'personal' OR g.id IS NOT NULL)`, hashToken(raw)).
-		Scan(&p.TokenID, &p.Prefix, &p.Scopes, &hash, &last, &p.UserID, &p.Name, &p.Admin, &p.Manager, &kind, &grantID, &client, &p.Provider, &p.Agent)
+		Scan(&p.TokenID, &p.Prefix, &p.Scopes, &hash, &last, &p.UserID, &p.Name, &p.Admin, &p.Manager, &kind, &grantID, &client, &p.Provider, &p.Agent, &p.Lane)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Principal{}, ErrBadToken
 	}
@@ -397,6 +400,9 @@ func (s *Service) Authenticate(ctx context.Context, raw string) (Principal, erro
 		if sc == ScopeAutomate && st.AllowAutomation && st.AllowWrite && st.AllowSend {
 			p.Automate = true
 		}
+	}
+	if !p.Attend {
+		p.Lane = "" // a raia só vale para o atendente autônomo
 	}
 	if p.Provider == "" && p.OAuth {
 		p.Provider = providerOf(p.ClientName)
@@ -513,4 +519,41 @@ func appName(provider, client string) string {
 		return n
 	}
 	return "IA"
+}
+
+// BindLane (administrador) prende um token do atendente autônomo a uma raia, ou solta (laneKey vazio). Preso, só a raia vale para o token.
+func (s *Service) BindLane(ctx context.Context, actorID, ip, tokenID, laneKey string) error {
+	var scopes []string
+	var revoked bool
+	if !httpx.ValidUUID(tokenID) {
+		return ErrNotFound
+	}
+	if err := s.db.QueryRow(ctx, `SELECT scopes, revoked_at IS NOT NULL FROM api_tokens WHERE id = $1 AND kind = 'personal'`, tokenID).Scan(&scopes, &revoked); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if revoked {
+		return ErrNotFound
+	}
+	if laneKey != "" {
+		if !contains(scopes, ScopeAttend) {
+			return httpx.FieldErrors{"laneKey": "Só tokens do atendente autônomo podem ter uma raia."}
+		}
+		var one int
+		if err := s.db.QueryRow(ctx, `SELECT 1 FROM ai_lanes WHERE key = $1`, laneKey).Scan(&one); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return httpx.FieldErrors{"laneKey": "Raia não encontrada."}
+			}
+			return err
+		}
+	}
+	return database.InTx(ctx, s.db, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `UPDATE api_tokens SET lane_key = NULLIF($2, '') WHERE id = $1`, tokenID, laneKey); err != nil {
+			return err
+		}
+		return audit.Record(ctx, tx, audit.Entry{ActorID: actorID, Action: "ai.token.lane", TargetType: "api_token", TargetID: tokenID, IP: ip,
+			Metadata: map[string]any{"lane": laneKey}})
+	})
 }
