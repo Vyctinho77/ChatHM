@@ -4,7 +4,7 @@
  *   tr   duas letras vizinhas trocadas        (voecê → você)           a partir de 4 letras
  *   ins  faltou uma letra                     (obrigdo → obrigado)     a partir de 5
  *   dup  letra repetida sem querer            (obrigaddo → obrigado)   a partir de 5
- *   key  letra no lugar da tecla vizinha      (obrigavo → obrigado)    a partir de 6
+ *   key  letra no lugar da tecla vizinha      (obrigafo → obrigado)    a partir de 6
  * Fora disso (palavras raras, nomes, siglas, gírias, estrangeirismos) não mexe: o navegador sublinha. É o mesmo algoritmo de
  * scripts/gen-pt-typos.py (typos.fixture.json garante que as duas implementações concordam); ver docs/corretor.md.
  *
@@ -31,7 +31,13 @@ const NEIGH: ReadonlyMap<string, ReadonlySet<string>> = (() => {
       if (j > 0) link(ch, row[j - 1]!);
       if (j + 1 < row.length) link(ch, row[j + 1]!);
       const below = rows[r + 1];
-      if (below) for (const k of [j - 1, j]) if (k >= 0 && k < below.length) (link(ch, below[k]!), link(below[k]!, ch));
+      if (below) {
+        for (const k of [j - 1, j]) {
+          if (k < 0 || k >= below.length) continue;
+          link(ch, below[k]!);
+          link(below[k]!, ch);
+        }
+      }
     });
   });
   return map;

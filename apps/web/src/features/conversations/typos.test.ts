@@ -25,7 +25,8 @@ describe("erros de digitação: exemplos", () => {
     expect(fixFolded("tmepo")).toBe("tempo");
     expect(fixFolded("obrigdo")).toBe("obrigado");
     expect(fixFolded("obrigaddo")).toBe("obrigado");
-    expect(fixFolded("obrigavo")).toBe("obrigado");
+    expect(fixFolded("obrigafo")).toBe("obrigado"); // f fica ao lado do d
+    expect(fixFolded("obrigapo")).toBeNull(); // p não fica ao lado do d: troca qualquer não é corrigida
     expect(fixFolded("pssoa")).toBe("pessoa");
   });
   it("traz o acento da palavra certa", () => {

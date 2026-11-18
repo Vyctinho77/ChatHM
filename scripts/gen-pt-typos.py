@@ -13,7 +13,7 @@ a palavra digitada NÃO for palavra (nem das frequentes, nem uma exceção):
   tr   duas letras vizinhas trocadas        (voecê → você)           tamanho mínimo 4
   ins  faltou uma letra                     (obrigdo → obrigado)     tamanho mínimo 5
   dup  letra repetida sem querer            (obrigaddo → obrigado)   tamanho mínimo 5
-  key  uma letra no lugar da tecla vizinha  (obrigavo → obrigado)    tamanho mínimo 6
+  key  uma letra no lugar da tecla vizinha  (obrigafo → obrigado)    tamanho mínimo 6
 Candidatos são só palavras da lista-alvo. Com mais de um candidato, só vale se o melhor for MUITO mais frequente (20x) que o segundo.
 """
 import collections, json, random, re, sys
