@@ -87,11 +87,12 @@ func (m *MCP) registerDelivery(s *mcp.Server, p Principal, v conversations.Viewe
 		return
 	}
 	type checkIn struct {
-		ConversationID string `json:"conversation_id,omitempty" jsonschema:"id da conversa do cliente. Use este OU contact_id"`
-		ContactID      string `json:"contact_id,omitempty" jsonschema:"id do contato (list_contacts ou search)"`
-		Mode           string `json:"mode,omitempty" jsonschema:"como pretende enviar: attendant (send_as_attendant, padrão) ou automatic (send_automatic_message; exige category)"`
-		Category       string `json:"category,omitempty" jsonschema:"assunto do envio automático: das, cobranca, prazos ou aviso"`
-		Text           string `json:"text,omitempty" jsonschema:"o texto que pretende enviar (opcional): token preso a uma raia também confere as regras do conteúdo"`
+		ConversationID string     `json:"conversation_id,omitempty" jsonschema:"id da conversa do cliente. Use este OU contact_id"`
+		ContactID      string     `json:"contact_id,omitempty" jsonschema:"id do contato (list_contacts ou search)"`
+		Mode           string     `json:"mode,omitempty" jsonschema:"como pretende enviar: attendant (send_as_attendant, padrão) ou automatic (send_automatic_message; exige category)"`
+		Category       string     `json:"category,omitempty" jsonschema:"assunto do envio automático: das, cobranca, prazos ou aviso"`
+		Text           string     `json:"text,omitempty" jsonschema:"o texto que pretende enviar (opcional): token preso a uma raia também confere as regras do conteúdo"`
+		Sources        []sourceIn `json:"sources,omitempty" jsonschema:"as fontes que pretende citar (opcional)"`
 	}
 	addTool(m, s, p, "check_send", "Responde, sem enviar nada, se um envio PASSARIA agora: wouldSend, os bloqueios (com o mesmo código das recusas reais: cliente pediu PARAR, grupo, pausa, limite de velocidade ou do dia, conversa recente com o cliente, em atendimento, adiada, categoria desligada), avisos (fora do horário: espera na fila até quando) e há quanto tempo o cliente escreveu. A resposta vale para este instante; o envio real confere tudo de novo.",
 		func(ctx context.Context, in checkIn) (any, error) {
@@ -123,7 +124,7 @@ func (m *MCP) registerDelivery(s *mcp.Server, p Principal, v conversations.Viewe
 			}
 			if p.Lane != "" {
 				return m.auto.LaneCheck(ctx, automation.Actor{UserID: p.UserID, TokenID: p.TokenID, Provider: p.Provider, App: p.App, Agent: p.Agent, Lane: p.Lane},
-					automation.AttendInput{ContactID: contactID, ConversationID: in.ConversationID, Text: in.Text})
+					automation.AttendInput{ContactID: contactID, ConversationID: in.ConversationID, Text: in.Text, Sources: toSources(in.Sources)})
 			}
 			mode := in.Mode
 			if mode == "" {

@@ -45,6 +45,7 @@ type Lane struct {
 	ContactDaily      int       `json:"contactDaily"`
 	HumanQuietMinutes int       `json:"humanQuietMinutes"`
 	StaleHours        int       `json:"staleHours"` // 0 = não procura conversas paradas
+	RequireSources    bool      `json:"requireSources"`
 	AllowedDomains    []string  `json:"allowedDomains"`
 	Guidelines        string    `json:"guidelines"`
 	UpdatedAt         time.Time `json:"updatedAt"`
@@ -63,6 +64,7 @@ type LaneInput struct {
 	ContactDaily      int      `json:"contactDaily"`
 	HumanQuietMinutes int      `json:"humanQuietMinutes"`
 	StaleHours        int      `json:"staleHours"`
+	RequireSources    bool     `json:"requireSources"`
 	AllowedDomains    []string `json:"allowedDomains"`
 	Guidelines        string   `json:"guidelines"`
 }
@@ -71,13 +73,13 @@ type LaneInput struct {
 var ErrNoLane = errors.New("automation: raia não encontrada")
 
 const laneCols = `key, label, enabled, mode, can_initiate, coalesce(segment_id::text, ''), coalesce(handoff_segment_id::text, ''),
-	max_turns, max_consecutive, contact_daily, human_quiet_minutes, stale_hours,
+	max_turns, max_consecutive, contact_daily, human_quiet_minutes, stale_hours, require_sources,
 	allowed_domains, guidelines, updated_at`
 
 func scanLane(row pgx.Row) (Lane, error) {
 	var l Lane
 	err := row.Scan(&l.Key, &l.Label, &l.Enabled, &l.Mode, &l.CanInitiate, &l.SegmentID, &l.HandoffSegmentID, &l.MaxTurns, &l.MaxConsecutive,
-		&l.ContactDaily, &l.HumanQuietMinutes, &l.StaleHours, &l.AllowedDomains, &l.Guidelines, &l.UpdatedAt)
+		&l.ContactDaily, &l.HumanQuietMinutes, &l.StaleHours, &l.RequireSources, &l.AllowedDomains, &l.Guidelines, &l.UpdatedAt)
 	if l.AllowedDomains == nil {
 		l.AllowedDomains = []string{}
 	}
@@ -169,10 +171,10 @@ func (s *Service) SaveLane(ctx context.Context, actorID, ip, key string, in Lane
 	err := database.InTx(ctx, s.db, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `
 			UPDATE ai_lanes SET label = $2, enabled = $3, mode = $4, can_initiate = $5, segment_id = $6, handoff_segment_id = $7, max_turns = $8,
-			       max_consecutive = $9, contact_daily = $10, human_quiet_minutes = $11, stale_hours = $12,
-			       allowed_domains = $13, guidelines = $14, updated_at = now(), updated_by = NULLIF($15, '')::uuid
+			       max_consecutive = $9, contact_daily = $10, human_quiet_minutes = $11, stale_hours = $12, require_sources = $13,
+			       allowed_domains = $14, guidelines = $15, updated_at = now(), updated_by = NULLIF($16, '')::uuid
 			 WHERE key = $1`, key, in.Label, in.Enabled, in.Mode, in.CanInitiate, seg, hand, in.MaxTurns, in.MaxConsecutive, in.ContactDaily,
-			in.HumanQuietMinutes, in.StaleHours, domains, in.Guidelines, actorID); err != nil {
+			in.HumanQuietMinutes, in.StaleHours, in.RequireSources, domains, in.Guidelines, actorID); err != nil {
 			return err
 		}
 		return audit.Record(ctx, tx, audit.Entry{ActorID: actorID, Action: "ai.lane.update", TargetType: "ai_lane", TargetID: key, IP: ip,
@@ -207,6 +209,7 @@ type laneFacts struct {
 	ContactToday              int        // mensagens da IA a este cliente nas últimas 24 h
 	OpenHandoff               bool       // passada para um humano e ninguém respondeu ainda
 	Inbound                   []inboundMsg
+	Sources                   int // fontes citadas junto com o texto
 	Now                       time.Time
 }
 
@@ -274,7 +277,9 @@ type laneDecision struct {
 
 var (
 	reWantsHuman = regexp.MustCompile(`(?i)(?:falar|conversar|chamar|passa(?:r)?|quero|preciso|queria|pode)\b.{0,25}\b(?:atendente|pessoa|humano|gerente|respons[aá]vel|algu[eé]m|funcion[aá]rio)|(?:atendente|humano)\b|reclama|procon|advogad|processo|cancel(?:ar|amento)|golpe|fraude|absurdo|vergonha|n[aã]o (?:quero|aceito|autorizo)|rob[oô]\b|n[aã]o (?:[eé]|sou)\b.{0,12}\b(?:rob[oô]|ia)\b|para de (?:me )?mandar`)
-	reSecretOut  = regexp.MustCompile(`(?i)\b(?:senha|password|token|c[oó]digo de (?:verifica|acesso|seguran|confirma)\w*|cvv|cvc|n[uú]mero do cart[aã]o|chave pix)\b`)
+	// Assuntos que mudam com o tempo e dependem de fonte: legislação, normas, prazos e regras do governo.
+	reNeedsSource = regexp.MustCompile(`(?i)\b(?:lei|leis|decreto|portaria|resolu[cç][aã]o|instru[cç][aã]o normativa|medida provis[oó]ria|norma|regra|regras|regulament\w+|legisla[cç][aã]o|reforma tribut[aá]ria|receita federal|icp-?brasil|\bITI\b|prazo legal|obrigat[oó]ri[oa]s?|passou a valer|entrou em vigor|nova exig[eê]ncia|novas regras?|governo)\b`)
+	reSecretOut   = regexp.MustCompile(`(?i)\b(?:senha|password|token|c[oó]digo de (?:verifica|acesso|seguran|confirma)\w*|cvv|cvc|n[uú]mero do cart[aã]o|chave pix)\b`)
 )
 
 // inboundHandoff: o que o cliente mandou obriga a passar para um humano? Só duas coisas: foto/documento (a IA não vê o conteúdo)
@@ -356,6 +361,9 @@ func decideLane(l Lane, f laneFacts, text string) laneDecision {
 	}
 	if r := textRefusal(l, text); r != nil {
 		return laneDecision{Refusal: r}
+	}
+	if l.RequireSources && f.Sources == 0 && reNeedsSource.MatchString(text) {
+		return deny("fontes", "Esta resposta fala de regra, lei, norma ou prazo. Consulte fontes oficiais atuais e envie de novo com sources (título e link de cada página consultada). Se não encontrar com segurança, diga ao cliente que vai confirmar e use request_human.")
 	}
 	return laneDecision{Text: text}
 }

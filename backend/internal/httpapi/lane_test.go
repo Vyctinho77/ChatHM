@@ -31,7 +31,7 @@ func laneSetup(t *testing.T, mode string, tweak func(in map[string]any)) laneEnv
 		t.Fatal("token do atendente não encontrado")
 	}
 	in := map[string]any{"label": "Certificado digital", "enabled": true, "mode": mode, "canInitiate": false, "segmentId": w.segs["folha"], "handoffSegmentId": "",
-		"maxTurns": 8, "maxConsecutive": 2, "contactDaily": 6, "humanQuietMinutes": 60, "staleHours": 24,
+		"maxTurns": 8, "maxConsecutive": 2, "contactDaily": 6, "humanQuietMinutes": 60, "staleHours": 24, "requireSources": true,
 		"allowedDomains": []string{}, "guidelines": "Oriente o cliente."}
 	if tweak != nil {
 		tweak(in)
@@ -409,5 +409,42 @@ func TestLaneWorksForEveryProvider(t *testing.T) {
 		if got := scalar[string](t, e.w, `SELECT payload->>'aiProvider' FROM messages WHERE payload->>'aiMode' = 'attend' ORDER BY created_at DESC LIMIT 1`); got != prov {
 			t.Fatalf("a mensagem deveria levar o provedor %s: %q", prov, got)
 		}
+	}
+}
+
+// Informação de fora (regra do governo) só com as fontes consultadas, que o cliente vê no fim da mensagem.
+func TestLaneOutsideInformationNeedsSources(t *testing.T) {
+	e := laneSetup(t, "live", nil)
+	answer := "Pela nova instrução normativa da Receita Federal, o certificado e-CNPJ A1 passou a ter validade de 1 ano."
+	o := e.send(answer)
+	if o["recusado"] != true || o["codigo"] != "fontes" {
+		t.Fatalf("sem fontes: %v", o)
+	}
+	if e.count(`SELECT count(*) FROM messages WHERE payload->>'aiMode' = 'attend'`) != 0 {
+		t.Fatal("nada pode ter saído")
+	}
+	// Fonte inválida (não https).
+	o, _ = e.w.tool(e.token, "send_as_attendant", map[string]any{"conversation_id": e.convID, "text": answer,
+		"sources": []map[string]any{{"title": "Receita", "url": "http://gov.br/x"}}})
+	if o["codigo"] != "fontes" {
+		t.Fatalf("fonte inválida: %v", o)
+	}
+	// check_send conhece a regra.
+	c, _ := e.w.tool(e.token, "check_send", map[string]any{"conversation_id": e.convID, "text": answer})
+	if c["wouldSend"] != false {
+		t.Fatalf("check_send sem fonte: %v", c)
+	}
+	c, _ = e.w.tool(e.token, "check_send", map[string]any{"conversation_id": e.convID, "text": answer, "sources": []map[string]any{{"title": "Receita", "url": "https://www.gov.br/receitafederal"}}})
+	if c["wouldSend"] != true {
+		t.Fatalf("check_send com fonte: %v", c)
+	}
+	o, _ = e.w.tool(e.token, "send_as_attendant", map[string]any{"conversation_id": e.convID, "text": answer,
+		"sources": []map[string]any{{"title": "Receita Federal", "url": "https://www.gov.br/receitafederal/pt-br"}, {"url": "https://www.gov.br/iti"}}})
+	if o["ok"] != true {
+		t.Fatalf("com fontes: %v", o)
+	}
+	txt := lastSent(t, e.w).Text
+	if !strings.Contains(txt, answer) || !strings.Contains(txt, "Fontes consultadas:") || !strings.Contains(txt, "• Receita Federal: https://www.gov.br/receitafederal/pt-br") || !strings.Contains(txt, "• gov.br: https://www.gov.br/iti") {
+		t.Fatalf("a mensagem deveria trazer as fontes: %q", txt)
 	}
 }

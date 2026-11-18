@@ -229,7 +229,9 @@ func (s *Service) applyLane(ctx context.Context, a Actor, in AttendInput, text s
 	if err != nil {
 		return "", nil, err
 	}
+	f.Sources = len(in.Sources)
 	d := decideLane(lane, f, text)
+	d.Text = withSources(d.Text, in.Sources)
 	switch {
 	case d.Refusal != nil:
 		return "", nil, d.Refusal
@@ -324,6 +326,7 @@ func (s *Service) LaneCheck(ctx context.Context, a Actor, in AttendInput) (LaneC
 		text = "ok" // sem texto, confere só as regras da conversa
 		res.Notes = append(res.Notes, "Sem text: só as regras da conversa foram conferidas, não as do conteúdo.")
 	}
+	f.Sources = len(in.Sources)
 	d := decideLane(lane, f, text)
 	switch {
 	case d.Refusal != nil:

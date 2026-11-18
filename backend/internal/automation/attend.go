@@ -31,6 +31,8 @@ type AttendInput struct {
 	ConversationID string
 	Text           string
 	DocumentID     string
+	// Sources: as páginas que a IA consultou para responder (mostradas ao cliente no fim da mensagem).
+	Sources []Source
 }
 
 type AttendResult struct {
@@ -75,6 +77,11 @@ func (s *Service) SendAsAttendant(ctx context.Context, a Actor, in AttendInput) 
 	if n := utf8.RuneCountInString(text); n == 0 || n > attendMaxRunes {
 		return AttendResult{}, refuse("text", "A mensagem deve ter de 1 a %d caracteres.", attendMaxRunes)
 	}
+	srcs, serr := normalizeSources(in.Sources)
+	if serr != nil {
+		return AttendResult{}, serr
+	}
+	in.Sources = srcs
 	var optOut, group bool
 	if err := s.db.QueryRow(ctx, `SELECT automation_opt_out_at IS NOT NULL, kind = 'group' FROM contacts WHERE id = $1`, in.ContactID).Scan(&optOut, &group); err != nil {
 		return AttendResult{}, refuse("contact", "Contato não encontrado.")
@@ -100,10 +107,12 @@ func (s *Service) SendAsAttendant(ctx context.Context, a Actor, in AttendInput) 
 		if shadow != nil {
 			return *shadow, nil
 		}
-		text = final
-		if n := utf8.RuneCountInString(text); n > attendMaxRunes {
-			return AttendResult{}, refuse("text", "Com a apresentação da IA a mensagem passaria de %d caracteres; escreva menos.", attendMaxRunes)
-		}
+		text = final // já com as fontes
+	} else {
+		text = withSources(text, in.Sources)
+	}
+	if n := utf8.RuneCountInString(text); n > attendMaxRunes {
+		return AttendResult{}, refuse("text", "Com as fontes a mensagem passaria de %d caracteres; escreva menos ou cite menos fontes.", attendMaxRunes)
 	}
 	var att *media.Processed
 	if in.DocumentID != "" {

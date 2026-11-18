@@ -154,3 +154,46 @@ func TestOrderOfWallsConversationBeforeContent(t *testing.T) {
 		t.Fatalf("a passagem para humano vem antes do texto: %s", got)
 	}
 }
+
+func TestRequireSourcesForOutsideInformation(t *testing.T) {
+	l := baseLane()
+	l.RequireSources = true
+	f := baseFacts()
+	law := "Pela nova instrução normativa da Receita Federal, o prazo para renovar mudou para 30 dias."
+	if got := code(decideLane(l, f, law)); got != "fontes" {
+		t.Fatalf("regra do governo sem fonte deveria ser recusada: %s", got)
+	}
+	f.Sources = 1
+	if got := code(decideLane(l, f, law)); got != "ok" {
+		t.Fatalf("com fonte passa: %s", got)
+	}
+	f.Sources = 0
+	if got := code(decideLane(l, f, "Posso agendar a validação por vídeo amanhã às 14h.")); got != "ok" {
+		t.Fatalf("conversa comum não exige fonte: %s", got)
+	}
+	l.RequireSources = false
+	if got := code(decideLane(l, f, law)); got != "ok" {
+		t.Fatalf("raia sem a exigência: %s", got)
+	}
+}
+
+func TestNormalizeAndFormatSources(t *testing.T) {
+	good, ref := normalizeSources([]Source{{Title: "  Receita   Federal ", URL: "https://www.gov.br/receitafederal/pt-br#topo"}, {URL: "https://www.gov.br/receitafederal/pt-br"}, {Title: "ITI", URL: "https://www.gov.br/iti"}})
+	if ref != nil || len(good) != 2 || good[0].Title != "Receita Federal" || good[0].URL != "https://www.gov.br/receitafederal/pt-br" || good[1].Title != "ITI" {
+		t.Fatalf("fontes válidas (repetida some, título limpo): %+v %v", good, ref)
+	}
+	for _, bad := range []string{"http://gov.br/x", "https://192.168.0.1/x", "https://localhost/x", "https://intranet/x", "ftp://gov.br", "gov.br/x", "https://user:senha@gov.br/x"} {
+		if _, r := normalizeSources([]Source{{URL: bad}}); r == nil {
+			t.Errorf("%q deveria ser recusada", bad)
+		}
+	}
+	if _, r := normalizeSources(make([]Source, 6)); r == nil {
+		t.Error("mais de 5 fontes deveria ser recusado")
+	}
+	if got := withSources("Resposta.", good); got != "Resposta.\n\nFontes consultadas:\n• Receita Federal: https://www.gov.br/receitafederal/pt-br\n• ITI: https://www.gov.br/iti" {
+		t.Fatalf("formato: %q", got)
+	}
+	if withSources("x", nil) != "x" {
+		t.Fatal("sem fontes o texto não muda")
+	}
+}

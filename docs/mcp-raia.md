@@ -46,6 +46,17 @@ raia; 0 na raia = usa 24) e **ninguém da equipe iniciou o atendimento**: sem re
 depois do cliente e sem passagem pendente. A mais antiga primeiro, com a última mensagem do cliente. Só a fila da raia; grupos ficam de fora.
 A IA lê o histórico, responde com `send_as_attendant` ou passa para uma pessoa com `request_human`. Em sombra, vira rascunho.
 
+## 2.1b Responder com dados reais e mostrar as fontes
+
+A IA pode tirar dúvidas (nova regra do governo, prazo, exigência) com informação **real e atual**. O ChatHM não navega na internet: quem pesquisa é a
+própria IA externa, com as ferramentas de busca dela. O servidor faz a parte que dá para garantir:
+- `send_as_attendant` e `check_send` aceitam **`sources`** (até 5 páginas, `title` e `url` https). O servidor valida (https, site público, sem IP/localhost,
+  sem repetição) e **acrescenta ao fim da mensagem** "Fontes consultadas: • título: link". Vale também para token sem raia.
+- Raia com **`requireSources`** (ligado em `certificado`): texto que fala de lei, decreto, portaria, instrução normativa, regra, Receita Federal, ICP-Brasil,
+  prazo legal, "nova regra", "governo" etc. **sem `sources` é recusado** (`fontes`) e a IA é orientada a pesquisar e reenviar, ou a dizer que vai confirmar e usar `request_human`.
+- Limite honesto: o servidor confere que as fontes existem como links válidos e que foram citadas, **não** que a IA realmente leu a página nem que ela interpretou
+  certo. Em sombra você vê o rascunho com as fontes antes de valer.
+
 ## 2.2 Qualquer IA externa (Grok, Claude, ChatGPT, Gemini)
 
 A raia é do servidor, não do agente: o mesmo token do atendente autônomo, preso a uma raia, funciona com **qualquer cliente MCP**. Na criação do token

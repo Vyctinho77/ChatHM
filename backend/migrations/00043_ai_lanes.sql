@@ -19,6 +19,8 @@ CREATE TABLE ai_lanes (
     human_quiet_minutes integer NOT NULL DEFAULT 60 CHECK (human_quiet_minutes BETWEEN 0 AND 1440),
     -- Procura conversas paradas (o cliente escreveu e ninguém da equipe iniciou o atendimento) há pelo menos N horas. 0 = não procura.
     stale_hours         integer NOT NULL DEFAULT 0  CHECK (stale_hours BETWEEN 0 AND 720),
+    -- Informação de fora (lei, norma, prazo, regra do governo) só com as fontes consultadas, citadas na própria mensagem.
+    require_sources     boolean NOT NULL DEFAULT false,
     -- Links só destes domínios. Lista vazia = qualquer link.
     allowed_domains     text[]  NOT NULL DEFAULT '{}',
     guidelines          text    NOT NULL DEFAULT '' CHECK (char_length(guidelines) <= 6000),
@@ -27,10 +29,10 @@ CREATE TABLE ai_lanes (
 );
 ALTER TABLE ai_lanes ENABLE ROW LEVEL SECURITY;
 
-INSERT INTO ai_lanes (key, label, can_initiate, max_consecutive, contact_daily, human_quiet_minutes, stale_hours, allowed_domains, guidelines) VALUES
-  ('certificado', 'Certificado digital: atendimento inicial', false, 3, 10, 60, 24, '{}',
-   'Você é uma atendente mínima do escritório. Oriente o cliente, em linguagem simples, sobre o que fazer para emitir ou renovar o certificado digital e peça só o que um atendente pediria no início. Se o cliente mandar foto ou documento, ou pedir uma pessoa, passe para um atendente.'),
-  ('cobranca', 'Cobrança de honorários', true, 1, 2, 120, 0, '{asaas.com}',
+INSERT INTO ai_lanes (key, label, can_initiate, max_consecutive, contact_daily, human_quiet_minutes, stale_hours, require_sources, allowed_domains, guidelines) VALUES
+  ('certificado', 'Certificado digital: atendimento inicial', false, 3, 10, 60, 24, true, '{}',
+   'Você é uma atendente mínima do escritório. Oriente o cliente, em linguagem simples, sobre o que fazer para emitir ou renovar o certificado digital e peça só o que um atendente pediria no início. Para dúvida sobre regra do governo, lei, prazo ou valor oficial, consulte fontes oficiais atuais (gov.br, Receita, ITI) e responda com o que encontrou, informando as fontes em sources; se não achar com segurança, diga isso e passe para um atendente. Se o cliente mandar foto ou documento, ou pedir uma pessoa, passe para um atendente.'),
+  ('cobranca', 'Cobrança de honorários', true, 1, 2, 120, 0, false, '{asaas.com}',
    'Lembre com educação. O link de pagamento do Asaas é o único permitido. Se o cliente disser que já pagou, mandar comprovante ou contestar, passe para um atendente.');
 
 -- Cada token do atendente autônomo pode ficar preso a uma raia: só a raia vale para ele.
