@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Building2, Phone, Plus, UserRound, X } from "lucide-react";
 import { ViewableAvatar } from "@/components/AvatarViewer";
 import { Menu, MenuItem } from "@/components/Menu";
@@ -9,6 +9,8 @@ import { formatTaxId } from "@/lib/taxId";
 import { cn } from "@/lib/cn";
 import { capabilities, useConversationActions, useTagCatalog } from "./store";
 import { AutomationOptOut } from "./AutomationOptOut";
+import { finishWithPrefs } from "./accentController";
+import { useAccentTextarea } from "./useAccentTextarea";
 import { PersonName } from "@/features/team/PersonName";
 import { segmentClass, segmentLabel, type Conversation } from "./types";
 
@@ -18,6 +20,8 @@ const statusLabel = { new: "Aguardando", in_progress: "Em atendimento", closed: 
 export function ContactPanel({ conversation: c, onClose }: { conversation: Conversation; onClose: () => void }) {
   const actions = useConversationActions();
   const [note, setNote] = useState(c.contact.note);
+  const noteRef = useRef<HTMLTextAreaElement>(null);
+  const noteAccent = useAccentTextarea({ ref: noteRef, onValue: (v) => setNote(v) });
 
   const { data: catalog = [] } = useTagCatalog();
   const available = catalog.filter((t) => !c.tags.includes(t.name));
@@ -115,9 +119,16 @@ export function ContactPanel({ conversation: c, onClose }: { conversation: Conve
           </label>
           <textarea
             id="contact-note"
+            ref={noteRef}
             value={note}
-            onChange={(e) => setNote(e.target.value)}
-            onBlur={() => note !== c.contact.note && actions.setNote(c.id, note)}
+            onChange={noteAccent.onChange}
+            onKeyDown={(e) => void noteAccent.onKeyDown(e)}
+            {...noteAccent.attrs}
+            onBlur={() => {
+              const final = finishWithPrefs(note);
+              if (final !== note) setNote(final);
+              if (final !== c.contact.note) actions.setNote(c.id, final);
+            }}
             rows={4}
             placeholder="Visível apenas para a equipe"
             className="mt-2 w-full resize-none rounded-lg border border-line bg-elevated p-2.5 text-[13px] outline-none placeholder:text-muted focus:border-accent"

@@ -23,3 +23,6 @@ coverage/
 data/
 .local/
 !.env.development.example
+
+__pycache__/
+*.pyc
