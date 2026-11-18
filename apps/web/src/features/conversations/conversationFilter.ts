@@ -2,6 +2,18 @@ import type { Conversation } from "./types";
 
 export type ConversationFilter = "mine" | "general" | "groups" | "all" | "snoozed";
 
+/** A tela principal abre em "Não atribuídos": quem ainda não tem atendente é o que a equipe precisa ver primeiro; "Todas" é uma escolha. */
+export const DEFAULT_FILTER: ConversationFilter = "general";
+const FILTERS: readonly ConversationFilter[] = ["mine", "general", "groups", "all", "snoozed"];
+
+/** O filtro pedido na URL (?vista=); sem pedido ou com valor desconhecido, o padrão. */
+export function parseFilter(v: string | null): ConversationFilter {
+  return FILTERS.find((f) => f === v) ?? DEFAULT_FILTER;
+}
+
+/** O que vai na URL para o filtro: nada para o padrão. */
+export const filterParam = (f: ConversationFilter): string | null => (f === DEFAULT_FILTER ? null : f);
+
 export function filterConversations(conversations: Conversation[], filter: ConversationFilter, myId: string, segment: string | null) {
   return conversations.filter((c) => {
     if (c.status === "closed") return false;

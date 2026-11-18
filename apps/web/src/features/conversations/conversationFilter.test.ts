@@ -140,3 +140,16 @@ describe("participants", () => {
     expect(filterConversations([other], "general", "me", null)).toEqual([]);
   });
 });
+
+describe("filtro padrão da tela principal", () => {
+  it("abre em Não atribuídos; Todas é uma escolha", async () => {
+    const { DEFAULT_FILTER, filterParam, parseFilter } = await import("./conversationFilter");
+    expect(DEFAULT_FILTER).toBe("general");
+    expect(parseFilter(null)).toBe("general");
+    expect(parseFilter("")).toBe("general");
+    expect(parseFilter("qualquer")).toBe("general");
+    for (const f of ["mine", "general", "groups", "all", "snoozed"] as const) expect(parseFilter(f)).toBe(f);
+    expect(filterParam("general")).toBeNull(); // o padrão não vai na URL
+    for (const f of ["mine", "groups", "all", "snoozed"] as const) expect(filterParam(f)).toBe(f); // Todas precisa ir na URL
+  });
+});

@@ -19,7 +19,7 @@ import { SearchResults } from "./SearchResults";
 import { useContactOpener, useConversationActions, useConversations, useMessageSearch, usePrefetchMessages, useSegmentOptions } from "./store";
 import { Ticks } from "./Ticks";
 import { TransferMenu } from "./TransferMenu";
-import { countsByTab, filterConversations, type ConversationFilter as Filter } from "./conversationFilter";
+import { countsByTab, filterConversations, filterParam, parseFilter, type ConversationFilter as Filter } from "./conversationFilter";
 import { reminderColors, useReminders, type Reminder } from "./reminders";
 import { ReminderEditor } from "./ReminderEditor";
 import { useTransferFlow } from "./transferFlow";
@@ -38,15 +38,15 @@ export function ConversationList({ selectedId, onSelect }: { selectedId?: string
   const [ctx, setCtx] = useState<{ id: string; x: number; y: number } | null>(null);
   // O filtro de fila fica na URL (?fila=folha): a tela Filas / Segmentos abre a lista já filtrada.
   const [params, setParams] = useSearchParams();
-  const requestedFilter = params.get("vista");
-  const filter: Filter = requestedFilter === "mine" || requestedFilter === "general" || requestedFilter === "groups" || requestedFilter === "snoozed" ? requestedFilter : "all";
+  const filter: Filter = parseFilter(params.get("vista"));
   const reminders = useReminders(filter === "mine");
   const [editingReminder, setEditingReminder] = useState<Conversation | null>(null);
   const transferFlow = useTransferFlow(actions);
   const setFilter = (nextFilter: Filter) => setParams((p) => {
     const next = new URLSearchParams(p);
-    if (nextFilter === "all") next.delete("vista");
-    else next.set("vista", nextFilter);
+    const value = filterParam(nextFilter);
+    if (value === null) next.delete("vista");
+    else next.set("vista", value);
     return next;
   }, { replace: true });
   const segment: SegmentKey | null = params.get("fila");
