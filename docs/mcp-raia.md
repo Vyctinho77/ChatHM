@@ -1,7 +1,6 @@
 # Raia da IA (atendente autônomo com paredes)
 
-Status: **servidor implementado (migração 43), tudo desligado.** Falta a tela (aba "Raias" em *Atendimento por IA*, ligação do token à raia, rascunhos e
-banner de passagem) e o aviso que acorda a IA quando o cliente responde. Veja "Próximos passos".
+Status: **servidor (migração 43) e tela prontos, tudo desligado.** Falta o aviso que acorda a IA quando o cliente responde. Veja "Próximos passos".
 
 ## 1. A ideia
 
@@ -93,17 +92,18 @@ No MCP: `my_access` mostra a raia do token; `check_send(conversation_id|contact_
 `send_as_attendant` devolve a recusa com `codigo` (`raia_desligada`, `fora_da_raia`, `humano_ativo`, `passada_para_humano`, `aguarde_cliente`,
 `limite_contato`, `link`, `credencial`, `so_responde`, `documento`). `list_unattended` lista as conversas paradas.
 
-## 6. Como ligar (quando a tela existir; hoje só pela API)
+## 6. Como ligar (pela tela)
 
-1. Crie (ou use) a fila "Certificado digital" com palavras-chave e a equipe; aponte `segmentId` da raia `certificado` para ela.
-2. Em MCP, crie um token **Atendente autônomo** e prenda-o à raia. Deixe a raia em **sombra** e ligada.
-3. Revise os rascunhos por alguns dias; ajuste as regras e o manual (`guidelines`).
-4. Passe a raia para **valendo**.
+1. **Atendimento por IA → Raias**: abra a raia, escolha a fila (se quiser limitar) e para onde vai a conversa quando a IA pedir uma pessoa. Ligue a raia (continua em **Sombra**).
+2. **MCP → Tokens de acesso**: crie um token **Atendente autônomo** (escolha o provedor: Claude, ChatGPT, Grok, Gemini ou Outro) e, na linha do token, escolha a **Raia da IA**.
+3. Em **Raias**, confira os **Rascunhos em sombra** e os **Pediram ajuda de uma pessoa** por alguns dias; ajuste limites e orientações.
+4. Passe a raia para **Valendo** (pede confirmação).
+
+A mesma coisa pela API está na seção 5.
 
 ## 7. Próximos passos
 
-1. **Tela**: aba *Raias* (inclui "procurar conversas paradas depois de N horas") (editar, ligar, sombra/valendo), escolher a raia ao criar/editar o token, lista de rascunhos com aprovar/editar/descartar,
-   banner "IA pediu ajuda" na conversa.
-2. **Acordar a IA** quando o cliente responde: hoje o aviso automático (webhook) está desligado; sem isso a IA só age quando é disparada.
+1. **Acordar a IA** quando o cliente responde: hoje o aviso automático (webhook) está desligado; sem isso a IA só age quando é disparada.
+2. **Aprovar, editar ou descartar** rascunhos da sombra pela tela (hoje é só leitura).
 3. **Manual do assunto e exemplos**: `get_lane_guidelines` e trechos de conversas boas já resolvidas por pessoas (mascarados, sem documentos).
 4. **Painel de atividade** e **pausa automática** por comportamento anormal (muitos `PARAR`, passagens, textos repetidos).

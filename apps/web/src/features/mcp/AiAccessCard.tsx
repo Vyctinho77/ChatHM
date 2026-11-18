@@ -9,6 +9,7 @@ import { cn } from "@/lib/cn";
 import { Skeleton } from "@/components/Skeleton";
 import { useMe } from "@/features/auth/api";
 import { DomainInput } from "./DomainInput";
+import type { Lane } from "@/features/automation/lanes";
 
 type AiSettings = { enabled: boolean; maskDocuments: boolean; maskPhones: boolean; allowWrite: boolean; allowSend: boolean; allowAutomation?: boolean; allowAttend?: boolean; showContactPhone?: boolean; maskEmails: boolean; strictPrivacy: boolean; allowOauth: boolean; oauthRedirectHosts: string[] };
 type Grant = { id: string; client: string; level: "read" | "write" | "send"; createdAt: string; lastUsedAt?: string; owner?: string };
@@ -24,6 +25,8 @@ type AiToken = {
   revoked: boolean;
   expired: boolean;
   owner?: string;
+  /** Raia da IA a que o token está preso (só atendente autônomo). Vazio = atendente livre. */
+  lane?: string;
 };
 type Created = { token: string; info: AiToken };
 
@@ -442,6 +445,7 @@ export function AiAccessCard() {
                       <code>{t.prefix}…</code> · {t.scopes.includes("attend") ? "atendente autônomo (envia e responde sozinho)" : t.scopes.includes("automate") ? "leitura, escrita, pedidos de envio e envios automáticos" : t.scopes.includes("send") ? "leitura, escrita e pedidos de envio" : t.scopes.includes("write") ? "leitura e escrita" : "só leitura"} · {t.revoked ? "revogado" : t.expired ? "expirado" : `vale até ${date(t.expiresAt)}`} · {t.lastUsedAt ? `usado em ${date(t.lastUsedAt)}` : "nunca usado"}
                     </p>
                   </div>
+                  {!inactive && admin && t.scopes.includes("attend") && <TokenLane token={t} onError={setError} />}
                   {!inactive && (
                     <Button type="button" variant="ghost" disabled={revoke.isPending} aria-label={`Revogar ${t.name}`} onClick={() => revoke.mutate(t.id)}>
                       <Trash2 className="size-4" /> Revogar
@@ -501,5 +505,25 @@ export function AiAccessCard() {
       </Modal>}
       {creating && <NewToken allowWrite={s.allowWrite} allowSend={s.allowSend} allowAutomation={!!s.allowAutomation} allowAttend={!!s.allowAttend} admin={admin} onClose={() => setCreating(false)} />}
     </section>
+  );
+}
+
+/** Prende (ou solta) um token do atendente autônomo a uma raia da IA. Só administrador. */
+function TokenLane({ token, onError }: { token: AiToken; onError: (m: string) => void }) {
+  const qc = useQueryClient();
+  const lanes = useQuery({ queryKey: ["automation", "lanes"], queryFn: async () => (await get<{ lanes: Lane[] }>("/automation/lanes")).lanes });
+  const bind = useMutation({
+    mutationFn: (laneKey: string) => api<void>("PUT", `/ai/tokens/${token.id}/lane`, { laneKey }),
+    onSuccess: () => { onError(""); void qc.invalidateQueries({ queryKey: ["ai", "tokens"] }); },
+    onError: (e) => onError(errorMessage(e)),
+  });
+  return (
+    <label className="flex shrink-0 flex-col gap-1 text-[11px] text-muted">
+      <span className="flex items-center gap-1">Raia da IA<InfoTip title="Raia da IA">Presa a uma raia, este token só age pelas regras dela (modo sombra ou valendo, fila, limites). Sem raia, é o atendente livre de antes. Configure as raias em Atendimento por IA → Raias.</InfoTip></span>
+      <select aria-label={`Raia de ${token.name}`} value={token.lane ?? ""} disabled={bind.isPending || lanes.isPending} onChange={(e) => bind.mutate(e.target.value)} className="h-8 max-w-44 rounded-lg border border-line/60 bg-app/50 px-2 text-xs text-fg outline-none focus:border-brand">
+        <option value="">Sem raia (livre)</option>
+        {(lanes.data ?? []).map((l) => <option key={l.key} value={l.key}>{l.label}</option>)}
+      </select>
+    </label>
   );
 }

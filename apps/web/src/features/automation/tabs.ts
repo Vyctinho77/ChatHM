@@ -3,7 +3,7 @@
  * voltar para "com aprovação", nada fica preso sem tela) e "Fila e histórico" quando há fila, envio de hoje ou falha para acompanhar.
  * Cobranças saiu da tela: o Asaas é consultado pela própria IA, fora do ChatHM.
  */
-export const TABS = [["aprovar", "Para aprovar"], ["fila", "Fila e histórico"], ["assuntos", "Assuntos"], ["controles", "Controles"], ["docs", "Documentos"]] as const;
+export const TABS = [["aprovar", "Para aprovar"], ["fila", "Fila e histórico"], ["assuntos", "Assuntos"], ["raias", "Raias"], ["controles", "Controles"], ["docs", "Documentos"]] as const;
 export type Tab = (typeof TABS)[number][0];
 
 export type Counts = { pending: number; queued: number; sentToday: number; failed: number };

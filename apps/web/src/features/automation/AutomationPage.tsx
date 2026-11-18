@@ -14,6 +14,7 @@ import { formatBytes } from "@/lib/format";
 import { useContacts } from "@/features/contacts/api";
 import { DEMO } from "@/lib/env";
 import { currentTab, visibleTabs, type Tab } from "./tabs";
+import { LanesTab } from "./LanesTab";
 
 type Send = {
   id: string; createdAt: string; category: string; categoryLabel: string; reason: string; text: string; preview: string;
@@ -110,6 +111,7 @@ export function AutomationPage() {
           {tab === "aprovar" && <SendList status="pending_approval" approval />}
           {tab === "fila" && <SendList status="" />}
           {tab === "assuntos" && <Categories />}
+          {tab === "raias" && <LanesTab />}
           {tab === "controles" && <Controls />}
           {tab === "docs" && <Documents />}
         </div>

@@ -5,18 +5,18 @@ const keys = (o?: Parameters<typeof visibleTabs>[0]) => visibleTabs(o).map(([k])
 
 describe("abas de Atendimento por IA", () => {
   it("sem nada para aprovar nem acompanhar, só as abas fixas (e Cobranças não existe mais)", () => {
-    expect(keys({ pending: 0, queued: 0, sentToday: 0, failed: 0 })).toEqual(["assuntos", "controles", "docs"]);
-    expect(keys()).toEqual(["assuntos", "controles", "docs"]);
+    expect(keys({ pending: 0, queued: 0, sentToday: 0, failed: 0 })).toEqual(["assuntos", "raias", "controles", "docs"]);
+    expect(keys()).toEqual(["assuntos", "raias", "controles", "docs"]);
     expect(keys()).not.toContain("cobrancas");
   });
 
   it("pedidos aguardando aprovação mostram 'Para aprovar' e a fila", () => {
-    expect(keys({ pending: 2, queued: 0, sentToday: 0, failed: 0 })).toEqual(["aprovar", "fila", "assuntos", "controles", "docs"]);
+    expect(keys({ pending: 2, queued: 0, sentToday: 0, failed: 0 })).toEqual(["aprovar", "fila", "assuntos", "raias", "controles", "docs"]);
   });
 
   it("fila, envio de hoje ou falha mostram o acompanhamento, sem a aba de aprovar", () => {
     for (const o of [{ pending: 0, queued: 1, sentToday: 0, failed: 0 }, { pending: 0, queued: 0, sentToday: 3, failed: 0 }, { pending: 0, queued: 0, sentToday: 0, failed: 1 }]) {
-      expect(keys(o)).toEqual(["fila", "assuntos", "controles", "docs"]);
+      expect(keys(o)).toEqual(["fila", "assuntos", "raias", "controles", "docs"]);
     }
   });
 
@@ -28,5 +28,6 @@ describe("abas de Atendimento por IA", () => {
     expect(currentTab("controles", none)).toBe("controles");
     expect(currentTab(null, { ...none, pending: 1 })).toBe("aprovar");
     expect(currentTab("docs", { ...none, pending: 1 })).toBe("docs");
+    expect(currentTab("raias", none)).toBe("raias");
   });
 });
