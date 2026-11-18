@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type KeyboardEvent } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Check, FileText, Image, LoaderCircle, MapPin, Mic, Paperclip, Pencil, Reply, SendHorizontal, Smile, Sparkles, Trash2, X } from "lucide-react";
 import { Menu, MenuItem } from "@/components/Menu";
@@ -11,8 +11,7 @@ import { getDraft, setDraft } from "./drafts";
 import type { OutgoingDraft } from "./store";
 import { AttachmentPreview, type AttachmentSelection } from "./AttachmentPreview";
 import { MentionPopup } from "./MentionPopup";
-import { applyFix, fixTail, fixWordEndingAt, isTrigger, undoFix, type Fix, type Rejected } from "./autocorrect";
-import { getWritingPrefs } from "./writingPrefs";
+import { useAccentTextarea } from "./useAccentTextarea";
 import { applyMention, extractMentions, filterPeople, findMentionQuery, mentionListId, mentionOptionId, type MentionPerson, type MentionRef } from "./mentions";
 
 const quickEmojis = ["😀", "😉", "🙏", "👍", "👏", "✅", "📄", "📎", "⏰", "💰", "🎉", "❤️"];
@@ -88,13 +87,10 @@ export function Composer({
   const [mentionIdx, setMentionIdx] = useState(0);
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
   const picked = useRef(new Map<string, string>());
-  // Corretor de acentos: a última correção (para o Backspace desfazer), as palavras desfeitas e onde pôr o cursor depois de trocar o texto.
-  const [autoAccent] = useState(() => getWritingPrefs().autoAccent);
-  const lastFix = useRef<(Fix & { caret: number; delimiter: string }) | null>(null);
-  const rejected = useRef<Rejected>(null);
-  const pendingCaret = useRef<number | null>(null);
   const reducedMotion = useReducedMotion();
   const ta = useRef<HTMLTextAreaElement>(null);
+  // Corretor de acentos (preferência em Configurações → Escrita): vale para o texto digitado neste campo.
+  const accent = useAccentTextarea({ ref: ta, onValue: (v, caret) => { update(v); setCaret(caret); } });
   const docInput = useRef<HTMLInputElement>(null);
   const imgInput = useRef<HTMLInputElement>(null);
   const hdInput = useRef<HTMLInputElement>(null);
@@ -111,13 +107,6 @@ export function Composer({
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-  }, [text]);
-
-  // Trocar o texto por código move o cursor para o fim: devolve-o para onde estava.
-  useLayoutEffect(() => {
-    if (pendingCaret.current === null || !ta.current) return;
-    ta.current.setSelectionRange(pendingCaret.current, pendingCaret.current);
-    pendingCaret.current = null;
   }, [text]);
 
   const mentionQuery = mentionPeople ? findMentionQuery(text, caret) : null;
@@ -151,7 +140,7 @@ export function Composer({
   }, [focusKey]);
 
   async function saveEdit() {
-    const t = autoAccent ? fixTail(text.trim(), rejected.current) : text.trim();
+    const t = accent.finish(text.trim());
     if (!edit || !t || saving) return;
     if (t === edit.text.trim()) return onCancelEdit?.();
     setSaving(true);
@@ -167,55 +156,17 @@ export function Composer({
 
   function sendText() {
     if (edit) return void saveEdit();
-    const t = autoAccent ? fixTail(text.trim(), rejected.current) : text.trim();
+    const t = accent.finish(text.trim());
     if (!t || disabled) return;
     const mentions = mentionPeople ? extractMentions(t, mentionPeople, picked.current) : [];
     onSend({ kind: "text", text: t, ...(mentions.length ? { mentions } : {}) });
     picked.current.clear();
-    rejected.current = null;
+    accent.reset();
     update("");
   }
 
-  /** Digitou um espaço ou pontuação: fecha a palavra e, se ela precisa de acento, corrige. */
-  function onType(e: ChangeEvent<HTMLTextAreaElement>) {
-    const el = e.currentTarget;
-    let value = el.value;
-    let at = el.selectionStart;
-    const ev = e.nativeEvent as InputEvent;
-    lastFix.current = null;
-    if (autoAccent && !ev.isComposing && (ev.inputType === "insertText" || ev.inputType === "insertLineBreak")) {
-      const typed = ev.inputType === "insertLineBreak" ? "\n" : ev.data ?? "";
-      if (isTrigger(typed) && at > 0 && value.charAt(at - 1) === typed && el.selectionEnd === at) {
-        const fix = fixWordEndingAt(value, at - 1, rejected.current);
-        if (fix) {
-          const done = applyFix(value, fix, at);
-          value = done.text;
-          at = done.caret;
-          lastFix.current = { ...fix, caret: at, delimiter: typed };
-          pendingCaret.current = at;
-        }
-      }
-    }
-    update(value);
-    setCaret(at);
-  }
-
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    // Backspace logo depois de uma correção volta a palavra como foi digitada e não corrige essa palavra de novo.
-    const fix = lastFix.current;
-    if (fix && e.key === "Backspace" && !e.nativeEvent.isComposing) {
-      const el = e.currentTarget;
-      if (el.selectionStart === fix.caret && el.selectionEnd === fix.caret && text.charAt(fix.caret - 1) === fix.delimiter && text.slice(fix.start, fix.start + fix.to.length) === fix.to) {
-        e.preventDefault();
-        const back = undoFix(text, fix, fix.caret);
-        rejected.current = { start: fix.start, word: fix.from.toLowerCase() };
-        lastFix.current = null;
-        pendingCaret.current = back.caret;
-        update(back.text);
-        setCaret(back.caret);
-        return;
-      }
-    }
+    if (accent.onKeyDown(e)) return; // Backspace logo depois de uma correção de acento desfaz a correção
     if (mentionOpen && !e.nativeEvent.isComposing) {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
@@ -429,7 +380,7 @@ export function Composer({
             ref={ta}
             rows={1}
             value={text}
-            onChange={onType}
+            onChange={accent.onChange}
             onKeyDown={onKeyDown}
             onKeyUp={(e) => setCaret(e.currentTarget.selectionStart)}
             onClick={(e) => setCaret(e.currentTarget.selectionStart)}
@@ -437,9 +388,7 @@ export function Composer({
             {...(mentionPeople ? { role: "combobox", "aria-autocomplete": "list", "aria-expanded": mentionOpen, "aria-controls": mentionOpen ? mentionListId : undefined, "aria-activedescendant": mentionOpen ? mentionOptionId(mentionOptions[activeMention]!.id) : undefined } : {})}
             placeholder="Digite uma mensagem"
             aria-label="Mensagem"
-            spellCheck
-            lang="pt-BR"
-            autoCorrect="on"
+            {...accent.attrs}
             className="mx-1 max-h-40 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-[13.5px] leading-5 outline-none placeholder:text-muted focus-visible:outline-none"
           />
 

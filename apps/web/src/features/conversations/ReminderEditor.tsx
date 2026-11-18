@@ -1,8 +1,10 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { Check, StickyNote } from "lucide-react";
 import { Alert, Button, Modal } from "@/components/ui";
 import { errorMessage, fieldErrors } from "@/lib/api";
 import { cn } from "@/lib/cn";
+import { finishWithPrefs } from "./accentController";
+import { useAccentTextarea } from "./useAccentTextarea";
 import { reminderColors, useSaveReminder, type Reminder, type ReminderColor } from "./reminders";
 
 export function ReminderEditor({ conversationId, contactName, reminder, onClose }: {
@@ -11,11 +13,13 @@ export function ReminderEditor({ conversationId, contactName, reminder, onClose 
   const [text, setText] = useState(reminder?.text ?? "");
   const [color, setColor] = useState<ReminderColor>(reminder?.color ?? "olive");
   const save = useSaveReminder();
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const accent = useAccentTextarea({ ref, onValue: (v) => setText(v) });
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!text.trim() || save.isPending) return;
-    try { await save.mutateAsync({ conversationId, text, color }); onClose(); }
+    try { await save.mutateAsync({ conversationId, text: finishWithPrefs(text), color }); onClose(); }
     catch { /* Render the mutation error without losing the draft. */ }
   }
 
@@ -24,7 +28,7 @@ export function ReminderEditor({ conversationId, contactName, reminder, onClose 
       <p className="text-sm text-muted">Uma anotação para lembrar do atendimento de <span className="font-medium text-fg">{contactName}</span>. Só você pode vê-la.</p>
       <label className="flex flex-col gap-2 text-sm font-medium">
         Lembrete
-        <textarea autoFocus required rows={3} maxLength={240} value={text} disabled={save.isPending} onChange={(e) => setText(e.target.value)} placeholder="Ex.: Aguardando os documentos para emitir a nota." className="w-full resize-y rounded-xl border border-line bg-elevated px-3 py-2 text-sm font-normal leading-relaxed outline-none placeholder:text-muted focus:border-brand-ink" />
+        <textarea ref={ref} autoFocus required rows={3} maxLength={240} value={text} disabled={save.isPending} onChange={accent.onChange} onKeyDown={(e) => void accent.onKeyDown(e)} {...accent.attrs} placeholder="Ex.: Aguardando os documentos para emitir a nota." className="w-full resize-y rounded-xl border border-line bg-elevated px-3 py-2 text-sm font-normal leading-relaxed outline-none placeholder:text-muted focus:border-brand-ink" />
         <span className="text-right text-[11px] font-normal text-muted">{text.length}/240</span>
       </label>
       <fieldset disabled={save.isPending}>

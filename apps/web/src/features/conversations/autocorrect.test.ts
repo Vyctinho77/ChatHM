@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyFix, correctWord, DICTIONARY, fixTail, fixWordEndingAt, isTrigger, undoFix } from "./autocorrect";
+import { ABBREVIATIONS, applyFix, correctWord, DICTIONARY, fixTail, fixWordEndingAt, isTrigger, setExtendedDictionary, undoFix } from "./autocorrect";
 
 describe("corretor de acentos: palavras", () => {
   it("põe o acento nas palavras comuns", () => {
@@ -24,8 +24,8 @@ describe("corretor de acentos: palavras", () => {
     }
   });
   it("o dicionário não corrige palavras que existem sem acento", () => {
-    // Palavras comuns da língua que NÃO podem estar no dicionário (a forma sem acento é outra palavra).
-    for (const w of ["esta", "e", "pais", "para", "por", "negocio", "comercio", "inicio", "marco", "publico", "pratica", "analise", "sera", "vira", "ha", "ai", "duvida", "debito", "credito", "titulo", "secretaria"]) {
+    // Palavras comuns da língua que NÃO podem estar na lista curada (a forma sem acento é outra palavra). ("sera", "ta", "ne": gírias de chat, entram de propósito.)
+    for (const w of ["esta", "e", "pais", "para", "por", "negocio", "comercio", "inicio", "marco", "publico", "pratica", "analise", "vira", "ha", "ai", "duvida", "debito", "credito", "titulo", "secretaria"]) {
       expect(DICTIONARY.has(w)).toBe(false);
     }
     // E toda entrada tem acento de verdade.
@@ -75,5 +75,61 @@ describe("corretor de acentos: no texto", () => {
   it("só estes caracteres fecham a palavra", () => {
     for (const c of [" ", ".", ",", "!", "?", ";", ":", ")", "\n"]) expect(isTrigger(c)).toBe(true);
     for (const c of ["a", "-", "@", "/", "1", "ab", ""]) expect(isTrigger(c)).toBe(false);
+  });
+});
+
+describe("corretor de acentos: dicionário estendido (gerado)", () => {
+  it("carrega o arquivo gerado e traz palavras que a lista curada não tem", async () => {
+    const { PT_ACCENTS } = await import("./ptAccents.data");
+    const pairs = PT_ACCENTS.split(" ").map((p) => p.split(":") as [string, string]);
+    expect(pairs.length).toBeGreaterThan(4000);
+    setExtendedDictionary(new Map(pairs));
+    try {
+      for (const [from, to] of [["abencoado", "abençoado"], ["ausencia", "ausência"], ["audiencia", "audiência"], ["incrivel", "incrível"], ["tinhamos", "tínhamos"], ["dolares", "dólares"], ["atras", "atrás"], ["agua", "água"]]) {
+        expect(correctWord(from)).toBe(to);
+      }
+      // nunca as ambíguas nem as que a forma sem acento é de uso comum
+      for (const w of ["esta", "pais", "para", "ha", "ai", "sos", "pra", "aqui", "ali", "pelo", "pelos", "tem", "da", "de", "nos", "as"]) expect(correctWord(w)).toBeNull();
+    } finally {
+      setExtendedDictionary(null);
+    }
+  });
+  it("o arquivo gerado não tem lixo: toda entrada é um par sem acento → com acento", async () => {
+    const { PT_ACCENTS } = await import("./ptAccents.data");
+    for (const pair of PT_ACCENTS.split(" ")) {
+      const [from, to] = pair.split(":");
+      expect(from).toMatch(/^[a-z]{2,}$/);
+      expect(to).toBeTruthy();
+      expect(to!.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/ç/g, "c")).toBe(from);
+      expect(to).not.toBe(from);
+    }
+  });
+  it("siglas de duas letras em maiúsculas não são mexidas", () => {
+    expect(correctWord("PE")).toBeNull();
+    expect(correctWord("VC", { abbreviations: true })).toBeNull();
+    expect(correctWord("NAO")).toBe("NÃO");
+  });
+});
+
+describe("corretor de acentos: opções", () => {
+  it("abreviações só com a opção ligada, mantendo a capitalização", () => {
+    expect(correctWord("vc")).toBeNull();
+    expect(correctWord("vc", { abbreviations: true })).toBe("você");
+    expect(correctWord("Vc", { abbreviations: true })).toBe("Você");
+    expect(correctWord("pfv", { abbreviations: true })).toBe("por favor");
+    expect(correctWord("tbm", { abbreviations: true })).toBe("também");
+    expect(correctWord("n", { abbreviations: true })).toBeNull(); // letra solta é ambígua demais
+    expect(correctWord("q", { abbreviations: true })).toBeNull();
+    for (const [from] of ABBREVIATIONS) expect(from.length).toBeGreaterThanOrEqual(2);
+  });
+  it("só abreviações (acentos desligados) e só acentos (abreviações desligadas)", () => {
+    expect(correctWord("voce", { accents: false })).toBeNull();
+    expect(correctWord("vc", { accents: false, abbreviations: true })).toBe("você");
+    expect(correctWord("vc", { accents: true })).toBeNull();
+  });
+  it("palavras ignoradas nunca são corrigidas", () => {
+    expect(correctWord("voce", { ignored: new Set(["voce"]) })).toBeNull();
+    expect(correctWord("Voce", { ignored: new Set(["voce"]) })).toBeNull();
+    expect(fixTail("a gente fala voce", undefined, { ignored: new Set(["voce"]) })).toBe("a gente fala voce");
   });
 });

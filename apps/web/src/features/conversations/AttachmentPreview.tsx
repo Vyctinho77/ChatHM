@@ -6,6 +6,8 @@ import { Button, IconButton, Modal } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { formatBytes } from "@/lib/format";
 import type { OutgoingDraft } from "./store.types";
+import { finishWithPrefs } from "./accentController";
+import { useAccentTextarea } from "./useAccentTextarea";
 
 type Attachment = { id: string; file: File; kind: "image" | "document"; hd: boolean; caption: string };
 export type AttachmentSelection = { files: File[]; kind: "image" | "document"; hd: boolean };
@@ -90,13 +92,13 @@ function attachment(file: File, kind: Attachment["kind"], hd: boolean): Attachme
 
 async function outgoing(item: Attachment): Promise<OutgoingDraft> {
   const { file, caption } = item;
-  if (item.kind === "document") return { kind: "document", file, url: URL.createObjectURL(file), fileName: file.name, mimeType: file.type || "application/octet-stream", sizeBytes: file.size, caption: caption.trim() };
+  if (item.kind === "document") return { kind: "document", file, url: URL.createObjectURL(file), fileName: file.name, mimeType: file.type || "application/octet-stream", sizeBytes: file.size, caption: finishWithPrefs(caption.trim()) };
   const url = URL.createObjectURL(file);
   try {
     const img = new Image();
     img.src = url;
     await img.decode();
-    return { kind: "image", file, url, width: img.naturalWidth, height: img.naturalHeight, caption: caption.trim(), hd: item.hd };
+    return { kind: "image", file, url, width: img.naturalWidth, height: img.naturalHeight, caption: finishWithPrefs(caption.trim()), hd: item.hd };
   } catch {
     URL.revokeObjectURL(url);
     throw new Error(`Não foi possível abrir ${file.name}. Escolha outra imagem.`);
@@ -114,6 +116,8 @@ export function AttachmentPreview({ selection, onClose, onSend }: { selection: A
   const item = items[active];
   const busyRef = useRef(false);
   useEffect(() => { panel.current?.focus(); }, []);
+  const captionRef = useRef<HTMLTextAreaElement>(null);
+  const captionAccent = useAccentTextarea({ ref: captionRef, onValue: (v) => patch({ caption: v }) });
 
   function patch(change: Partial<Attachment>) { setItems(old => old.map((it, i) => i === active ? { ...it, ...change } : it)); }
   function addFiles(files: File[]) {
@@ -153,7 +157,7 @@ export function AttachmentPreview({ selection, onClose, onSend }: { selection: A
     <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4 sm:p-7"><FilePreview key={item.id} item={item} /></div>
     <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-4">
       {error && <p role="alert" className="mb-2 text-sm text-danger">{error}</p>}
-      <textarea aria-label="Legenda do anexo" placeholder="Adicione uma legenda…" value={item.caption} disabled={busy} maxLength={1024} rows={2} onChange={e => patch({ caption: e.target.value })} className="max-h-28 min-h-12 w-full resize-none rounded-2xl bg-panel px-4 py-3 text-sm outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-brand" />
+      <textarea ref={captionRef} aria-label="Legenda do anexo" placeholder="Adicione uma legenda…" value={item.caption} disabled={busy} maxLength={1024} rows={2} onChange={captionAccent.onChange} onKeyDown={e => { void captionAccent.onKeyDown(e); }} {...captionAccent.attrs} className="max-h-28 min-h-12 w-full resize-none rounded-2xl bg-panel px-4 py-3 text-sm outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-brand" />
     </div>
     <div className="flex shrink-0 items-center gap-3 border-t border-line px-4 py-3 sm:px-6">
       <div className="flex min-w-0 flex-1 items-center justify-center gap-2 overflow-x-auto p-1">

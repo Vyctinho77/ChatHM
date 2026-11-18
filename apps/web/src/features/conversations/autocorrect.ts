@@ -3,6 +3,11 @@
  * (espaço ou pontuação). Só corrige o que não é ambíguo: a forma sem acento NÃO é outra palavra comum ("esta"/"está", "e"/"é", "pais"/"país",
  * "negocio"/"negócio" ficam de fora). Respeita maiúsculas ("Voce" → "Você", "NAO" → "NÃO"), e-mails, links, @menções e caminhos.
  * Voltar com Backspace logo em seguida desfaz a correção daquela palavra.
+ *
+ * Três camadas, da mais forte para a mais fraca: a lista curada abaixo (sempre vale, inclusive gírias de chat como "ta" → "tá"), o dicionário
+ * estendido (ptAccents.data.ts, ~4.700 palavras geradas do VERO pt-BR + frequência de conversa; carrega sob demanda) e as terminações
+ * seguras (-ção, -são, -ível...). Abreviações de chat ("vc", "tb", "obg") só com a opção ligada. Palavras que a pessoa mandou ignorar
+ * (ou que ela desfez duas vezes) nunca são corrigidas.
  */
 
 // sem acento → com acento. Uma linha por assunto, só para ficar legível.
@@ -21,6 +26,7 @@ horario:horário horarios:horários salario:salário salarios:salários diario:d
 juridico:jurídico juridica:jurídica tecnico:técnico tecnica:técnica contabil:contábil historico:histórico periodo:período periodos:períodos tramite:trâmite tramites:trâmites
 familia:família historia:história memoria:memória politica:política reuniao:reunião reunioes:reuniões opiniao:opinião uniao:união regiao:região regioes:regiões
 milhao:milhão milhoes:milhões razao:razão portugues:português ingles:inglês
+ta:tá ne:né cade:cadê sera:será amanha:amanhã manha:manhã historia:história musica:música medico:médico video:vídeo
 `;
 
 export const DICTIONARY: ReadonlyMap<string, string> = new Map(
@@ -29,6 +35,46 @@ export const DICTIONARY: ReadonlyMap<string, string> = new Map(
     return [from, to];
   }),
 );
+
+// Dicionário estendido (gerado): carrega uma vez, em segundo plano. Até carregar vale só a lista curada.
+let extended: ReadonlyMap<string, string> | null = null;
+let loading: Promise<void> | null = null;
+
+export function setExtendedDictionary(map: ReadonlyMap<string, string> | null) {
+  extended = map;
+}
+export const isExtendedLoaded = () => extended !== null;
+
+/** Carrega o dicionário estendido (um arquivo separado, ~30 KB comprimido). Chamar de novo não baixa de novo. */
+export function loadExtendedDictionary(): Promise<void> {
+  loading ??= import("./ptAccents.data")
+    .then(({ PT_ACCENTS }) => {
+      extended = new Map(PT_ACCENTS.split(" ").map((pair) => pair.split(":") as [string, string]));
+    })
+    .catch(() => {
+      loading = null; // sem rede agora: tenta de novo na próxima vez
+    });
+  return loading;
+}
+
+/** Abreviações de chat (só com a opção ligada). Sempre com 2+ letras: "n" e "q" sozinhos são ambíguos demais. */
+export const ABBREVIATIONS: ReadonlyMap<string, string> = new Map(
+  `vc:você vcs:vocês tb:também tbm:também obg:obrigado obgd:obrigado obgda:obrigada blz:beleza msg:mensagem msgs:mensagens hj:hoje
+ctz:certeza cmg:comigo ctg:contigo mt:muito mto:muito mta:muita td:tudo tds:todos qdo:quando qto:quanto dps:depois pfv:por-favor vlw:valeu`
+    .split(/\s+/).filter(Boolean).map((pair) => {
+      const [from, to] = pair.split(":") as [string, string];
+      return [from, to.replace("-", " ")];
+    }),
+);
+
+export type CorrectOptions = {
+  /** Põe acentos (padrão: sim). Falso = só abreviações. */
+  accents?: boolean;
+  /** Expande abreviações de chat (vc → você). Desligado por padrão. */
+  abbreviations?: boolean;
+  /** Palavras (minúsculas) que a pessoa mandou nunca corrigir. */
+  ignored?: ReadonlySet<string>;
+};
 
 // Terminações seguras (a palavra sem acento não existe): informação, decisões, possível, responsável.
 const SUFFIXES: [RegExp, string][] = [
@@ -41,7 +87,7 @@ const SUFFIXES: [RegExp, string][] = [
 const MIN_SUFFIX_LEN = 5; // "cao", "sao" curtos ficam por conta do dicionário
 
 function accentedForm(lower: string): string | null {
-  const hit = DICTIONARY.get(lower);
+  const hit = DICTIONARY.get(lower) ?? extended?.get(lower);
   if (hit) return hit;
   if (lower.length < MIN_SUFFIX_LEN) return lower === "sao" ? "são" : null;
   for (const [re, to] of SUFFIXES) if (re.test(lower)) return lower.replace(re, to);
@@ -49,13 +95,16 @@ function accentedForm(lower: string): string | null {
 }
 
 /** A palavra com acento, mantendo as maiúsculas ("Voce" → "Você", "NAO" → "NÃO"); null se não há o que corrigir. */
-export function correctWord(word: string): string | null {
+export function correctWord(word: string, opts: CorrectOptions = {}): string | null {
   if (!/^\p{L}+$/u.test(word) || /[\u00c0-\u024f]/.test(word)) return null; // só letras; quem já acentuou não é mexido
   const lower = word.toLowerCase();
-  const fixed = accentedForm(lower);
+  if (opts.ignored?.has(lower)) return null;
+  const upper = word.length > 1 && word === word.toUpperCase();
+  if (upper && word.length <= 2) return null; // "PE", "AI", "VC": sigla
+  const fixed = (opts.abbreviations ? ABBREVIATIONS.get(lower) : undefined) ?? (opts.accents === false ? null : accentedForm(lower));
   if (!fixed) return null;
   if (word === lower) return fixed;
-  if (word.length > 1 && word === word.toUpperCase()) return fixed.toUpperCase();
+  if (upper) return fixed.toUpperCase();
   if (word === lower.charAt(0).toUpperCase() + lower.slice(1)) return fixed.charAt(0).toUpperCase() + fixed.slice(1);
   return null; // maiúsculas misturadas ("nAo"): provavelmente é de propósito
 }
@@ -73,7 +122,7 @@ export type Fix = { start: number; end: number; from: string; to: string };
 export type Rejected = { start: number; word: string } | null;
 
 /** A palavra que termina em `end` (exclusive) merece correção? */
-export function fixWordEndingAt(text: string, end: number, rejected?: Rejected): Fix | null {
+export function fixWordEndingAt(text: string, end: number, rejected?: Rejected, opts: CorrectOptions = {}): Fix | null {
   let start = end;
   while (start > 0 && /\p{L}/u.test(text.charAt(start - 1))) start--;
   if (start === end) return null;
@@ -81,13 +130,13 @@ export function fixWordEndingAt(text: string, end: number, rejected?: Rejected):
   if (start > 0 && /\p{N}/u.test(text.charAt(start - 1))) return null; // "2nao"
   const from = text.slice(start, end);
   if (rejected && rejected.start === start && rejected.word === from.toLowerCase()) return null;
-  const to = correctWord(from);
+  const to = correctWord(from, opts);
   return to && to !== from ? { start, end, from, to } : null;
 }
 
 /** Na hora de enviar: a última palavra ainda não foi "fechada" por espaço ou pontuação. */
-export function fixTail(text: string, rejected?: Rejected): string {
-  const fix = fixWordEndingAt(text, text.length, rejected);
+export function fixTail(text: string, rejected?: Rejected, opts: CorrectOptions = {}): string {
+  const fix = fixWordEndingAt(text, text.length, rejected, opts);
   return fix ? text.slice(0, fix.start) + fix.to + text.slice(fix.end) : text;
 }
 
