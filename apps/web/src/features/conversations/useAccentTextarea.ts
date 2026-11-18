@@ -1,6 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, type ChangeEvent, type KeyboardEvent, type RefObject } from "react";
 import { AccentController } from "./accentController";
 import { loadExtendedDictionary } from "./autocorrect";
+import { loadTypoDictionary } from "./typos";
 import { ignoredWords, recordUndo } from "./writingPrefs";
 
 /**
@@ -16,6 +17,7 @@ export function useAccentTextarea(o: { ref: RefObject<HTMLTextAreaElement | null
   // O dicionário estendido carrega uma vez, em segundo plano, na primeira vez que um campo de texto aparece.
   useLayoutEffect(() => {
     void loadExtendedDictionary();
+    void loadTypoDictionary();
   }, []);
 
   // Trocar o texto por código move o cursor para o fim: devolve-o para onde estava.

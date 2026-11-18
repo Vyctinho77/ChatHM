@@ -1,3 +1,5 @@
+import { correctTypo } from "./typos";
+
 /**
  * Corretor de acentos do campo de mensagem: quem escreve rápido digita "voce", "nao", "orcamento" e o app põe o acento ao fechar a palavra
  * (espaço ou pontuação). Só corrige o que não é ambíguo: a forma sem acento NÃO é outra palavra comum ("esta"/"está", "e"/"é", "pais"/"país",
@@ -107,6 +109,9 @@ export type Fix = { start: number; end: number; from: string; to: string };
 /** A correção que a pessoa desfez com Backspace: aquela palavra, naquele lugar, não é corrigida de novo (as outras continuam sendo). */
 export type Rejected = { start: number; word: string } | null;
 
+/** O texto antes de `start` termina uma frase (ou não há texto)? Só então uma palavra com inicial maiúscula pode ser corrigida como erro de digitação. */
+const atSentenceStart = (text: string, start: number) => /(^|[.!?…]\s+|\n)\s*$/.test(text.slice(0, start));
+
 /** A palavra que termina em `end` (exclusive) merece correção? */
 export function fixWordEndingAt(text: string, end: number, rejected?: Rejected, opts: CorrectOptions = {}): Fix | null {
   let start = end;
@@ -116,7 +121,8 @@ export function fixWordEndingAt(text: string, end: number, rejected?: Rejected, 
   if (start > 0 && /\p{N}/u.test(text.charAt(start - 1))) return null; // "2nao"
   const from = text.slice(start, end);
   if (rejected && rejected.start === start && rejected.word === from.toLowerCase()) return null;
-  const to = correctWord(from, opts);
+  // 1º acentos (palavra conhecida sem acento); 2º erro de digitação (a palavra não existe e há uma muito parecida e muito mais comum)
+  const to = correctWord(from, opts) ?? (opts.ignored?.has(from.toLowerCase()) ? null : correctTypo(from, { sentenceStart: atSentenceStart(text, start) }));
   return to && to !== from ? { start, end, from, to } : null;
 }
 
