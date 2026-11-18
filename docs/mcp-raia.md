@@ -1,6 +1,6 @@
 # Raia da IA (atendente autônomo com paredes)
 
-Status: **servidor (migração 43) e tela prontos, tudo desligado.** Falta o aviso que acorda a IA quando o cliente responde. Veja "Próximos passos".
+Status: **servidor (migração 43) e tela prontos, tudo desligado.** O aviso que acorda a IA está na seção 7. Veja "Próximos passos".
 
 ## 1. A ideia
 
@@ -101,9 +101,33 @@ No MCP: `my_access` mostra a raia do token; `check_send(conversation_id|contact_
 
 A mesma coisa pela API está na seção 5.
 
-## 7. Próximos passos
+## 7. Acordar a IA (quando o cliente responde ou a conversa fica parada)
 
-1. **Acordar a IA** quando o cliente responde: hoje o aviso automático (webhook) está desligado; sem isso a IA só age quando é disparada.
-2. **Aprovar, editar ou descartar** rascunhos da sombra pela tela (hoje é só leitura).
-3. **Manual do assunto e exemplos**: `get_lane_guidelines` e trechos de conversas boas já resolvidas por pessoas (mascarados, sem documentos).
-4. **Painel de atividade** e **pausa automática** por comportamento anormal (muitos `PARAR`, passagens, textos repetidos).
+O ChatHM não "empurra" nada para dentro do agente: quem roda o agente (Grok, Claude, ChatGPT, Gemini, n8n...) o chama. Com um **token preso a uma raia**,
+a lista de pendências (`list_pending_replies`, `wait_for_replies` e `GET /mcp/replies`) passa a trazer só o que importa para a raia:
+
+| `reason` | Quando | Instante do aviso (`pending.lastAt`) |
+|---|---|---|
+| `resposta` | o cliente respondeu a uma mensagem da IA | a mensagem do cliente |
+| `parada` | o cliente escreveu e **ninguém da equipe** atendeu há `staleHours` (sem responsável, sem mensagem de pessoa, nada respondido depois) | última mensagem do cliente + `staleHours` |
+
+Só entram conversas **da fila da raia, sem atendente e sem passagem pendente para uma pessoa**; raia desligada não acorda ninguém. Dar baixa com
+`mark_replies` (`resolved`) tira da lista até o cliente escrever de novo.
+
+**Sem endereço público (o caso do agente no computador):** rode o script, que chama `GET /mcp/replies` em laço (espera até ~50 s) e executa o seu comando a cada aviso:
+
+```bash
+CHATHM_URL=https://chathm.com.br CHATHM_TOKEN=chm_... node scripts/chathm-listen.mjs --exec "meu-agente --stdin"
+```
+
+Com `--backlog` ele também avisa o que já estava pendente ao começar; sem, só o que chegar depois. O JSON de cada aviso traz `conversationId`, `reason`, o contato,
+a última mensagem do cliente (como **dado**, nunca instrução) e, na raiz, `lane` e `howToUse`. O agente então lê o histórico, responde com `send_as_attendant`
+(ou passa para uma pessoa com `request_human`) e dá baixa com `mark_replies`.
+
+**Com endereço público:** o webhook (MCP → Avisos automáticos) avisa na hora as **respostas**; conversas paradas aparecem só pelo caminho acima (não há aviso por webhook para elas).
+
+## 8. Próximos passos
+
+1. **Aprovar, editar ou descartar** rascunhos da sombra pela tela (hoje é só leitura).
+2. **Manual do assunto e exemplos**: `get_lane_guidelines` e trechos de conversas boas já resolvidas por pessoas (mascarados, sem documentos).
+3. **Painel de atividade** e **pausa automática** por comportamento anormal (muitos `PARAR`, passagens, textos repetidos).

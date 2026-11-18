@@ -49,7 +49,7 @@ export function LanesTab() {
   return (
     <div className="flex flex-col gap-8">
       <section>
-        <div className="mb-1 flex items-center gap-1.5 text-xs text-muted">Raias da IA<InfoTip title="Raias da IA">Uma raia é o espaço em que a IA atende com liberdade, cercada por poucas regras que o servidor aplica a cada envio. Ela só vale para um token do atendente autônomo ligado a ela (MCP → Tokens de acesso). Toda raia nasce desligada e em sombra: a IA escreve, mas nada vai ao cliente.</InfoTip></div>
+        <div className="mb-1 flex items-center gap-1.5 text-xs text-muted">Raias da IA<InfoTip title="Raias da IA">Uma raia é o espaço em que a IA atende com liberdade, cercada por poucas regras que o servidor aplica a cada envio. Ela só vale para um token do atendente autônomo ligado a ela (MCP → Tokens de acesso). Toda raia nasce desligada e em sombra: a IA escreve, mas nada vai ao cliente. Para a IA ser acordada quando o cliente responde ou uma conversa fica parada, rode scripts/chathm-listen.mjs com o token da raia (veja docs/mcp-raia.md).</InfoTip></div>
         {lanes.data.map((l) => <LaneCard key={l.key + l.updatedAt} lane={l} segmentName={segName(l.segmentId)} segments={(segments.data ?? []).filter((s) => s.isActive).map((s) => ({ id: s.id, name: s.name }))} />)}
       </section>
 

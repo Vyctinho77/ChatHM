@@ -385,3 +385,27 @@ func (s *Service) UnattendedList(ctx context.Context, segmentID string, minHours
 	}
 	return out, rows.Err()
 }
+
+// OpenHandoffSet: das conversas dadas, as que estão passadas para uma pessoa e ainda sem resposta dela (a IA fica em silêncio nelas).
+func (s *Service) OpenHandoffSet(ctx context.Context, convIDs []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	if len(convIDs) == 0 {
+		return out, nil
+	}
+	rows, err := s.db.Query(ctx, `
+		SELECT DISTINCT h.conversation_id::text FROM ai_handoffs h
+		 WHERE h.conversation_id = ANY($1::uuid[])
+		   AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = h.conversation_id AND `+humanOut+` AND m.sent_at > h.created_at)`, convIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}

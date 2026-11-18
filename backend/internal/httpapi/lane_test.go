@@ -2,8 +2,12 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vyctinho77/chathm/backend/internal/whatsapp"
 )
@@ -446,5 +450,157 @@ func TestLaneOutsideInformationNeedsSources(t *testing.T) {
 	txt := lastSent(t, e.w).Text
 	if !strings.Contains(txt, answer) || !strings.Contains(txt, "Fontes consultadas:") || !strings.Contains(txt, "• Receita Federal: https://www.gov.br/receitafederal/pt-br") || !strings.Contains(txt, "• gov.br: https://www.gov.br/iti") {
 		t.Fatalf("a mensagem deveria trazer as fontes: %q", txt)
+	}
+}
+
+func (e laneEnv) pending(args map[string]any) map[string]any {
+	e.w.e.t.Helper()
+	o, isErr := e.w.tool(e.token, "list_pending_replies", args)
+	if isErr {
+		e.w.e.t.Fatalf("list_pending_replies: %v", o)
+	}
+	return o
+}
+
+func (e laneEnv) pendingIDs() map[string]string { // conversationId -> reason
+	out := map[string]string{}
+	for _, x := range e.pending(nil)["conversations"].([]any) {
+		m := x.(map[string]any)
+		out[m["conversationId"].(string)], _ = m["reason"].(string)
+	}
+	return out
+}
+
+func (e laneEnv) age(convID string) {
+	e.w.e.t.Helper()
+	if _, err := e.w.e.pool.Exec(context.Background(), `UPDATE messages SET sent_at = now() - interval '30 hours' WHERE conversation_id = $1`, convID); err != nil {
+		e.w.e.t.Fatal(err)
+	}
+}
+
+// Acordar a IA: o cliente respondeu, ou a conversa ficou parada sem atendimento. Só o que é da raia e ainda não tem pessoa.
+func TestLaneWakesTheAIOnCustomerRepliesOnlyInsideTheLane(t *testing.T) {
+	e := laneSetup(t, "live", func(in map[string]any) { in["maxConsecutive"] = 5 })
+	if got := e.pendingIDs(); len(got) != 0 {
+		t.Fatalf("nada para a IA ainda: %v", got)
+	}
+	// A IA responde e o cliente responde de volta: acorda a IA (reason resposta).
+	e.send(goodReply)
+	e.w.receiveFrom(e.phone, "Cliente Raia", "ok, pode explicar melhor?")
+	eventually(t, "resposta acorda a IA", func() bool { return e.pendingIDs()[e.convID] == "resposta" })
+	o := e.pending(nil)
+	if o["lane"] != "certificado" || !strings.Contains(o["howToUse"].(string), "request_human") {
+		t.Fatalf("as instruções da raia: %v", o["howToUse"])
+	}
+	// Dar baixa tira da lista; nova resposta do cliente volta.
+	if r, _ := e.w.tool(e.token, "mark_replies", map[string]any{"items": []map[string]any{{"conversation_id": e.convID, "status": "resolved"}}}); r["ok"] != true {
+		t.Fatalf("mark_replies: %v", r)
+	}
+	if got := e.pendingIDs(); len(got) != 0 {
+		t.Fatalf("resolvida: %v", got)
+	}
+	// Uma pessoa assume: o cliente escreve de novo e a IA NÃO é acordada.
+	expect(t, e.w.send(e.w.ana, e.convID, "Oi, aqui é a Ana."), 201)
+	e.w.receiveFrom(e.phone, "Cliente Raia", "obrigado, e o prazo?")
+	eventually(t, "mensagem chegou", func() bool {
+		return e.count(`SELECT count(*) FROM messages WHERE conversation_id = $1 AND direction = 'in'`, e.convID) >= 3
+	})
+	if got := e.pendingIDs(); len(got) != 0 {
+		t.Fatalf("com uma pessoa na conversa a IA não é acordada: %v", got)
+	}
+	// Raia desligada não acorda ninguém, mesmo com a mesma conversa.
+	expect(t, e.w.admin.do("PUT", "/api/v1/automation/lanes/certificado", map[string]any{"label": "Certificado digital", "enabled": false, "mode": "live", "segmentId": e.w.segs["folha"],
+		"maxTurns": 8, "maxConsecutive": 5, "contactDaily": 6, "humanQuietMinutes": 60, "allowedDomains": []string{}}), 200)
+	if got := e.pendingIDs(); len(got) != 0 {
+		t.Fatalf("raia desligada: %v", got)
+	}
+}
+
+func TestLaneWakesTheAIForStaleConversationsOnce(t *testing.T) {
+	e := laneSetup(t, "live", nil)
+	// Recém-chegada: não está parada.
+	if got := e.pendingIDs(); len(got) != 0 {
+		t.Fatalf("conversa de agora: %v", got)
+	}
+	e.age(e.convID)
+	if got := e.pendingIDs(); got[e.convID] != "parada" {
+		t.Fatalf("conversa parada há 30 h deveria acordar a IA: %v", got)
+	}
+	// Outra fila não é da raia.
+	e.w.receive("Cliente Fiscal", "nota fiscal de serviço, preciso emitir")
+	e.age(mustConv(t, e.w.admin, "Cliente Fiscal")["id"].(string))
+	if got := e.pendingIDs(); len(got) != 1 {
+		t.Fatalf("só a fila da raia: %v", got)
+	}
+	// O cursor "since" (do listener) deixa de fora o que ficou parado antes dele; o que ficou parado depois entra.
+	later := e.pending(map[string]any{"since": time.Now().Add(time.Hour).UTC().Format(time.RFC3339)})
+	if later["total"].(float64) != 0 {
+		t.Fatalf("since no futuro: %v", later["total"])
+	}
+	earlier := e.pending(map[string]any{"since": time.Now().Add(-48 * time.Hour).UTC().Format(time.RFC3339)})
+	if earlier["total"].(float64) != 1 {
+		t.Fatalf("since antigo: %v", earlier["total"])
+	}
+	// wait_for_replies devolve na hora, sem esperar.
+	start := time.Now()
+	w, _ := e.w.tool(e.token, "wait_for_replies", map[string]any{"timeout_seconds": 20})
+	if w["timedOut"] != false || w["total"].(float64) != 1 || time.Since(start) > 10*time.Second {
+		t.Fatalf("wait_for_replies: %v (%v)", w["total"], time.Since(start))
+	}
+	// Dar baixa: não volta enquanto o cliente não escrever de novo.
+	if r, _ := e.w.tool(e.token, "mark_replies", map[string]any{"items": []map[string]any{{"conversation_id": e.convID, "status": "resolved"}}}); r["ok"] != true {
+		t.Fatalf("mark_replies: %v", r)
+	}
+	if got := e.pendingIDs(); len(got) != 0 {
+		t.Fatalf("depois da baixa: %v", got)
+	}
+	// Passada para uma pessoa (a IA pediu ajuda): fora da lista, mesmo com baixa antiga.
+	e.w.receiveFrom(e.phone, "Cliente Raia", "alguém?")
+	e.age(e.convID)
+	if got := e.pendingIDs(); got[e.convID] != "parada" {
+		t.Fatalf("o cliente escreveu de novo e a conversa voltou: %v", got)
+	}
+	if o, _ := e.w.tool(e.token, "request_human", map[string]any{"conversation_id": e.convID, "reason": "duvida", "summary": "Cliente sem resposta."}); o["ok"] != true {
+		t.Fatalf("request_human: %v", o)
+	}
+	if got := e.pendingIDs(); len(got) != 0 {
+		t.Fatalf("passada para uma pessoa não acorda a IA: %v", got)
+	}
+}
+
+// O script scripts/chathm-listen.mjs chama GET /mcp/replies: com um token de raia, a conversa parada também chega por ali,
+// uma vez só (o cursor "since" avança), e some quando uma pessoa assume.
+func TestLaneWakeOverPlainHTTPForTheListener(t *testing.T) {
+	e := laneSetup(t, "live", nil)
+	e.age(e.convID)
+	get := func(query string) map[string]any {
+		req, _ := http.NewRequest("GET", e.w.e.srv.URL+"/mcp/replies"+query, nil)
+		req.Header.Set("Authorization", "Bearer "+e.token)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		if res.StatusCode != 200 {
+			t.Fatalf("status %d", res.StatusCode)
+		}
+		var out map[string]any
+		_ = json.NewDecoder(res.Body).Decode(&out)
+		return out
+	}
+	out := get("?wait=0&since=" + url.QueryEscape(time.Now().Add(-72*time.Hour).UTC().Format(time.RFC3339)))
+	cs, _ := out["conversations"].([]any)
+	if len(cs) != 1 || cs[0].(map[string]any)["reason"] != "parada" || out["lane"] != "certificado" {
+		t.Fatalf("conversa parada por HTTP: %v", out)
+	}
+	// O cursor que o listener guarda é o "lastAt" do item: com ele, não volta.
+	cursor := cs[0].(map[string]any)["pending"].(map[string]any)["lastAt"].(string)
+	if again := get("?wait=0&since=" + url.QueryEscape(cursor)); again["total"].(float64) != 0 {
+		t.Fatalf("depois do cursor não volta: %v", again["total"])
+	}
+	// Uma pessoa assume: nem com o cursor antigo.
+	expect(t, e.w.send(e.w.ana, e.convID, "Oi, aqui é a Ana."), 201)
+	if gone := get("?wait=0&since=" + url.QueryEscape(time.Now().Add(-72*time.Hour).UTC().Format(time.RFC3339))); gone["total"].(float64) != 0 {
+		t.Fatalf("com uma pessoa na conversa: %v", gone["total"])
 	}
 }

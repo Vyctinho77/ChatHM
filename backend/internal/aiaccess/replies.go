@@ -68,6 +68,7 @@ type pendingRow struct {
 	ConversationID  string
 	Count           int
 	FirstAt, LastAt time.Time
+	Reason          string // "resposta" (o cliente respondeu à IA) ou "parada" (conversa sem atendimento há tempo demais; só em raia)
 }
 
 // pendingReplies devolve, entre as conversas visíveis, as que têm resposta de cliente depois da mensagem de uma IA e depois do que o agente já tratou.
@@ -271,6 +272,11 @@ func (m *MCP) pendingList(ctx context.Context, p Principal, v conversations.View
 	if err != nil {
 		return nil, err
 	}
+	if p.Lane != "" && m.auto != nil {
+		if rows, err = m.laneWake(ctx, p, key, byID, rows, since); err != nil {
+			return nil, err
+		}
+	}
 	limit := clampLimit(in.Limit, pendingDefault, pendingMax)
 	items := []any{}
 	for i, r := range rows {
@@ -284,6 +290,7 @@ func (m *MCP) pendingList(ctx context.Context, p Principal, v conversations.View
 			"queue":          map[string]any{"key": c.Segment, "name": c.SegmentName},
 			"status":         statusPT[c.Status],
 			"pending":        map[string]any{"count": r.Count, "firstAt": r.FirstAt, "lastAt": r.LastAt},
+			"reason":         map[bool]string{true: "parada", false: "resposta"}[r.Reason == "parada"],
 		}
 		if c.Assignee != nil {
 			item["assignee"] = c.Assignee.Name
@@ -312,6 +319,10 @@ func (m *MCP) pendingList(ctx context.Context, p Principal, v conversations.View
 	}
 	out := map[string]any{"total": len(rows), "returned": len(items), "conversations": items,
 		"howToUse": "Avise a pessoa e depois chame mark_replies (status notified ou resolved). Quando o cliente escrever de novo, a conversa volta para esta lista."}
+	if p.Lane != "" {
+		out["lane"] = p.Lane
+		out["howToUse"] = "Para cada conversa (reason: resposta = o cliente respondeu; parada = ninguém da equipe atendeu há tempo demais): leia o histórico, responda com send_as_attendant (conversation_id) ou passe para uma pessoa com request_human; depois chame mark_replies com resolved. Só a raia do seu token aparece aqui."
+	}
 	if in.IncludeHandled {
 		hs, err := m.svc.handledReplies(ctx, key, ids)
 		if err != nil {
