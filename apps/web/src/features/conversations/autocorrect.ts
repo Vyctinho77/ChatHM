@@ -42,16 +42,27 @@ export const DICTIONARY: ReadonlyMap<string, string> = new Map(
 let extended: ReadonlyMap<string, string> | null = null;
 let loading: Promise<void> | null = null;
 
+// Regras de terminação geradas do VERO (ptSuffixes.data.ts): pendencia → pendência, tecnologico → tecnológico. A mais longa que casa vale.
+let suffixRules: readonly (readonly [string, string])[] | null = null;
+let suffixExceptions: ReadonlySet<string> = new Set();
+
 export function setExtendedDictionary(map: ReadonlyMap<string, string> | null) {
   extended = map;
+}
+
+/** Só para testes e para o carregamento: `rules` no formato "semacento:comacento" (terminações), `exceptions` = palavras válidas que nunca mudam. */
+export function setSuffixRules(rules: string | null, exceptions = "") {
+  suffixRules = rules === null ? null : rules.split(" ").filter(Boolean).map((r) => r.split(":") as [string, string]).sort((a, b) => b[0].length - a[0].length);
+  suffixExceptions = new Set(exceptions.split(" ").filter(Boolean));
 }
 export const isExtendedLoaded = () => extended !== null;
 
 /** Carrega o dicionário estendido (um arquivo separado, ~30 KB comprimido). Chamar de novo não baixa de novo. */
 export function loadExtendedDictionary(): Promise<void> {
-  loading ??= import("./ptAccents.data")
-    .then(({ PT_ACCENTS }) => {
+  loading ??= Promise.all([import("./ptAccents.data"), import("./ptSuffixes.data")])
+    .then(([{ PT_ACCENTS }, { PT_SUFFIX_RULES, PT_SUFFIX_EXCEPTIONS }]) => {
       extended = new Map(PT_ACCENTS.split(" ").map((pair) => pair.split(":") as [string, string]));
+      setSuffixRules(PT_SUFFIX_RULES, PT_SUFFIX_EXCEPTIONS);
     })
     .catch(() => {
       loading = null; // sem rede agora: tenta de novo na próxima vez
@@ -83,6 +94,14 @@ function accentedForm(lower: string): { to: string; layer: Layer } | null {
   const wide = extended?.get(lower);
   if (wide) return { to: wide, layer: "extended" };
   if (lower.length < MIN_SUFFIX_LEN) return lower === "sao" ? { to: "são", layer: "curated" } : null;
+  if (suffixRules) {
+    // regras geradas do VERO (cobrem as escritas à mão abaixo); as palavras válidas de uso comum que casam ficam como estão
+    if (suffixExceptions.has(lower)) return null;
+    for (const [from, to] of suffixRules) {
+      if (lower.length - from.length >= 3 && lower.endsWith(from)) return { to: lower.slice(0, lower.length - from.length) + to, layer: "suffix" };
+    }
+    return null;
+  }
   for (const [re, to] of SUFFIXES) if (re.test(lower)) return { to: lower.replace(re, to), layer: "suffix" };
   return null;
 }

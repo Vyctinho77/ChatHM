@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyFix, correctWord, correctWordLayer, DICTIONARY, fixTail, fixWordEndingAt, isTrigger, setExtendedDictionary, undoFix } from "./autocorrect";
+import { applyFix, correctWord, correctWordLayer, setSuffixRules, DICTIONARY, fixTail, fixWordEndingAt, isTrigger, setExtendedDictionary, undoFix } from "./autocorrect";
 
 describe("corretor de acentos: palavras", () => {
   it("põe o acento nas palavras comuns", () => {
@@ -136,5 +136,60 @@ describe("corretor de acentos: camada que corrigiu (para medir)", () => {
     } finally {
       setExtendedDictionary(null);
     }
+  });
+});
+
+describe("corretor de acentos: regras de terminação geradas do VERO", () => {
+  const load = async () => {
+    const { PT_SUFFIX_RULES, PT_SUFFIX_EXCEPTIONS } = await import("./ptSuffixes.data");
+    setSuffixRules(PT_SUFFIX_RULES, PT_SUFFIX_EXCEPTIONS);
+    return { PT_SUFFIX_EXCEPTIONS };
+  };
+  it("corrige palavras de terminações produtivas que nenhuma lista tem (pendência, tecnológico, necessário...)", async () => {
+    await load();
+    try {
+      for (const [from, to] of [["pendencia", "pendência"], ["pendencias", "pendências"], ["tecnologico", "tecnológico"], ["necessario", "necessário"], ["territorio", "território"], ["dependencia", "dependência"], ["gramatica", "gramática"], ["economico", "econômico"], ["belissimo", "belíssimo"]]) {
+        expect(correctWord(from)).toBe(to);
+      }
+      expect(correctWordLayer("pendencia")).toEqual({ to: "pendência", layer: "suffix" });
+      expect(correctWordLayer("Pendencia")).toEqual({ to: "Pendência", layer: "suffix" });
+    } finally {
+      setSuffixRules(null);
+    }
+  });
+  it("palavras VÁLIDAS sem acento que casam com a regra ficam como estão (lista de exceções)", async () => {
+    const { PT_SUFFIX_EXCEPTIONS } = await load();
+    try {
+      const ex = PT_SUFFIX_EXCEPTIONS.split(" ");
+      expect(ex.length).toBeGreaterThan(1000);
+      for (const w of ex.slice(0, 600)) expect(correctWordLayer(w)).toBeNull();
+    } finally {
+      setSuffixRules(null);
+    }
+  });
+  it("palavras de uso comum que o VERO aceita sem acento (verbos) ficam; os substantivos raros do mesmo tipo são corrigidos", async () => {
+    const { PT_SUFFIX_EXCEPTIONS } = await load();
+    try {
+      const ex = new Set(PT_SUFFIX_EXCEPTIONS.split(" "));
+      for (const w of ["evidencia", "influencia", "politica"]) expect(ex.has(w)).toBe(true);
+      for (const w of ["pendencia", "gramatica"]) expect(ex.has(w)).toBe(false);
+    } finally {
+      setSuffixRules(null);
+    }
+  });
+  it("as palavras frequentes de conversa sem acento nunca são trocadas pelas regras de terminação (as ~30 mil)", async () => {
+    await load();
+    const { PT_WORDS } = await import("./ptWords.data");
+    const plain = PT_WORDS.split(" ").filter((w) => /^[a-z]+$/.test(w));
+    expect(plain.length).toBeGreaterThan(10000);
+    try {
+      const changed = plain.filter((w) => correctWordLayer(w)?.layer === "suffix");
+      expect(changed).toEqual([]);
+    } finally {
+      setSuffixRules(null);
+    }
+  });
+  it("sem as regras carregadas, só a lista curada e as terminações escritas à mão", () => {
+    expect(correctWordLayer("pendencia")).toBeNull();
   });
 });
