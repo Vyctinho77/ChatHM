@@ -11,6 +11,7 @@ import { DuplicatesCard } from "./DuplicatesCard";
 import { HandoverCard } from "./HandoverCard";
 import { MicrophoneSettings } from "./MicrophoneSettings";
 import { SoundSettings } from "./SoundSettings";
+import { WritingSettings } from "./WritingSettings";
 import { TransferSettings } from "./TransferSettings";
 
 /** Cartão de configuração. A explicação (`info`) fica atrás do botão "i", para a tela mostrar só o que importa. */
@@ -81,6 +82,10 @@ export function SettingsPage() {
 
         <Card title="Sons e notificações" info="Efeitos ao enviar e receber mensagens e avisos sonoros de novas mensagens. As preferências ficam salvas neste navegador para a sua conta.">
           <SoundSettings />
+        </Card>
+
+        <Card title="Escrita" info="Ajuda a escrever mais rápido: põe os acentos sozinho nas palavras comuns. A preferência fica salva neste navegador para a sua conta.">
+          <WritingSettings />
         </Card>
 
         <Card title="Microfone" info="Ajusta a gravação das mensagens de voz e permite testar o microfone: grava 5 segundos, toca de volta e mostra a qualidade que o aparelho entrega. Se a voz sair oca, tente desligar a redução de ruído.">
