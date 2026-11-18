@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyFix, correctWord, DICTIONARY, fixTail, fixWordEndingAt, isTrigger, setExtendedDictionary, undoFix } from "./autocorrect";
+import { applyFix, correctWord, correctWordLayer, DICTIONARY, fixTail, fixWordEndingAt, isTrigger, setExtendedDictionary, undoFix } from "./autocorrect";
 
 describe("corretor de acentos: palavras", () => {
   it("põe o acento nas palavras comuns", () => {
@@ -37,7 +37,7 @@ describe("corretor de acentos: no texto", () => {
   it("corrige a palavra que acabou de ser fechada", () => {
     const text = "Oi, voce ";
     const fix = fixWordEndingAt(text, text.length - 1)!;
-    expect(fix).toEqual({ start: 4, end: 8, from: "voce", to: "você" });
+    expect(fix).toEqual({ start: 4, end: 8, from: "voce", to: "você", layer: "curated" });
     expect(applyFix(text, fix, text.length)).toEqual({ text: "Oi, você ", caret: text.length });
   });
   it("só a palavra inteira: não corrige pedaços", () => {
@@ -119,5 +119,22 @@ describe("corretor de acentos: palavras aprendidas", () => {
   });
   it("não existe expansão de abreviações: o corretor só acentua", () => {
     for (const w of ["vc", "tb", "tbm", "obg", "blz", "hj", "pfv", "n", "q"]) expect(correctWord(w)).toBeNull();
+  });
+});
+
+describe("corretor de acentos: camada que corrigiu (para medir)", () => {
+  it("diz se veio da lista curada, do dicionário estendido ou das terminações", async () => {
+    expect(correctWordLayer("voce")).toEqual({ to: "você", layer: "curated" });
+    expect(correctWordLayer("sao")).toEqual({ to: "são", layer: "curated" });
+    expect(correctWordLayer("informacao")).toEqual({ to: "informação", layer: "suffix" });
+    expect(correctWordLayer("abencoado")).toBeNull(); // sem o dicionário estendido carregado
+    const { PT_ACCENTS } = await import("./ptAccents.data");
+    setExtendedDictionary(new Map(PT_ACCENTS.split(" ").map((p) => p.split(":") as [string, string])));
+    try {
+      expect(correctWordLayer("abencoado")).toEqual({ to: "abençoado", layer: "extended" });
+      expect(correctWordLayer("Voce")).toEqual({ to: "Você", layer: "curated" });
+    } finally {
+      setExtendedDictionary(null);
+    }
   });
 });

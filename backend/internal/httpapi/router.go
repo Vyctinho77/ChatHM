@@ -27,6 +27,7 @@ import (
 	"github.com/vyctinho77/chathm/backend/internal/teams"
 	"github.com/vyctinho77/chathm/backend/internal/users"
 	"github.com/vyctinho77/chathm/backend/internal/whatsapp"
+	"github.com/vyctinho77/chathm/backend/internal/writing"
 )
 
 type Deps struct {
@@ -107,6 +108,7 @@ func NewRouter(d Deps) http.Handler {
 		chatSvc.SetConversations(d.Conversations)
 	}
 	chatH := internalchat.NewHandler(chatSvc)
+	writingH := writing.NewHandler(writing.NewService(d.DB))
 	oauthH := aiaccess.NewOAuthHandler(aiSvc, baseURL)
 	mcpH := aiaccess.NewMCP(aiSvc, d.Conversations, d.Segments, d.Tags, agendaSvc, d.Teams, d.Users, autoSvc, d.Config.AllowedOrigins, d.Logger)
 
@@ -153,6 +155,7 @@ func NewRouter(d Deps) http.Handler {
 			aiH.Routes(r)
 			autoH.Routes(r)
 			chatH.Routes(r)
+			writingH.Routes(r)
 			r.Get("/ws", d.Hub.Handler(validateWS))
 
 			r.Group(func(r chi.Router) {

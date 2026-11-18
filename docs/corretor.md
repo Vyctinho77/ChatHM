@@ -44,6 +44,28 @@ as ~25 mil palavras raras válidas do VERO que o algoritmo trocaria por engano, 
   Nomes, marcas, gírias e estrangeirismos que **não** estão no VERO nem na lista frequente é que podem ser trocados por engano: por isso o Backspace e o aprendizado.
 - Regerar: `scripts/gen-pt-typos.py` (gera os dados e o `typos.fixture.json`; o teste confere que o TypeScript concorda com o Python em ~1.200 casos).
 
+## Medição (sem tela)
+
+Para melhorar a lista com uso real, o corretor **conta**, por camada e por par "palavra digitada → palavra corrigida", quantas vezes a correção foi aplicada e quantas
+a pessoa desfez com Backspace. Camadas: `curated`, `extended`, `suffix`, `typo_tr` (letras trocadas), `typo_ins` (faltou letra), `typo_dup` (letra repetida), `typo_key` (tecla vizinha).
+
+**O que NÃO é guardado:** texto da mensagem, frase em volta, conversa, cliente, quem digitou. Só palavras soltas (letras, até 40) e contadores. O navegador acumula e
+envia em lotes (de 5 em 5 minutos e quando a aba some) para o próprio servidor (`POST /api/v1/writing/stats`); o servidor recusa o que não tem esse formato
+(campo a mais, frase, número, camada desconhecida) e a tabela `writing_stats` (migração 45) não tem coluna para guardar outra coisa.
+
+**Como ler** (administrador; não há tela): `GET /api/v1/writing/stats?min=5&limit=100` devolve
+- `layers`: por camada, aplicadas, desfeitas, taxa de desfeitas e quantas palavras;
+- `suspicious`: as palavras mais desfeitas com pelo menos `min` aplicações (candidatas a sair da lista, ou a entrar nas exceções/termos do escritório);
+- `popular`: as correções mais usadas que ninguém desfez (o que a lista acerta).
+
+Ou direto no banco:
+```sql
+select layer, from_word, to_word, applied, undone, round(undone::numeric / applied, 2) as taxa
+  from writing_stats where applied >= 5 order by undone::float / applied desc limit 50;
+```
+**O que fazer com o resultado:** palavra com taxa alta de desfeitas = a lista erra (ou é um termo do escritório): tirar da lista curada/exceções ou acrescentar em `DOMAIN` (`typos.ts`);
+camada inteira com taxa alta = apertar o critério daquela camada. Depois regerar os dados (`scripts/gen-pt-*.py`) e conferir os testes.
+
 ## Aprende com você (sem tela)
 
 - Desfazer a correção de uma palavra **duas vezes** (Backspace) faz o corretor parar de corrigi-la neste navegador (nomes, siglas, termos do escritório).
@@ -69,7 +91,7 @@ as ~25 mil palavras raras válidas do VERO que o algoritmo trocaria por engano, 
 2. **Maiúscula no começo da frase** e depois de ponto ("oi. tudo bem" → "Oi. Tudo bem"), opcional.
 3. **Ctrl+Z** que desfaz a correção (inserir pelo mecanismo nativo de edição do navegador em vez de trocar o valor).
 4. **Vocabulário do escritório**: palavras e nomes aprendidos (e os nomes dos clientes e da equipe, que o app já conhece) compartilhados sem tela: o corretor passa a não mexer neles automaticamente, e o aprendizado vai para a conta em vez do navegador.
-5. **Medir**: contar localmente, sem guardar texto, quantas correções foram aplicadas e desfeitas por palavra, para podar do dicionário as que mais são desfeitas.
+5. ~~Medir~~ **(feito, ver "Medição")**. Falta: usar os números (rodar uma semana com a equipe, ler o relatório e podar a lista) e, se quiser, um aviso ao administrador quando uma camada passar de uma taxa de desfeitas.
 6. **Celular/IME**: validar com teclados Android/iOS (composição) em aparelhos reais; hoje o corretor não age durante composição.
 7. ~~Aviso na primeira vez~~ (retirado: o corretor é interno e discreto).
 8. **Renovar o dicionário** quando sair versão nova do VERO ou da lista de frequência (rodar `scripts/gen-pt-accents.py`, conferir a diferença no `git diff`).
@@ -77,4 +99,4 @@ as ~25 mil palavras raras válidas do VERO que o algoritmo trocaria por engano, 
 ## Testes
 
 `typos.test.ts` (algoritmo, concordância com o gerador em ~1.200 casos, capitalização, contexto), `autocorrect.test.ts` (palavras, dicionário gerado, opções), `accentController.test.ts` (motor: cursor, Backspace, composição, envio),
-`writingPrefs.test.ts` (aprendizado e expiração). No navegador de teste: digitação real, cursor no meio do texto, Backspace, aprendizado, Configurações.
+`writingPrefs.test.ts` (aprendizado e expiração), `autocorrectStats.test.ts` (contagem, lotes, falhas, privacidade) e, no servidor, `writing_test.go` (soma, relatório, validação, privacidade). No navegador de teste: digitação real, cursor no meio do texto, Backspace, aprendizado, Configurações.

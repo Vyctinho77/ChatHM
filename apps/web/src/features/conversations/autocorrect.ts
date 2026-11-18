@@ -1,4 +1,4 @@
-import { correctTypo } from "./typos";
+import { correctTypoLayer } from "./typos";
 
 /**
  * Corretor de acentos do campo de mensagem: quem escreve rápido digita "voce", "nao", "orcamento" e o app põe o acento ao fechar a palavra
@@ -74,26 +74,35 @@ const SUFFIXES: [RegExp, string][] = [
 
 const MIN_SUFFIX_LEN = 5; // "cao", "sao" curtos ficam por conta do dicionário
 
-function accentedForm(lower: string): string | null {
-  const hit = DICTIONARY.get(lower) ?? extended?.get(lower);
-  if (hit) return hit;
-  if (lower.length < MIN_SUFFIX_LEN) return lower === "sao" ? "são" : null;
-  for (const [re, to] of SUFFIXES) if (re.test(lower)) return lower.replace(re, to);
+/** Qual camada do corretor fez a correção (para medir onde ele acerta e onde a pessoa desfaz). */
+export type Layer = "curated" | "extended" | "suffix" | "typo_tr" | "typo_ins" | "typo_dup" | "typo_key";
+
+function accentedForm(lower: string): { to: string; layer: Layer } | null {
+  const curated = DICTIONARY.get(lower);
+  if (curated) return { to: curated, layer: "curated" };
+  const wide = extended?.get(lower);
+  if (wide) return { to: wide, layer: "extended" };
+  if (lower.length < MIN_SUFFIX_LEN) return lower === "sao" ? { to: "são", layer: "curated" } : null;
+  for (const [re, to] of SUFFIXES) if (re.test(lower)) return { to: lower.replace(re, to), layer: "suffix" };
   return null;
 }
 
 /** A palavra com acento, mantendo as maiúsculas ("Voce" → "Você", "NAO" → "NÃO"); null se não há o que corrigir. */
-export function correctWord(word: string, opts: CorrectOptions = {}): string | null {
+export const correctWord = (word: string, opts: CorrectOptions = {}): string | null => correctWordLayer(word, opts)?.to ?? null;
+
+/** O mesmo que correctWord, dizendo também qual camada corrigiu. */
+export function correctWordLayer(word: string, opts: CorrectOptions = {}): { to: string; layer: Layer } | null {
   if (!/^\p{L}+$/u.test(word) || /[\u00c0-\u024f]/.test(word)) return null; // só letras; quem já acentuou não é mexido
   const lower = word.toLowerCase();
   if (opts.ignored?.has(lower)) return null;
   const upper = word.length > 1 && word === word.toUpperCase();
   if (upper && word.length <= 2) return null; // "PE", "AI", "VC": sigla
-  const fixed = accentedForm(lower);
-  if (!fixed) return null;
-  if (word === lower) return fixed;
-  if (upper) return fixed.toUpperCase();
-  if (word === lower.charAt(0).toUpperCase() + lower.slice(1)) return fixed.charAt(0).toUpperCase() + fixed.slice(1);
+  const hit = accentedForm(lower);
+  if (!hit) return null;
+  const { to: fixed, layer } = hit;
+  if (word === lower) return { to: fixed, layer };
+  if (upper) return { to: fixed.toUpperCase(), layer };
+  if (word === lower.charAt(0).toUpperCase() + lower.slice(1)) return { to: fixed.charAt(0).toUpperCase() + fixed.slice(1), layer };
   return null; // maiúsculas misturadas ("nAo"): provavelmente é de propósito
 }
 
@@ -104,7 +113,7 @@ export const isTrigger = (ch: string) => ch.length === 1 && TRIGGERS.includes(ch
 // Antes da palavra: e-mail, link, caminho, @menção, #tag, variável {x}, nome com hífen ou ponto.
 const BLOCKED_BEFORE = "@/\\:#._-{<[+=~$%&*";
 
-export type Fix = { start: number; end: number; from: string; to: string };
+export type Fix = { start: number; end: number; from: string; to: string; layer: Layer };
 
 /** A correção que a pessoa desfez com Backspace: aquela palavra, naquele lugar, não é corrigida de novo (as outras continuam sendo). */
 export type Rejected = { start: number; word: string } | null;
@@ -122,14 +131,19 @@ export function fixWordEndingAt(text: string, end: number, rejected?: Rejected, 
   const from = text.slice(start, end);
   if (rejected && rejected.start === start && rejected.word === from.toLowerCase()) return null;
   // 1º acentos (palavra conhecida sem acento); 2º erro de digitação (a palavra não existe e há uma muito parecida e muito mais comum)
-  const to = correctWord(from, opts) ?? (opts.ignored?.has(from.toLowerCase()) ? null : correctTypo(from, { sentenceStart: atSentenceStart(text, start) }));
-  return to && to !== from ? { start, end, from, to } : null;
+  const hit = correctWordLayer(from, opts) ?? (opts.ignored?.has(from.toLowerCase()) ? null : correctTypoLayer(from, { sentenceStart: atSentenceStart(text, start) }));
+  return hit && hit.to !== from ? { start, end, from, to: hit.to, layer: hit.layer } : null;
 }
 
 /** Na hora de enviar: a última palavra ainda não foi "fechada" por espaço ou pontuação. */
 export function fixTail(text: string, rejected?: Rejected, opts: CorrectOptions = {}): string {
+  return fixTailWithFix(text, rejected, opts).text;
+}
+
+/** O mesmo que fixTail, devolvendo também a correção feita (para contar). */
+export function fixTailWithFix(text: string, rejected?: Rejected, opts: CorrectOptions = {}): { text: string; fix: Fix | null } {
   const fix = fixWordEndingAt(text, text.length, rejected, opts);
-  return fix ? text.slice(0, fix.start) + fix.to + text.slice(fix.end) : text;
+  return { text: fix ? text.slice(0, fix.start) + fix.to + text.slice(fix.end) : text, fix };
 }
 
 /** Aplica uma correção ao texto; devolve o novo texto e para onde o cursor vai (`caret`, antes da correção, na mesma posição relativa). */

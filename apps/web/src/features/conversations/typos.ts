@@ -85,11 +85,11 @@ export function loadTypoDictionary(): Promise<void> {
   return loading;
 }
 
-function candidates(f: string, d: Dict): Set<string> {
-  const found = new Set<string>();
+function candidates(f: string, d: Dict): Map<string, Kind> {
+  const found = new Map<string, Kind>();
   const n = f.length;
   const take = (e: string, kind: Kind) => {
-    if (n >= MIN[kind] && d.variants.has(e)) found.add(e);
+    if (n >= MIN[kind] && d.variants.has(e) && !found.has(e)) found.set(e, kind);
   };
   for (let i = 0; i < n - 1; i++) if (f[i] !== f[i + 1]) take(f.slice(0, i) + f[i + 1] + f[i] + f.slice(i + 2), "tr");
   for (let i = 1; i <= n; i++) for (const c of ALPHA) take(f.slice(0, i) + c + f.slice(i), "ins");
@@ -98,30 +98,37 @@ function candidates(f: string, d: Dict): Set<string> {
   return found;
 }
 
-/** O melhor candidato (acentuado) para a palavra digitada em minúsculas, sem acento; null = não mexe. */
-export function fixFolded(f: string): string | null {
+export type TypoHit = { word: string; kind: Kind };
+
+/** O melhor candidato (acentuado) e o tipo de engano, para a palavra digitada em minúsculas, sem acento; null = não mexe. */
+export function fixFoldedKind(f: string): TypoHit | null {
   const d = dict;
   if (!d || !/^[a-z]+$/.test(f) || f.length < MIN_WORD || LAUGH.test(f) || DOMAIN.has(f) || d.variants.has(f) || d.exceptions.has(f)) return null;
   const found = candidates(f, d);
   if (found.size === 0) return null;
-  const best = [...found].map((e) => d.variants.get(e)![0]!).sort((a, b) => d.rank.get(a)! - d.rank.get(b)!);
+  const best = [...found.keys()].map((e) => d.variants.get(e)![0]!).sort((a, b) => d.rank.get(a)! - d.rank.get(b)!);
   const top = best[0]!;
   if (best.length > 1 && !(d.rank.get(best[1]!)! > DOMINANCE * (d.rank.get(top)! + 50))) return null;
   const forms = d.variants.get(fold(top))!;
   if (forms.length > 1 && !(d.rank.get(forms[1]!)! > DOMINANCE * (d.rank.get(forms[0]!)! + 50))) return null; // pais/país
-  return top;
+  return { word: top, kind: found.get(fold(top))! };
 }
+
+/** Só a palavra (para quem não precisa do tipo). */
+export const fixFolded = (f: string): string | null => fixFoldedKind(f)?.word ?? null;
 
 /**
  * A palavra digitada com o erro corrigido, mantendo a capitalização. Palavras com inicial maiúscula só entram no começo da frase
  * (no meio do texto costumam ser nomes); TUDO EM MAIÚSCULAS e palavras com acento não são mexidas.
  */
-export function correctTypo(word: string, ctx: { sentenceStart: boolean }): string | null {
+export function correctTypoLayer(word: string, ctx: { sentenceStart: boolean }): { to: string; layer: `typo_${Kind}` } | null {
   if (!/^[a-zA-Z]+$/.test(word)) return null; // só letras sem acento: quem acentuou, sabe o que escreveu
   const lower = word.toLowerCase();
   const capital = word !== lower;
   if (capital && !(word === lower.charAt(0).toUpperCase() + lower.slice(1) && ctx.sentenceStart)) return null;
-  const fixed = fixFolded(lower);
-  if (!fixed) return null;
-  return capital ? fixed.charAt(0).toUpperCase() + fixed.slice(1) : fixed;
+  const hit = fixFoldedKind(lower);
+  if (!hit) return null;
+  return { to: capital ? hit.word.charAt(0).toUpperCase() + hit.word.slice(1) : hit.word, layer: `typo_${hit.kind}` };
 }
+
+export const correctTypo = (word: string, ctx: { sentenceStart: boolean }): string | null => correctTypoLayer(word, ctx)?.to ?? null;

@@ -1,5 +1,5 @@
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
-import { correctTypo, fixFolded, fold, isTypoDictionaryLoaded, setTypoDictionary } from "./typos";
+import { correctTypo, correctTypoLayer, fixFolded, fixFoldedKind, fold, isTypoDictionaryLoaded, setTypoDictionary } from "./typos";
 import { fixTail, fixWordEndingAt, setExtendedDictionary } from "./autocorrect";
 import fixture from "./typos.fixture.json";
 
@@ -42,6 +42,16 @@ describe("erros de digitação: exemplos", () => {
   });
 });
 
+describe("erros de digitação: tipo de engano (para medir)", () => {
+  it("diz qual dos quatro enganos foi corrigido", () => {
+    expect(fixFoldedKind("tmepo")?.kind).toBe("tr");
+    expect(fixFoldedKind("obrigdo")?.kind).toBe("ins");
+    expect(fixFoldedKind("obrigaddo")?.kind).toBe("dup");
+    expect(fixFoldedKind("obrigafo")?.kind).toBe("key");
+    expect(correctTypoLayer("Tmepo", { sentenceStart: true })).toEqual({ to: "Tempo", layer: "typo_tr" });
+  });
+});
+
 describe("erros de digitação: capitalização e contexto", () => {
   it("mantém a capitalização e só corrige inicial maiúscula no começo da frase", () => {
     expect(correctTypo("tmepo", { sentenceStart: false })).toBe("tempo");
@@ -67,7 +77,7 @@ describe("erros de digitação: no texto (junto com os acentos)", () => {
     setExtendedDictionary(new Map());
     const text = "Qual o seu tmepo ";
     const fix = fixWordEndingAt(text, text.length - 1)!;
-    expect(fix).toEqual({ start: 11, end: 16, from: "tmepo", to: "tempo" });
+    expect(fix).toEqual({ start: 11, end: 16, from: "tmepo", to: "tempo", layer: "typo_tr" });
   });
   it("no envio corrige a última palavra", () => {
     expect(fixTail("Quanto tmepo")).toBe("Quanto tempo");

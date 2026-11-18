@@ -1,5 +1,6 @@
 import { ignoredWords } from "./writingPrefs";
-import { applyFix, fixTail, fixWordEndingAt, isTrigger, undoFix, type CorrectOptions, type Fix, type Rejected } from "./autocorrect";
+import { applyFix, fixTailWithFix, fixWordEndingAt, isTrigger, undoFix, type CorrectOptions, type Fix, type Rejected } from "./autocorrect";
+import { recordApplied, recordUndone } from "./autocorrectStats";
 
 /**
  * O "motor" do corretor para um campo de texto, sem React: recebe o que a pessoa digitou e devolve o texto (possivelmente corrigido) e onde
@@ -27,6 +28,7 @@ export class AccentController {
         if (fix) {
           const done = applyFix(value, fix, caret);
           this.last = { ...fix, caret: done.caret, delimiter: typed };
+          recordApplied(fix);
           return { value: done.text, caret: done.caret, fixed: true };
         }
       }
@@ -42,13 +44,16 @@ export class AccentController {
     const back = undoFix(value, fix, fix.caret);
     this.rejected = { start: fix.start, word: fix.from.toLowerCase() };
     this.last = null;
+    recordUndone(fix);
     this.onUndo?.(fix.from);
     return { value: back.text, caret: back.caret };
   }
 
   /** O texto na hora de enviar: corrige a última palavra, que ainda não foi "fechada". */
   finish(text: string): string {
-    return fixTail(text, this.rejected, this.options());
+    const done = fixTailWithFix(text, this.rejected, this.options());
+    if (done.fix) recordApplied(done.fix);
+    return done.text;
   }
 
   /** Enviou ou trocou de conversa: esquece a última correção. */
@@ -60,5 +65,7 @@ export class AccentController {
 
 /** Para quem envia um texto sem passar pelo campo (legenda, lembrete): corrige a última palavra com o que o corretor já aprendeu. */
 export function finishWithPrefs(text: string): string {
-  return fixTail(text, undefined, { ignored: ignoredWords() });
+  const done = fixTailWithFix(text, undefined, { ignored: ignoredWords() });
+  if (done.fix) recordApplied(done.fix);
+  return done.text;
 }
