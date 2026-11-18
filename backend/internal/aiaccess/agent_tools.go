@@ -73,20 +73,24 @@ func (m *MCP) registerAgent(s *mcp.Server, p Principal, v conversations.Viewer) 
 
 // laneView: a raia do token, em palavras que a IA entende (as regras que o servidor aplica a cada envio).
 func laneView(l automation.Lane) map[string]any {
+	domains := "qualquer um"
+	if len(l.AllowedDomains) > 0 {
+		domains = strings.Join(l.AllowedDomains, ", ")
+	}
 	return map[string]any{
 		"key": l.Key, "label": l.Label, "enabled": l.Enabled, "mode": l.Mode,
 		"modeNote":    "shadow = o que você enviar vira rascunho e nada vai ao cliente; live = envia de verdade",
 		"canInitiate": l.CanInitiate, "onlyInQueue": l.SegmentID != "",
-		"limits": map[string]any{"maxTurnsPerConversation": l.MaxTurns, "maxConsecutiveWithoutReply": l.MaxConsecutive, "perContactPerDay": l.ContactDaily, "humanQuietMinutes": l.HumanQuietMinutes},
+		"limits":     map[string]any{"maxTurnsPerConversation": l.MaxTurns, "maxConsecutiveWithoutReply": l.MaxConsecutive, "perContactPerDay": l.ContactDaily, "humanQuietMinutes": l.HumanQuietMinutes},
+		"staleHours": l.StaleHours,
 		"rules": []string{
-			"Responda só a conversas da raia (conversation_id).",
+			"Você é uma atendente mínima: responda com naturalidade, sem se apresentar como IA (o seu nome já aparece acima da mensagem).",
+			"Responda só a conversas da raia (conversation_id). Para achar conversas paradas sem atendimento, use list_unattended; para ser avisada de respostas, wait_for_replies.",
 			"Se um atendente está na conversa ou ela foi passada para uma pessoa, não escreva (humano_ativo, passada_para_humano).",
-			"Foto ou documento do cliente, dados pessoais, pedido de atendente ou reclamação: use request_human.",
-			"Não escreva senhas, códigos, CPF/CNPJ, e-mails" + map[bool]string{true: "", false: ", valores nem números longos"}[l.AllowDigits] + ".",
-			"Links só destes domínios: " + strings.Join(append([]string{}, l.AllowedDomains...), ", ") + " (vazio = nenhum).",
+			"Foto ou documento do cliente, pedido de atendente ou reclamação: use request_human.",
+			"Nunca peça nem cite senhas, códigos de verificação, cartão ou chave PIX.",
+			"Links só destes domínios: " + domains + ".",
 		},
-		"discloseAi":   l.DiscloseAI,
-		"guidelines":   l.Guidelines,
 		"howToHandOff": "request_human(conversation_id, reason, summary)",
 	}
 }

@@ -35,7 +35,7 @@ var toolCapabilities = map[string]capability{
 	// pedido de envio (a pessoa aprova)
 	"send_message": capSend,
 	// atendente autônomo
-	"send_as_attendant": capAttend, "request_human": capAttend,
+	"send_as_attendant": capAttend, "request_human": capAttend, "list_unattended": capAttend,
 	// envios automáticos e cobranças
 	"send_automatic_message": capAutomate, "cancel_automatic_send": capAutomate, "list_automatic_sends": capAutomate, "automation_status": capAutomate,
 	"list_charges": capAutomate, "list_documents": capAutomateOrAttend, "get_send_guidelines": capAutomateOrAttend, "check_send": capAutomateOrAttend,

@@ -1,7 +1,6 @@
 package automation
 
 import (
-	"strings"
 	"testing"
 	"time"
 )
@@ -10,11 +9,11 @@ var t0 = time.Date(2026, 11, 18, 14, 0, 0, 0, time.UTC)
 
 func baseLane() Lane {
 	return Lane{Key: "certificado", Label: "Certificado digital", Enabled: true, Mode: LaneLive, MaxTurns: 8, MaxConsecutive: 2, ContactDaily: 6,
-		HumanQuietMinutes: 60, BlockPressure: true, BlockInboundMedia: true, DiscloseAI: true}
+		HumanQuietMinutes: 60}
 }
 
 func baseFacts() laneFacts {
-	return laneFacts{ConvID: "c1", ContactID: "k1", Status: "new", Now: t0, HasAI: true}
+	return laneFacts{ConvID: "c1", ContactID: "k1", Status: "new", Now: t0}
 }
 
 func code(d laneDecision) string {
@@ -80,37 +79,28 @@ func TestDecideLaneInboundGoesToHuman(t *testing.T) {
 		{"áudio passa (transcrição)", in("audio", ""), "ok"},
 		{"foto de documento", in("image", ""), "handoff:documento"},
 		{"documento (PDF)", in("document", ""), "handoff:documento"},
-		{"CPF digitado", in("text", "meu cpf é 123.456.789-01"), "handoff:dados"},
-		{"CNPJ digitado", in("text", "o cnpj é 12.345.678/0001-95"), "handoff:dados"},
-		{"número longo", in("text", "o protocolo é 20261118334455"), "handoff:dados"},
-		{"fala de senha", in("text", "qual a senha do certificado?"), "handoff:dados"},
+		{"CPF digitado não trava", in("text", "meu cpf é 123.456.789-01"), "ok"},
+		{"número longo não trava", in("text", "o protocolo é 20261118334455"), "ok"},
+		{"fala de senha não trava", in("text", "qual a senha do certificado?"), "ok"},
 		{"pede atendente", in("text", "quero falar com um atendente"), "handoff:pediu_humano"},
 		{"reclamação", in("text", "isso é um absurdo, vou no procon"), "handoff:pediu_humano"},
-		{"localização", in("location", ""), "handoff:outro_tipo"},
+		{"localização não trava", in("location", ""), "ok"},
 	}
 	for _, c := range cases {
 		if got := code(decideLane(l, c.f, "Claro, posso ajudar.")); got != c.want {
 			t.Errorf("%s: %s, esperava %s", c.name, got, c.want)
 		}
 	}
-	// Rajada de mensagens do cliente.
+	// Muitas mensagens seguidas do cliente não travam a IA.
 	f := in("text", "oi")
-	f.InboundBurst = 9
-	if got := code(decideLane(l, f, "Olá!")); got != "handoff:rajada" {
-		t.Errorf("rajada: %s", got)
-	}
-	// Raia que aceita mídia do cliente.
-	lane := l
-	lane.BlockInboundMedia = false
-	if got := code(decideLane(lane, in("image", ""), "Recebi a imagem.")); got != "ok" {
-		t.Errorf("mídia liberada: %s", got)
+	if got := code(decideLane(l, f, "Olá!")); got != "ok" {
+		t.Errorf("várias mensagens: %s", got)
 	}
 }
 
 func TestTextRefusalRules(t *testing.T) {
-	cert := baseLane()
+	free := baseLane()
 	cobr := baseLane()
-	cobr.AllowDigits = true
 	cobr.AllowedDomains = []string{"asaas.com"}
 	cases := []struct {
 		name string
@@ -118,23 +108,17 @@ func TestTextRefusalRules(t *testing.T) {
 		text string
 		want string
 	}{
-		{"texto comum", cert, "Para o e-CNPJ A1 você precisa de uma validação por videoconferência.", ""},
-		{"data e hora passam", cert, "A validação pode ser dia 25/11/2026 às 14:30.", ""},
-		{"valor digitado", cert, "O certificado custa R$ 150 para um ano.", "digitos"},
-		{"número longo", cert, "Anote o protocolo 123 4567 890.", "digitos"},
-		{"CPF formatado", cert, "Seu CPF 123.456.789-01 está ok.", "documento"},
-		{"CNPJ sem pontuação", cert, "Confirme o 12345678000195, por favor.", "documento"},
-		{"e-mail", cert, "Escreva para contato@exemplo.com.br", "email"},
-		{"pede senha", cert, "Me envie a senha do certificado para eu testar.", "credencial"},
-		{"pede código", cert, "Qual o código de verificação que chegou?", "credencial"},
-		{"link fora da lista", cert, "Veja em https://exemplo.com.br/certificado", "link"},
-		{"domínio sem http", cert, "Acesse gov.br/certificado para ver", "link"},
-		{"pressão", cert, "Vamos protestar o seu nome se não responder.", "pressao"},
-		// cobrança: valores e o link do Asaas valem
-		{"cobrança com valor e link do Asaas", cobr, "O boleto de R$ 350,00 vence em 25/11/2026: https://www.asaas.com/i/abc123xyz", ""},
+		{"texto comum", free, "Para o e-CNPJ A1 você precisa de uma validação por videoconferência.", ""},
+		{"valores e números livres", free, "O certificado custa R$ 150 e o protocolo é 123 4567 890.", ""},
+		{"CPF, e-mail e pressão livres", free, "Confirme o CPF 123.456.789-01 ou escreva para contato@exemplo.com.br, senão protestamos.", ""},
+		{"lista vazia = qualquer link", free, "Veja em https://exemplo.com.br/certificado", ""},
+		{"pede senha", free, "Me envie a senha do certificado para eu testar.", "credencial"},
+		{"pede código", free, "Qual o código de verificação que chegou?", "credencial"},
+		{"pede chave pix", free, "Me passe a chave pix do cliente.", "credencial"},
+		{"caracteres invisíveis", free, "Olá\u200b tudo bem", "content"},
+		{"cobrança com o link do Asaas", cobr, "O boleto de R$ 350,00 vence em 25/11/2026: https://www.asaas.com/i/abc123xyz", ""},
 		{"cobrança com link de outro domínio", cobr, "Pague aqui https://pagamento-falso.com/x", "link"},
-		{"cobrança nunca digita CPF", cobr, "Cobrança do CPF 12345678901", "documento"},
-		{"cobrança com ameaça", cobr, "Última chance, depois negativamos.", "pressao"},
+		{"domínio sem http fora da lista", cobr, "Acesse gov.br/pagar para ver", "link"},
 	}
 	for _, c := range cases {
 		r := textRefusal(c.lane, c.text)
@@ -148,22 +132,10 @@ func TestTextRefusalRules(t *testing.T) {
 	}
 }
 
-func TestDisclosureOnlyOnTheFirstAIMessage(t *testing.T) {
-	l := baseLane()
-	f := baseFacts()
-	f.HasAI = false
-	d := decideLane(l, f, "Posso ajudar com o certificado.")
-	if d.Refusal != nil || !strings.HasPrefix(d.Text, disclosure+" ") || !strings.HasSuffix(d.Text, "Posso ajudar com o certificado.") {
-		t.Fatalf("a primeira mensagem deve se apresentar: %+v", d)
-	}
-	f.HasAI = true
-	if d := decideLane(l, f, "Posso ajudar."); d.Text != "Posso ajudar." {
-		t.Fatalf("depois da primeira não repete a apresentação: %q", d.Text)
-	}
-	l.DiscloseAI = false
-	f.HasAI = false
-	if d := decideLane(l, f, "Olá."); d.Text != "Olá." {
-		t.Fatalf("sem apresentação configurada: %q", d.Text)
+func TestNoAIDisclosurePrefix(t *testing.T) {
+	d := decideLane(baseLane(), baseFacts(), "Posso ajudar com o certificado.")
+	if d.Refusal != nil || d.Text != "Posso ajudar com o certificado." {
+		t.Fatalf("o texto da IA sai como ela escreveu, sem apresentação: %+v", d)
 	}
 }
 

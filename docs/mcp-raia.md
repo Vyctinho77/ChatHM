@@ -17,31 +17,42 @@ Duas raias nascem prontas, **desligadas e em sombra**:
 
 | Raia | Para quê | Nasce assim |
 |---|---|---|
-| `certificado` | Atendimento inicial de certificado digital: orientar o cliente como um atendente faria no começo | só responde (não inicia), sem números, sem links |
-| `cobranca` | Lembrete de cobrança de honorários | inicia, aceita valores e o link do Asaas (`asaas.com`), 1 mensagem seguida, 2 por cliente por dia |
+| `certificado` | Atendimento inicial de certificado digital, como uma atendente mínima | só responde (não inicia); procura conversas paradas há 24 h |
+| `cobranca` | Lembrete de cobrança de honorários | inicia; só links do Asaas (`asaas.com`); 1 mensagem seguida, 2 por cliente por dia |
 
-## 2. As paredes (valem a cada envio)
+## 2. As poucas paredes (valem a cada envio)
 
-**Da conversa (nesta ordem; a primeira que falhar decide)**
-1. Raia ligada. 2. Conversa aberta. 3. Da fila da raia (se a raia tem fila). 4. Não foi passada para um humano. 5. Sem atendente humano
-(responsável, ou resposta de uma pessoa nos últimos *N* minutos, padrão 60). 6. Não está adiada.
+A IA é livre: escreve como quiser, **sem aviso de "sou uma IA"** (o nome do agente já aparece acima da mensagem), sem horário, sem lista de assuntos,
+sem trava de valores, números, CPF ou e-mail. O que sobra:
 
-**Do que o cliente mandou (desde a última mensagem enviada) → passa para um humano**
-Foto ou documento (`blockInboundMedia`), CPF/CNPJ/números longos, senha/código/cartão/PIX, pedido de atendente ou reclamação
-("quero falar com uma pessoa", "procon", "advogado", "cancelar"...), outros tipos (localização, contato) e rajada (8+ mensagens em 2 min).
+**Da conversa (a primeira que falhar decide)**: raia ligada · conversa aberta · da fila da raia (se tiver fila) · sem passagem pendente para humano ·
+sem atendente humano (responsável, ou resposta de uma pessoa nos últimos *N* minutos, padrão 60) · não adiada.
 
-**Orçamento**
-- `maxTurns` rodadas da IA por conversa (desde a última mensagem de uma pessoa) → passa para um humano.
-- `maxConsecutive` mensagens seguidas sem resposta do cliente → espera (recusa `aguarde_cliente`).
-- `contactDaily` mensagens da IA por cliente em 24 h → recusa `limite_contato`.
+**Do cliente → passa para um humano**: mandou foto ou documento (a IA não vê o conteúdo) ou pediu um atendente / reclamou
+("quero falar com uma pessoa", "procon", "advogado", "cancelar"...).
 
-**Do texto que a IA quer mandar**
-Sem e-mail, sem pedir/citar senha, código de verificação, cartão ou chave PIX, sem CPF/CNPJ e identificadores longos. Sem valores (`R$`) e
-números de 7+ dígitos, **salvo** em raia com `allowDigits` (cobrança). Datas e horas passam. Link só dos domínios da lista da raia
-(`allowedDomains`, vazio = nenhum). Termos de pressão (protesto, negativação, SPC/Serasa...) barram (`blockPressure`). Documento da biblioteca
-não vale na raia. Na primeira mensagem da IA na conversa o servidor acrescenta "Sou o assistente virtual do escritório." (`discloseAi`).
+**Orçamento (folgado, ajustável)**: 12 rodadas da IA por conversa (depois passa para humano), 3 mensagens seguidas sem resposta do cliente
+(recusa `aguarde_cliente`), 10 por cliente por dia (`limite_contato`).
 
-**O que continua de antes:** `PARAR`, grupos, "Pausar tudo", teto global de velocidade, máscaras de privacidade, assinatura, auditoria.
+**Do texto**: nunca pedir nem citar senha, código de verificação, cartão ou chave PIX (`credencial`); links só dos domínios da lista da raia
+(lista **vazia = qualquer link**; na cobrança é só `asaas.com`). Documento da biblioteca não vale na raia.
+
+**Continua de antes**: `PARAR`, grupos, "Pausar tudo", teto global de velocidade, máscaras de privacidade, assinatura (nome do agente), auditoria.
+
+## 2.1 Conversas paradas sem atendimento
+
+Ferramenta **`list_unattended(min_hours, limit)`**: conversas abertas em que o cliente escreveu há pelo menos *N* horas (padrão: `staleHours` da
+raia; 0 na raia = usa 24) e **ninguém da equipe iniciou o atendimento**: sem responsável, nenhuma mensagem enviada por uma pessoa, nada respondido
+depois do cliente e sem passagem pendente. A mais antiga primeiro, com a última mensagem do cliente. Só a fila da raia; grupos ficam de fora.
+A IA lê o histórico, responde com `send_as_attendant` ou passa para uma pessoa com `request_human`. Em sombra, vira rascunho.
+
+## 2.2 Qualquer IA externa (Grok, Claude, ChatGPT, Gemini)
+
+A raia é do servidor, não do agente: o mesmo token do atendente autônomo, preso a uma raia, funciona com **qualquer cliente MCP**. Na criação do token
+escolha o provedor (Claude, ChatGPT, Grok, Gemini ou Outro): é o que define a logo e o nome acima da mensagem. Como a IA fica sabendo de trabalho novo:
+- `wait_for_replies` (espera até 30 s por uma resposta de cliente, em laço) ou o aviso por webhook, se o agente tiver endereço público;
+- `list_unattended` de tempos em tempos (por exemplo a cada 15 min) para as conversas paradas;
+- `my_access` no começo mostra a raia, as regras e o modo (sombra/valendo).
 
 ## 3. Passar para um humano
 
@@ -69,7 +80,7 @@ As passagens para humano **acontecem** mesmo em sombra. Serve para ver, por uns 
 
 No MCP: `my_access` mostra a raia do token; `check_send(conversation_id|contact_id, text)` confere as regras da raia sem enviar;
 `send_as_attendant` devolve a recusa com `codigo` (`raia_desligada`, `fora_da_raia`, `humano_ativo`, `passada_para_humano`, `aguarde_cliente`,
-`limite_contato`, `digitos`, `documento`, `link`, `pressao`, `credencial`, `email`, `so_responde`, `documento`).
+`limite_contato`, `link`, `credencial`, `so_responde`, `documento`). `list_unattended` lista as conversas paradas.
 
 ## 6. Como ligar (quando a tela existir; hoje só pela API)
 
@@ -80,7 +91,7 @@ No MCP: `my_access` mostra a raia do token; `check_send(conversation_id|contact_
 
 ## 7. Próximos passos
 
-1. **Tela**: aba *Raias* (editar, ligar, sombra/valendo), escolher a raia ao criar/editar o token, lista de rascunhos com aprovar/editar/descartar,
+1. **Tela**: aba *Raias* (inclui "procurar conversas paradas depois de N horas") (editar, ligar, sombra/valendo), escolher a raia ao criar/editar o token, lista de rascunhos com aprovar/editar/descartar,
    banner "IA pediu ajuda" na conversa.
 2. **Acordar a IA** quando o cliente responde: hoje o aviso automático (webhook) está desligado; sem isso a IA só age quando é disparada.
 3. **Manual do assunto e exemplos**: `get_lane_guidelines` e trechos de conversas boas já resolvidas por pessoas (mascarados, sem documentos).

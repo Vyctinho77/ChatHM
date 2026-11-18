@@ -339,3 +339,46 @@ func (s *Service) LaneCheck(ctx context.Context, a Actor, in AttendInput) (LaneC
 	}
 	return res, nil
 }
+
+// Unattended: uma conversa esperando o primeiro atendimento.
+type Unattended struct {
+	ConversationID string
+	WaitingSince   time.Time // a última mensagem do cliente, ainda sem resposta
+}
+
+// UnattendedList: conversas abertas em que o cliente escreveu, passou ao menos minHours e NINGUÉM da equipe iniciou o atendimento
+// (nenhuma mensagem enviada por uma pessoa, sem responsável, ninguém respondeu depois do cliente, sem passagem pendente). Se a raia
+// tem fila, só as dela. Grupos ficam de fora. A mais antiga primeiro.
+func (s *Service) UnattendedList(ctx context.Context, segmentID string, minHours, limit int) ([]Unattended, error) {
+	if minHours < 1 {
+		minHours = 1
+	}
+	rows, err := s.db.Query(ctx, `
+		SELECT c.id::text, li.at
+		  FROM conversations c
+		  JOIN contacts ct ON ct.id = c.contact_id
+		  CROSS JOIN LATERAL (SELECT max(m.sent_at) AS at FROM messages m
+		                       WHERE m.conversation_id = c.id AND m.direction = 'in' AND m.deleted_at IS NULL
+		                         AND coalesce(m.payload->>'historical', '') <> 'true') li
+		 WHERE c.status <> 'closed' AND c.assignee_id IS NULL AND ct.kind <> 'group'
+		   AND NOT (c.snoozed_until IS NOT NULL AND c.snoozed_until > now())
+		   AND ($1 = '' OR c.segment_id::text = $1)
+		   AND li.at IS NOT NULL AND li.at < now() - make_interval(hours => $2)
+		   AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND `+humanOut+`)
+		   AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.direction = 'out' AND m.deleted_at IS NULL AND m.sent_at > li.at)
+		   AND NOT EXISTS (SELECT 1 FROM ai_handoffs h WHERE h.conversation_id = c.id)
+		 ORDER BY li.at ASC LIMIT $3`, segmentID, minHours, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Unattended
+	for rows.Next() {
+		var u Unattended
+		if err := rows.Scan(&u.ConversationID, &u.WaitingSince); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}

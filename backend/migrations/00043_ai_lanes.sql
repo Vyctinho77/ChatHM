@@ -13,14 +13,13 @@ CREATE TABLE ai_lanes (
     segment_id          uuid REFERENCES segments (id) ON DELETE SET NULL,
     -- Para onde a conversa vai quando a IA passa para um humano (vazio = fica onde está).
     handoff_segment_id  uuid REFERENCES segments (id) ON DELETE SET NULL,
-    max_turns           integer NOT NULL DEFAULT 8  CHECK (max_turns BETWEEN 1 AND 50),
-    max_consecutive     integer NOT NULL DEFAULT 2  CHECK (max_consecutive BETWEEN 1 AND 10),
-    contact_daily       integer NOT NULL DEFAULT 6  CHECK (contact_daily BETWEEN 1 AND 50),
+    max_turns           integer NOT NULL DEFAULT 12 CHECK (max_turns BETWEEN 1 AND 50),
+    max_consecutive     integer NOT NULL DEFAULT 3  CHECK (max_consecutive BETWEEN 1 AND 10),
+    contact_daily       integer NOT NULL DEFAULT 10 CHECK (contact_daily BETWEEN 1 AND 50),
     human_quiet_minutes integer NOT NULL DEFAULT 60 CHECK (human_quiet_minutes BETWEEN 0 AND 1440),
-    allow_digits        boolean NOT NULL DEFAULT false,
-    block_pressure      boolean NOT NULL DEFAULT true,
-    block_inbound_media boolean NOT NULL DEFAULT true,
-    disclose_ai         boolean NOT NULL DEFAULT true,
+    -- Procura conversas paradas (o cliente escreveu e ninguém da equipe iniciou o atendimento) há pelo menos N horas. 0 = não procura.
+    stale_hours         integer NOT NULL DEFAULT 0  CHECK (stale_hours BETWEEN 0 AND 720),
+    -- Links só destes domínios. Lista vazia = qualquer link.
     allowed_domains     text[]  NOT NULL DEFAULT '{}',
     guidelines          text    NOT NULL DEFAULT '' CHECK (char_length(guidelines) <= 6000),
     updated_at          timestamptz NOT NULL DEFAULT now(),
@@ -28,11 +27,11 @@ CREATE TABLE ai_lanes (
 );
 ALTER TABLE ai_lanes ENABLE ROW LEVEL SECURITY;
 
-INSERT INTO ai_lanes (key, label, can_initiate, max_consecutive, contact_daily, human_quiet_minutes, allow_digits, allowed_domains, guidelines) VALUES
-  ('certificado', 'Certificado digital: atendimento inicial', false, 2, 6, 60, false, '{}',
-   'Oriente o cliente sobre o que fazer para emitir ou renovar o certificado digital, em linguagem simples. Peça só o que um atendente pediria no início. Nunca peça nem aceite CPF, CNPJ, senhas, códigos ou fotos de documentos: se o cliente mandar, passe para um atendente.'),
-  ('cobranca', 'Cobrança de honorários', true, 1, 2, 120, true, '{asaas.com}',
-   'Lembre com educação e sem pressão. O link de pagamento do Asaas é o único permitido. Se o cliente disser que já pagou, mandar comprovante ou contestar, passe para um atendente.');
+INSERT INTO ai_lanes (key, label, can_initiate, max_consecutive, contact_daily, human_quiet_minutes, stale_hours, allowed_domains, guidelines) VALUES
+  ('certificado', 'Certificado digital: atendimento inicial', false, 3, 10, 60, 24, '{}',
+   'Você é uma atendente mínima do escritório. Oriente o cliente, em linguagem simples, sobre o que fazer para emitir ou renovar o certificado digital e peça só o que um atendente pediria no início. Se o cliente mandar foto ou documento, ou pedir uma pessoa, passe para um atendente.'),
+  ('cobranca', 'Cobrança de honorários', true, 1, 2, 120, 0, '{asaas.com}',
+   'Lembre com educação. O link de pagamento do Asaas é o único permitido. Se o cliente disser que já pagou, mandar comprovante ou contestar, passe para um atendente.');
 
 -- Cada token do atendente autônomo pode ficar preso a uma raia: só a raia vale para ele.
 ALTER TABLE api_tokens ADD COLUMN lane_key text REFERENCES ai_lanes (key) ON DELETE SET NULL;

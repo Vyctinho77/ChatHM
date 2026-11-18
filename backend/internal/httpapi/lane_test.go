@@ -31,8 +31,8 @@ func laneSetup(t *testing.T, mode string, tweak func(in map[string]any)) laneEnv
 		t.Fatal("token do atendente não encontrado")
 	}
 	in := map[string]any{"label": "Certificado digital", "enabled": true, "mode": mode, "canInitiate": false, "segmentId": w.segs["folha"], "handoffSegmentId": "",
-		"maxTurns": 8, "maxConsecutive": 2, "contactDaily": 6, "humanQuietMinutes": 60, "allowDigits": false, "blockPressure": true, "blockInboundMedia": true,
-		"discloseAi": true, "allowedDomains": []string{}, "guidelines": "Oriente o cliente."}
+		"maxTurns": 8, "maxConsecutive": 2, "contactDaily": 6, "humanQuietMinutes": 60, "staleHours": 24,
+		"allowedDomains": []string{}, "guidelines": "Oriente o cliente."}
 	if tweak != nil {
 		tweak(in)
 	}
@@ -64,8 +64,7 @@ func TestLaneIsOffUntilEnabledAndShadowSendsNothing(t *testing.T) {
 	}
 	// Em sombra: vira rascunho e NADA vai ao cliente.
 	expect(t, e.w.admin.do("PUT", "/api/v1/automation/lanes/certificado", map[string]any{"label": "Certificado digital", "enabled": true, "mode": "shadow",
-		"segmentId": e.w.segs["folha"], "maxTurns": 8, "maxConsecutive": 2, "contactDaily": 6, "humanQuietMinutes": 60, "blockPressure": true, "blockInboundMedia": true,
-		"discloseAi": true, "allowedDomains": []string{}}), 200)
+		"segmentId": e.w.segs["folha"], "maxTurns": 8, "maxConsecutive": 2, "contactDaily": 6, "humanQuietMinutes": 60, "allowedDomains": []string{}}), 200)
 	sentBefore := len(e.w.e.wa.Sent())
 	o = e.send(goodReply)
 	if o["status"] != "sombra" || o["ok"] != false {
@@ -75,29 +74,28 @@ func TestLaneIsOffUntilEnabledAndShadowSendsNothing(t *testing.T) {
 		t.Fatal("em sombra nada pode ser enviado")
 	}
 	drafts := e.w.admin.do("GET", "/api/v1/automation/lane-drafts?lane=certificado", nil).body["drafts"].([]any)
-	if len(drafts) != 1 || !strings.HasPrefix(drafts[0].(map[string]any)["body"].(string), "Sou o assistente virtual do escritório.") {
+	if len(drafts) != 1 || drafts[0].(map[string]any)["body"].(string) != goodReply {
 		t.Fatalf("rascunhos: %v", drafts)
 	}
 }
 
-func TestLaneLiveSendsWithDisclosureAndRulesOfTheConversation(t *testing.T) {
+func TestLaneLiveSendsAsWrittenAndRulesOfTheConversation(t *testing.T) {
 	e := laneSetup(t, "live", nil)
 	o := e.send(goodReply)
 	if o["ok"] != true || o["status"] != "enviado" {
 		t.Fatalf("envio ao vivo: %v", o)
 	}
 	m := lastSent(t, e.w)
-	if m.Text == "" || !strings.Contains(m.Text, "Sou o assistente virtual do escritório.") || !strings.Contains(m.Text, "passo a passo") {
-		t.Fatalf("a primeira mensagem se apresenta: %q", m.Text)
+	if !strings.HasSuffix(m.Text, goodReply) || strings.Contains(m.Text, "virtual") {
+		t.Fatalf("a mensagem sai como a IA escreveu, só com a assinatura do atendimento (sem aviso de IA): %q", m.Text)
 	}
 	if lane := scalar[string](t, e.w, `SELECT payload->>'aiLane' FROM messages WHERE payload->>'aiMode' = 'attend' ORDER BY created_at DESC LIMIT 1`); lane != "certificado" {
 		t.Fatalf("a mensagem leva a raia: %q", lane)
 	}
-	// A segunda não repete a apresentação.
 	e.w.receiveFrom(e.phone, "Cliente Raia", "ok, pode explicar")
 	o = e.send("Claro: primeiro escolha o tipo de certificado.")
-	if o["ok"] != true || strings.Contains(lastSent(t, e.w).Text, "assistente virtual") {
-		t.Fatalf("não repete a apresentação: %v %q", o, lastSent(t, e.w).Text)
+	if o["ok"] != true {
+		t.Fatalf("segunda mensagem: %v", o)
 	}
 	// Duas mensagens seguidas sem resposta do cliente: a terceira espera.
 	e.send("Quando quiser, é só dizer o dia.")
@@ -107,25 +105,22 @@ func TestLaneLiveSendsWithDisclosureAndRulesOfTheConversation(t *testing.T) {
 	}
 }
 
-func TestLaneTextRulesOnSend(t *testing.T) {
+func TestLaneTextRulesOnSendAreFew(t *testing.T) {
 	e := laneSetup(t, "live", nil)
-	for text, want := range map[string]string{
-		"O certificado custa R$ 150 por ano.":        "digitos",
-		"Seu CPF 123.456.789-01 está certo.":         "documento",
-		"Veja em https://exemplo.com.br/certificado": "link",
-		"Me envie a senha do certificado, por favor": "credencial",
-		"Vamos protestar o seu nome":                 "pressao",
-	} {
-		o := e.send(text)
-		if o["recusado"] != true || o["codigo"] != want {
-			t.Errorf("%q: %v, esperava %s", text, o, want)
-		}
+	// Só credenciais são barradas; valores, números, e-mails e links ficam livres (lista de domínios vazia).
+	o := e.send("Me envie a senha do certificado, por favor")
+	if o["recusado"] != true || o["codigo"] != "credencial" {
+		t.Fatalf("senha: %v", o)
 	}
 	if e.count(`SELECT count(*) FROM messages WHERE payload->>'aiMode' = 'attend'`) != 0 {
-		t.Fatal("nada disso pode ter sido enviado")
+		t.Fatal("a mensagem recusada não pode ter saído")
+	}
+	o = e.send("O certificado custa R$ 150 por ano. Mais informações em https://gov.br/certificado ou contato@exemplo.com.br")
+	if o["ok"] != true {
+		t.Fatalf("valor, link e e-mail são livres: %v", o)
 	}
 	// Documento da biblioteca não vale na raia.
-	o, _ := e.w.tool(e.token, "send_as_attendant", map[string]any{"conversation_id": e.convID, "text": goodReply, "document_id": "11111111-1111-4111-8111-111111111111"})
+	o, _ = e.w.tool(e.token, "send_as_attendant", map[string]any{"conversation_id": e.convID, "text": goodReply, "document_id": "11111111-1111-4111-8111-111111111111"})
 	if o["codigo"] != "documento" {
 		t.Fatalf("documento na raia: %v", o)
 	}
@@ -244,8 +239,7 @@ func TestLaneInitiateOnlyWhereAllowedAndCheckSend(t *testing.T) {
 		t.Fatalf("raia que só responde: %v", o)
 	}
 	expect(t, e.w.admin.do("PUT", "/api/v1/automation/lanes/certificado", map[string]any{"label": "Cobrança", "enabled": true, "mode": "live", "canInitiate": true,
-		"maxTurns": 8, "maxConsecutive": 1, "contactDaily": 2, "humanQuietMinutes": 120, "allowDigits": true, "blockPressure": true, "blockInboundMedia": true,
-		"discloseAi": true, "allowedDomains": []string{"asaas.com"}}), 200)
+		"maxTurns": 8, "maxConsecutive": 1, "contactDaily": 2, "humanQuietMinutes": 120, "allowedDomains": []string{"asaas.com"}}), 200)
 	o, _ = e.w.tool(e.token, "send_as_attendant", map[string]any{"contact_id": e.contact, "text": "Oi! O boleto de R$ 350,00 vence dia 25/11: https://www.asaas.com/i/abc123"})
 	if o["ok"] != true {
 		t.Fatalf("raia de cobrança inicia e aceita valor e link do Asaas: %v", o)
@@ -332,5 +326,88 @@ func TestPlainAttendTokenIsUnchangedByLanes(t *testing.T) {
 	o, _ := w.tool(toks["attend"], "send_as_attendant", map[string]any{"conversation_id": cid, "text": "Seu protocolo é 20261118334455, ok?"})
 	if o["ok"] != true || strings.Contains(lastSent(t, w).Text, "assistente virtual") {
 		t.Fatalf("sem raia nada muda: %v", o)
+	}
+}
+
+// Conversas paradas: o cliente escreveu e ninguém da equipe iniciou o atendimento.
+func TestLaneListUnattended(t *testing.T) {
+	e := laneSetup(t, "live", nil)
+	list := func(args map[string]any) []any {
+		o, isErr := e.w.tool(e.token, "list_unattended", args)
+		if isErr {
+			t.Fatalf("list_unattended: %v", o)
+		}
+		return o["conversations"].([]any)
+	}
+	// Recém-chegada: ainda não é "parada".
+	if got := list(nil); len(got) != 0 {
+		t.Fatalf("conversa de agora não está parada: %v", got)
+	}
+	// Envelhece a mensagem do cliente: passa a esperar há 30 h (o padrão da raia é 24 h).
+	if _, err := e.w.e.pool.Exec(context.Background(), `UPDATE messages SET sent_at = now() - interval '30 hours' WHERE conversation_id = $1`, e.convID); err != nil {
+		t.Fatal(err)
+	}
+	got := list(nil)
+	if len(got) != 1 || got[0].(map[string]any)["conversationId"] != e.convID || got[0].(map[string]any)["waitedHours"].(float64) < 29 {
+		t.Fatalf("conversa parada: %v", got)
+	}
+	if last, _ := got[0].(map[string]any)["lastMessage"].(map[string]any); last == nil {
+		t.Fatalf("deveria trazer a última mensagem do cliente: %v", got[0])
+	}
+	if len(list(map[string]any{"min_hours": 48})) != 0 {
+		t.Fatal("com min_hours 48 ainda não está parada")
+	}
+	// Outra fila fica fora (a raia é da fila Folha).
+	e.w.receive("Cliente Fiscal", "nota fiscal de serviço, preciso emitir")
+	if _, err := e.w.e.pool.Exec(context.Background(), `UPDATE messages SET sent_at = now() - interval '30 hours' WHERE conversation_id = $1`,
+		mustConv(t, e.w.admin, "Cliente Fiscal")["id"].(string)); err != nil {
+		t.Fatal(err)
+	}
+	if got := list(nil); len(got) != 1 {
+		t.Fatalf("só a fila da raia: %v", got)
+	}
+	// A IA responde: deixa de estar parada.
+	if o := e.send(goodReply); o["ok"] != true {
+		t.Fatalf("responder à conversa parada: %v", o)
+	}
+	if got := list(nil); len(got) != 0 {
+		t.Fatalf("respondida, não está mais parada: %v", got)
+	}
+	// Uma pessoa que já falou na conversa a tira da lista, mesmo que o cliente tenha escrito de novo e esperado.
+	e.w.receiveFrom(e.phone, "Cliente Raia", "alguém aí?")
+	expect(t, e.w.send(e.w.ana, e.convID, "Oi, aqui é a Ana."), 201)
+	e.w.receiveFrom(e.phone, "Cliente Raia", "ainda preciso de ajuda")
+	if _, err := e.w.e.pool.Exec(context.Background(), `UPDATE messages SET sent_at = now() - interval '30 hours' WHERE conversation_id = $1 AND direction = 'in'`, e.convID); err != nil {
+		t.Fatal(err)
+	}
+	if got := list(nil); len(got) != 0 {
+		t.Fatalf("já houve atendimento humano: %v", got)
+	}
+}
+
+// Qualquer IA externa (Grok, Claude, ChatGPT, Gemini) usa a mesma raia pelo mesmo MCP.
+func TestLaneWorksForEveryProvider(t *testing.T) {
+	e := laneSetup(t, "live", func(in map[string]any) { in["maxConsecutive"] = 10; in["maxTurns"] = 20; in["contactDaily"] = 20 })
+	for _, prov := range []string{"claude", "chatgpt", "grok", "gemini", "other"} {
+		r := e.w.admin.do("POST", "/api/v1/ai/tokens", map[string]any{"name": "ia-" + prov, "scopes": []string{"attend"}, "provider": prov})
+		expect(t, r, 201)
+		tok := r.body["token"].(string)
+		var id string
+		for _, x := range e.w.admin.do("GET", "/api/v1/ai/tokens", nil).body["tokens"].([]any) {
+			if m := x.(map[string]any); m["name"] == "ia-"+prov {
+				id = m["id"].(string)
+			}
+		}
+		expect(t, e.w.admin.do("PUT", "/api/v1/ai/tokens/"+id+"/lane", map[string]any{"laneKey": "certificado"}), 204)
+		if acc, _ := e.w.tool(tok, "my_access", map[string]any{}); acc["lane"] == nil {
+			t.Fatalf("%s: o token deveria estar na raia", prov)
+		}
+		o, isErr := e.w.tool(tok, "send_as_attendant", map[string]any{"conversation_id": e.convID, "text": "Olá! Aqui é " + prov + ", posso ajudar com o certificado?"})
+		if isErr || o["ok"] != true {
+			t.Fatalf("%s: %v", prov, o)
+		}
+		if got := scalar[string](t, e.w, `SELECT payload->>'aiProvider' FROM messages WHERE payload->>'aiMode' = 'attend' ORDER BY created_at DESC LIMIT 1`); got != prov {
+			t.Fatalf("a mensagem deveria levar o provedor %s: %q", prov, got)
+		}
 	}
 }

@@ -15,14 +15,13 @@ import (
 	"github.com/vyctinho77/chathm/backend/internal/platform/httpx"
 )
 
-// Raia da IA (docs/mcp-raia.md). Dentro da raia a IA age livremente: sem horário, sem assuntos e níveis, sem aprovação. As poucas regras que
-// sobram são do servidor e valem a cada envio, não dependem da IA:
+// Raia da IA (docs/mcp-raia.md). Dentro da raia a IA age livremente, como uma atendente mínima: sem horário, sem assuntos e níveis, sem
+// aprovação, sem apresentar-se (o nome do agente já aparece acima da mensagem). Poucas regras, do servidor, valem a cada envio:
 //
-//	entrada: só a conversa da raia, sem atendente humano; foto/documento, dados pessoais, pedido de atendente, reclamação ou rajada de
-//	         mensagens do cliente passam para um humano;
-//	saída:   sem números/valores soltos (salvo nas raias que precisam), só links da lista, sem termos de pressão, sem pedir senhas;
-//	orçamento: no máximo N rodadas por conversa, 2 mensagens seguidas sem resposta do cliente e N por cliente por dia;
-//	humano:  quem assume a conversa (ou foi chamado) silencia a IA.
+//	conversa: raia ligada, conversa aberta e da fila da raia, sem atendente humano e sem passagem pendente;
+//	cliente:  pediu um atendente, reclamou ou mandou foto/documento (a IA não vê) → passa para um humano;
+//	orçamento: no máximo N rodadas por conversa, N mensagens seguidas sem resposta e N por cliente por dia;
+//	texto:    nunca pedir nem citar senha, código, cartão ou PIX; links só dos domínios da lista (lista vazia = qualquer link).
 //
 // Uma raia nasce desligada e em "sombra": a IA escreve, o servidor guarda o rascunho e nada vai ao cliente.
 
@@ -45,10 +44,7 @@ type Lane struct {
 	MaxConsecutive    int       `json:"maxConsecutive"`
 	ContactDaily      int       `json:"contactDaily"`
 	HumanQuietMinutes int       `json:"humanQuietMinutes"`
-	AllowDigits       bool      `json:"allowDigits"`
-	BlockPressure     bool      `json:"blockPressure"`
-	BlockInboundMedia bool      `json:"blockInboundMedia"`
-	DiscloseAI        bool      `json:"discloseAi"`
+	StaleHours        int       `json:"staleHours"` // 0 = não procura conversas paradas
 	AllowedDomains    []string  `json:"allowedDomains"`
 	Guidelines        string    `json:"guidelines"`
 	UpdatedAt         time.Time `json:"updatedAt"`
@@ -66,10 +62,7 @@ type LaneInput struct {
 	MaxConsecutive    int      `json:"maxConsecutive"`
 	ContactDaily      int      `json:"contactDaily"`
 	HumanQuietMinutes int      `json:"humanQuietMinutes"`
-	AllowDigits       bool     `json:"allowDigits"`
-	BlockPressure     bool     `json:"blockPressure"`
-	BlockInboundMedia bool     `json:"blockInboundMedia"`
-	DiscloseAI        bool     `json:"discloseAi"`
+	StaleHours        int      `json:"staleHours"`
 	AllowedDomains    []string `json:"allowedDomains"`
 	Guidelines        string   `json:"guidelines"`
 }
@@ -78,13 +71,13 @@ type LaneInput struct {
 var ErrNoLane = errors.New("automation: raia não encontrada")
 
 const laneCols = `key, label, enabled, mode, can_initiate, coalesce(segment_id::text, ''), coalesce(handoff_segment_id::text, ''),
-	max_turns, max_consecutive, contact_daily, human_quiet_minutes, allow_digits, block_pressure, block_inbound_media, disclose_ai,
+	max_turns, max_consecutive, contact_daily, human_quiet_minutes, stale_hours,
 	allowed_domains, guidelines, updated_at`
 
 func scanLane(row pgx.Row) (Lane, error) {
 	var l Lane
 	err := row.Scan(&l.Key, &l.Label, &l.Enabled, &l.Mode, &l.CanInitiate, &l.SegmentID, &l.HandoffSegmentID, &l.MaxTurns, &l.MaxConsecutive,
-		&l.ContactDaily, &l.HumanQuietMinutes, &l.AllowDigits, &l.BlockPressure, &l.BlockInboundMedia, &l.DiscloseAI, &l.AllowedDomains, &l.Guidelines, &l.UpdatedAt)
+		&l.ContactDaily, &l.HumanQuietMinutes, &l.StaleHours, &l.AllowedDomains, &l.Guidelines, &l.UpdatedAt)
 	if l.AllowedDomains == nil {
 		l.AllowedDomains = []string{}
 	}
@@ -142,6 +135,7 @@ func (s *Service) SaveLane(ctx context.Context, actorID, ip, key string, in Lane
 	check("maxConsecutive", in.MaxConsecutive, 1, 10, "De 1 a 10 mensagens seguidas.")
 	check("contactDaily", in.ContactDaily, 1, 50, "De 1 a 50 mensagens por cliente por dia.")
 	check("humanQuietMinutes", in.HumanQuietMinutes, 0, 1440, "De 0 a 1440 minutos.")
+	check("staleHours", in.StaleHours, 0, 720, "De 0 (desligado) a 720 horas.")
 	if utf8.RuneCountInString(in.Guidelines) > 6000 {
 		fe["guidelines"] = "No máximo 6000 caracteres."
 	}
@@ -175,14 +169,14 @@ func (s *Service) SaveLane(ctx context.Context, actorID, ip, key string, in Lane
 	err := database.InTx(ctx, s.db, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `
 			UPDATE ai_lanes SET label = $2, enabled = $3, mode = $4, can_initiate = $5, segment_id = $6, handoff_segment_id = $7, max_turns = $8,
-			       max_consecutive = $9, contact_daily = $10, human_quiet_minutes = $11, allow_digits = $12, block_pressure = $13,
-			       block_inbound_media = $14, disclose_ai = $15, allowed_domains = $16, guidelines = $17, updated_at = now(), updated_by = NULLIF($18, '')::uuid
+			       max_consecutive = $9, contact_daily = $10, human_quiet_minutes = $11, stale_hours = $12,
+			       allowed_domains = $13, guidelines = $14, updated_at = now(), updated_by = NULLIF($15, '')::uuid
 			 WHERE key = $1`, key, in.Label, in.Enabled, in.Mode, in.CanInitiate, seg, hand, in.MaxTurns, in.MaxConsecutive, in.ContactDaily,
-			in.HumanQuietMinutes, in.AllowDigits, in.BlockPressure, in.BlockInboundMedia, in.DiscloseAI, domains, in.Guidelines, actorID); err != nil {
+			in.HumanQuietMinutes, in.StaleHours, domains, in.Guidelines, actorID); err != nil {
 			return err
 		}
 		return audit.Record(ctx, tx, audit.Entry{ActorID: actorID, Action: "ai.lane.update", TargetType: "ai_lane", TargetID: key, IP: ip,
-			Metadata: map[string]any{"enabled": in.Enabled, "mode": in.Mode, "canInitiate": in.CanInitiate, "maxTurns": in.MaxTurns}})
+			Metadata: map[string]any{"enabled": in.Enabled, "mode": in.Mode, "canInitiate": in.CanInitiate, "maxTurns": in.MaxTurns, "staleHours": in.StaleHours}})
 	})
 	if err != nil {
 		var pe interface{ SQLState() string }
@@ -212,9 +206,7 @@ type laneFacts struct {
 	Consecutive               int        // mensagens da IA desde a última do cliente
 	ContactToday              int        // mensagens da IA a este cliente nas últimas 24 h
 	OpenHandoff               bool       // passada para um humano e ninguém respondeu ainda
-	HasAI                     bool       // a IA já falou nesta conversa
 	Inbound                   []inboundMsg
-	InboundBurst              int // mensagens do cliente nos últimos 2 minutos
 	Now                       time.Time
 }
 
@@ -241,11 +233,9 @@ func (s *Service) laneFacts(ctx context.Context, convID string) (laneFacts, erro
 		  (SELECT count(*) FROM messages m WHERE m.conversation_id = $1 AND `+aiOut+` AND m.sent_at > coalesce((SELECT max(h.sent_at) FROM messages h WHERE h.conversation_id = $1 AND h.direction = 'out' AND h.deleted_at IS NULL AND coalesce(h.payload->>'automated', '') <> 'true'), '-infinity')),
 		  (SELECT count(*) FROM messages m WHERE m.conversation_id = $1 AND `+aiOut+` AND m.sent_at > coalesce((SELECT max(i.sent_at) FROM messages i WHERE i.conversation_id = $1 AND i.direction = 'in' AND i.deleted_at IS NULL), '-infinity')),
 		  (SELECT count(*) FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.contact_id = $2 AND `+aiOut+` AND m.sent_at > $3::timestamptz - interval '24 hours'),
-		  EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = $1 AND `+aiOut+`),
 		  EXISTS (SELECT 1 FROM ai_handoffs h WHERE h.conversation_id = $1
-		           AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = h.conversation_id AND `+humanOut+` AND m.sent_at > h.created_at)),
-		  (SELECT count(*) FROM messages m WHERE m.conversation_id = $1 AND m.direction = 'in' AND m.deleted_at IS NULL AND m.sent_at > $3::timestamptz - interval '2 minutes')`,
-		convID, f.ContactID, f.Now).Scan(&f.Turns, &f.Consecutive, &f.ContactToday, &f.HasAI, &f.OpenHandoff, &f.InboundBurst)
+		           AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = h.conversation_id AND `+humanOut+` AND m.sent_at > h.created_at))`,
+		convID, f.ContactID, f.Now).Scan(&f.Turns, &f.Consecutive, &f.ContactToday, &f.OpenHandoff)
 	if err != nil {
 		return f, err
 	}
@@ -279,79 +269,40 @@ type laneHandoff struct{ Reason, Summary string }
 type laneDecision struct {
 	Refusal *Refusal
 	Handoff *laneHandoff
-	Text    string // o texto a enviar (com a apresentação da IA, se for o caso)
+	Text    string // o texto a enviar
 }
-
-const disclosure = "Sou o assistente virtual do escritório."
 
 var (
 	reWantsHuman = regexp.MustCompile(`(?i)(?:falar|conversar|chamar|passa(?:r)?|quero|preciso|queria|pode)\b.{0,25}\b(?:atendente|pessoa|humano|gerente|respons[aá]vel|algu[eé]m|funcion[aá]rio)|(?:atendente|humano)\b|reclama|procon|advogad|processo|cancel(?:ar|amento)|golpe|fraude|absurdo|vergonha|n[aã]o (?:quero|aceito|autorizo)|rob[oô]\b|n[aã]o (?:[eé]|sou)\b.{0,12}\b(?:rob[oô]|ia)\b|para de (?:me )?mandar`)
-	reSecretIn   = regexp.MustCompile(`(?i)\b(?:senha|password|token|c[oó]digo de (?:verifica|acesso|seguran|confirma)\w*|cvv|cvc|cart[aã]o|chave pix|pix)\b`)
 	reSecretOut  = regexp.MustCompile(`(?i)\b(?:senha|password|token|c[oó]digo de (?:verifica|acesso|seguran|confirma)\w*|cvv|cvc|n[uú]mero do cart[aã]o|chave pix)\b`)
-	reLong7      = regexp.MustCompile(`\d(?:[\s.\-]?\d){6,}`)
-	reRawDoc     = regexp.MustCompile(`\b\d{11}\b|\b\d{14}\b`)
-	reMoneyOut   = regexp.MustCompile(`(?i)r\$\s*\d`)
 )
 
-// inboundHandoff: o que o cliente mandou obriga a passar para um humano?
-func inboundHandoff(l Lane, f laneFacts) *laneHandoff {
-	if len(f.Inbound) == 0 {
-		return nil
-	}
-	if f.InboundBurst >= 8 {
-		return &laneHandoff{"rajada", "O cliente mandou muitas mensagens em poucos minutos."}
-	}
+// inboundHandoff: o que o cliente mandou obriga a passar para um humano? Só duas coisas: foto/documento (a IA não vê o conteúdo)
+// e pedido de atendente ou reclamação.
+func inboundHandoff(f laneFacts) *laneHandoff {
 	for _, m := range f.Inbound {
-		switch m.Kind {
-		case "image", "document":
-			if l.BlockInboundMedia {
-				return &laneHandoff{"documento", "O cliente enviou foto ou documento. A IA não vê o conteúdo."}
-			}
-		case "location", "contact":
-			return &laneHandoff{"outro_tipo", "O cliente enviou um tipo de mensagem que a IA não trata."}
+		if m.Kind == "image" || m.Kind == "document" {
+			return &laneHandoff{"documento", "O cliente enviou foto ou documento. A IA não vê o conteúdo."}
 		}
-		if m.Body == "" {
-			continue
-		}
-		if reDoc.MatchString(m.Body) || reRawDoc.MatchString(m.Body) || reDigits.MatchString(m.Body) || reSecretIn.MatchString(m.Body) {
-			return &laneHandoff{"dados", "O cliente escreveu dados pessoais, números ou algo sobre senha, código ou cartão."}
-		}
-		if reWantsHuman.MatchString(m.Body) {
+		if m.Body != "" && reWantsHuman.MatchString(m.Body) {
 			return &laneHandoff{"pediu_humano", "O cliente pediu um atendente ou fez uma reclamação."}
 		}
 	}
 	return nil
 }
 
-// textRefusal: o que a IA quer mandar fere alguma regra da raia?
+// textRefusal: o que a IA quer mandar fere alguma regra da raia? Só credenciais e a lista de domínios.
 func textRefusal(l Lane, text string) *Refusal {
 	if strings.ContainsAny(text, "\u200b\u202e\ufeff") {
 		return refuse("content", "O texto tem caracteres invisíveis.")
 	}
-	if reEmail.MatchString(text) {
-		return refuse("email", "Não escreva e-mails no texto.")
-	}
 	if reSecretOut.MatchString(text) {
 		return refuse("credencial", "Nunca peça nem cite senhas, códigos de verificação, cartão ou chave PIX. Se o cliente precisa informar algo assim, use request_human.")
 	}
-	if reDoc.MatchString(text) || reRawDoc.MatchString(text) || reUUID.MatchString(text) {
-		return refuse("documento", "Não escreva CPF, CNPJ nem identificadores longos no texto.")
-	}
-	if !l.AllowDigits {
-		if reMoneyOut.MatchString(text) || reLong7.MatchString(text) {
-			return refuse("digitos", "Nesta raia a IA não escreve valores, documentos nem números longos. Se o assunto exige isso, use request_human para um atendente continuar.")
-		}
-	}
-	for _, link := range reURL.FindAllString(text, -1) {
-		if !domainAllowed(link, l.AllowedDomains) {
-			return refuse("link", "Link não permitido nesta raia (%s). Só os domínios liberados pelo administrador: %s.", shorten(link), domainList(l.AllowedDomains))
-		}
-	}
-	if l.BlockPressure {
-		low := strings.ToLower(text)
-		for _, term := range pressureTerms {
-			if strings.Contains(low, term) {
-				return refuse("pressao", "O texto tem tom de pressão (%q). Escreva com educação e sem ameaça; se o caso é de cobrança séria, use request_human.", term)
+	if len(l.AllowedDomains) > 0 {
+		for _, link := range reURL.FindAllString(text, -1) {
+			if !domainAllowed(link, l.AllowedDomains) {
+				return refuse("link", "Link não permitido nesta raia (%s). Só estes domínios: %s.", shorten(link), domainList(l.AllowedDomains))
 			}
 		}
 	}
@@ -391,7 +342,7 @@ func decideLane(l Lane, f laneFacts, text string) laneDecision {
 	if f.Snoozed {
 		return deny("adiada", "A conversa está adiada por um atendente.")
 	}
-	if h := inboundHandoff(l, f); h != nil {
+	if h := inboundHandoff(f); h != nil {
 		return laneDecision{Handoff: h}
 	}
 	if f.Turns >= l.MaxTurns {
@@ -406,9 +357,5 @@ func decideLane(l Lane, f laneFacts, text string) laneDecision {
 	if r := textRefusal(l, text); r != nil {
 		return laneDecision{Refusal: r}
 	}
-	out := text
-	if l.DiscloseAI && !f.HasAI {
-		out = disclosure + " " + text
-	}
-	return laneDecision{Text: out}
+	return laneDecision{Text: text}
 }
