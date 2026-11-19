@@ -127,3 +127,7 @@ se houve migração; o estado de coisas que o dono mexe pela tela; e o que ficou
 
 ## Atribuição dos commits
 Siga as instruções da sessão (cada sessão dá as linhas `Co-Authored-By`/`Claude-Session` que entram no fim da mensagem do commit). Não coloque nome de modelo em arquivos do repositório.
+
+## Arquivos do pdf.js (`/pdfjs/`)
+O build copia `wasm`, `cmaps`, `standard_fonts` e `iccs` do pacote `pdfjs-dist` para `dist/pdfjs/` (plugin em `apps/web/vite.config.ts`). Sem eles, PDFs escaneados abrem como folha em branco.
+Depois de publicar mudanças no visualizador, confira `curl -sI https://chathm.com.br/pdfjs/wasm/openjpeg.wasm` (200, `application/wasm`).

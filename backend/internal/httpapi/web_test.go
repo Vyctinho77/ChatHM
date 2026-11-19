@@ -30,7 +30,7 @@ func TestWebHandlerServesSPAWithStrictCSP(t *testing.T) {
 		t.Fatalf("fallback: %d %v", w.Code, w.Header())
 	}
 	csp := w.Header().Get("Content-Security-Policy")
-	if !strings.Contains(csp, "script-src 'self' 'sha256-") || strings.Contains(strings.Split(csp, "style-src")[0], "unsafe-inline") || !strings.Contains(csp, "frame-ancestors 'none'") {
+	if !strings.Contains(csp, "script-src 'self' 'sha256-") || strings.Contains(strings.Split(csp, "style-src")[0], "unsafe-inline") || !strings.Contains(csp, "frame-ancestors 'none'") || !strings.Contains(csp, "'wasm-unsafe-eval'") {
 		t.Fatalf("csp: %s", csp)
 	}
 	// Assets hashados: cache longo; .mjs com tipo JavaScript.

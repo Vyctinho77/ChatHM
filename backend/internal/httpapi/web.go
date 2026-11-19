@@ -26,6 +26,8 @@ func webHandler(dir string) (http.Handler, error) {
 		sum := sha256.Sum256(m[1])
 		script += " 'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
 	}
+	// WebAssembly: o pdf.js decodifica imagens de PDFs escaneados (JPEG2000/JBIG2) com módulos .wasm; sem isto o navegador os recusa.
+	script += " 'wasm-unsafe-eval'"
 	csp := strings.Join([]string{
 		"default-src 'self'",
 		script,

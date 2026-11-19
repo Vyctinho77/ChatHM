@@ -16,6 +16,17 @@ import "./pdf-text-layer.css";
 
 GlobalWorkerOptions.workerSrc = workerSrc;
 
+// Decodificadores (JPEG2000, JBIG2, cor), fontes e mapas de caracteres do pdf.js, servidos de /pdfjs/ (veja vite.config.ts).
+// Sem eles, PDFs escaneados e com fontes fora do arquivo abrem como uma folha em branco.
+const PDFJS_BASE = `${import.meta.env.BASE_URL}pdfjs/`;
+const PDFJS_RESOURCES = {
+  wasmUrl: `${PDFJS_BASE}wasm/`,
+  cMapUrl: `${PDFJS_BASE}cmaps/`,
+  cMapPacked: true,
+  standardFontDataUrl: `${PDFJS_BASE}standard_fonts/`,
+  iccUrl: `${PDFJS_BASE}iccs/`,
+};
+
 export type ViewablePdf = Extract<Message, { kind: "document" }> & { url: string };
 
 const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
@@ -217,7 +228,7 @@ export function PdfViewer({ pdf, onClose }: { pdf: ViewablePdf; onClose: () => v
         const res = await fetch(pdf.url, { credentials: "include" });
         if (!res.ok) throw new Error("download");
         const data = new Uint8Array(await res.arrayBuffer());
-        loading = getDocument({ data });
+        loading = getDocument({ data, ...PDFJS_RESOURCES });
         const doc = await loading.promise;
         if (cancelled) return;
         const first = (await doc.getPage(1)).getViewport({ scale: 1 });
