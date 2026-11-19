@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type RefObject } from "react";
-import { loadTypoDictionary } from "./typos";
-import { findUnknownWords, loadSpellDictionary, suggest, type Unknown } from "./spell";
+import { findUnknownWords, suggest, type Unknown } from "./spell";
+import { warmUpSpelling } from "./warmup";
 import { SpellCard } from "./SpellCheck";
 import { ignoredWords, ignoreWord } from "./writingPrefs";
 
@@ -27,7 +27,7 @@ export function useSpellcheck(o: {
   useEffect(() => {
     if (!hasText || ready) return;
     let alive = true;
-    void Promise.all([loadSpellDictionary(), loadTypoDictionary()]).then(() => alive && setReady(true));
+    void warmUpSpelling().then(() => alive && setReady(true));
     return () => {
       alive = false;
     };

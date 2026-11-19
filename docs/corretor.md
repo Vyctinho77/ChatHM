@@ -64,6 +64,19 @@ Em qualquer outro lugar do campo, o botão direito abre o menu normal do navegad
 - O corretor do navegador fica desligado nesta caixa (`spellcheck=false`) para o sublinhado não aparecer duplicado.
 - **Ignorar esta palavra** usa o mesmo aprendizado do Backspace (vale 90 dias neste navegador).
 
+## Desempenho (a tela não pode travar)
+
+Medido num navegador de teste com a CPU reduzida em 4x e 6x (um computador bem mais fraco que o normal): digitar num texto longo, passar o mouse por cima de palavras sublinhadas e
+a primeira digitação do dia. Hoje: sem tarefa longa (>50 ms) na digitação nem ao passar o mouse; cada tecla pinta em ~30 ms mesmo a 6x.
+O que foi ajustado:
+- **Sugestões** (botão direito): antes gerava todas as combinações a 2 enganos e passava de 300 ms em palavra longa; agora é uma única varredura pela lista de palavras
+  com distância de edição que desiste cedo (milissegundos, qualquer tamanho de palavra). Teste de orçamento no `spell.test.ts`.
+- **Primeira vez**: os dicionários carregam quando o navegador está ocioso (em até 2,5 s), um de cada vez, e o vocabulário é montado em fatias de 4 mil palavras
+  (`warmup.ts`). Palavra só com ASCII (a maioria) não passa pela normalização de acentos.
+- **Sublinhado**: desenhado como imagem repetida (custo de pintura constante e o mesmo desenho em qualquer navegador) numa camada com pintura isolada
+  (`contain`), em vez de `text-decoration: wavy`.
+- Passar o mouse por cima do texto não dispara nenhuma renderização nem layout do corretor (medido: 0 layouts e 0 recálculos de estilo em 328 movimentos).
+
 ## Medição (sem tela)
 
 Para melhorar a lista com uso real, o corretor **conta**, por camada e por par "palavra digitada → palavra corrigida", quantas vezes a correção foi aplicada e quantas

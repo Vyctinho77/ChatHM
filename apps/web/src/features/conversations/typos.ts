@@ -53,37 +53,60 @@ certificado certificados contabil contabeis fiscal fiscais tributo tributos folh
     .split(/\s+/).filter(Boolean),
 );
 
-export const fold = (w: string) => w.normalize("NFD").replace(/\p{M}/gu, "");
+const ASCII = /^[\x00-\x7f]*$/; // eslint-disable-line no-control-regex
+/** Sem acentos e sem cedilha. Palavra só com ASCII (a maioria) passa direto, sem normalizar. */
+export const fold = (w: string) => (ASCII.test(w) ? w : w.normalize("NFD").replace(/\p{M}/gu, ""));
 
-type Dict = { variants: Map<string, string[]>; rank: Map<string, number>; exceptions: ReadonlySet<string> };
+type Dict = { variants: Map<string, string[]>; rank: Map<string, number>; exceptions: ReadonlySet<string>; keys: string[] };
 let dict: Dict | null = null;
 let loading: Promise<void> | null = null;
 
-/** `words` em ordem de frequência (acentuadas); `exceptions` sem acento. */
-export function setTypoDictionary(words: readonly string[] | null, exceptions: Iterable<string> = []) {
-  if (!words) return void (dict = null);
-  const variants = new Map<string, string[]>();
-  const rank = new Map<string, number>();
-  words.forEach((w, i) => {
+const SLICE = 4000; // palavras por fatia ao montar o vocabulário sem travar a tela
+const yieldToMain = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+function indexWords(words: readonly string[], from: number, to: number, variants: Map<string, string[]>, rank: Map<string, number>) {
+  for (let i = from; i < Math.min(to, words.length); i++) {
+    const w = words[i]!;
     rank.set(w, i);
     const f = fold(w);
     const list = variants.get(f);
     if (list) list.push(w);
     else variants.set(f, [w]);
-  });
-  dict = { variants, rank, exceptions: new Set(exceptions) };
+  }
 }
+
+/** `words` em ordem de frequência (acentuadas); `exceptions` sem acento. Monta tudo de uma vez (testes). */
+export function setTypoDictionary(words: readonly string[] | null, exceptions: Iterable<string> = []) {
+  if (!words) return void (dict = null);
+  const variants = new Map<string, string[]>();
+  const rank = new Map<string, number>();
+  indexWords(words, 0, words.length, variants, rank);
+  dict = { variants, rank, exceptions: new Set(exceptions), keys: [...variants.keys()] };
+}
+
+/** O mesmo, em fatias que devolvem o controle à tela entre si: o app não congela enquanto o vocabulário é montado. */
+async function buildTypoDictionary(words: readonly string[], exceptions: readonly string[]) {
+  const variants = new Map<string, string[]>();
+  const rank = new Map<string, number>();
+  for (let i = 0; i < words.length; i += SLICE) {
+    indexWords(words, i, i + SLICE, variants, rank);
+    await yieldToMain();
+  }
+  dict = { variants, rank, exceptions: new Set(exceptions), keys: [...variants.keys()] };
+}
+
 export const isTypoDictionaryLoaded = () => dict !== null;
 
 /** As palavras frequentes (para o verificador de palavras): `has` = é uma delas (como escrita), `variants` = sem acento → acentuadas, `rank` = frequência. */
-export function getTypoVocabulary(): { has: (w: string) => boolean; variants: ReadonlyMap<string, string[]>; rank: ReadonlyMap<string, number> } | null {
-  return dict ? { has: (w) => dict!.rank.has(w), variants: dict.variants, rank: dict.rank } : null;
+export function getTypoVocabulary(): { has: (w: string) => boolean; variants: ReadonlyMap<string, string[]>; rank: ReadonlyMap<string, number>; keys: readonly string[] } | null {
+  const d = dict;
+  return d ? { has: (w) => d.rank.has(w), variants: d.variants, rank: d.rank, keys: d.keys } : null;
 }
 
 /** Carrega os dados (dois arquivos separados, ~150 KB comprimidos no total). Chamar de novo não baixa de novo. */
 export function loadTypoDictionary(): Promise<void> {
   loading ??= Promise.all([import("./ptWords.data"), import("./ptTypoExceptions.data")])
-    .then(([w, e]) => setTypoDictionary(w.PT_WORDS.split(" "), e.PT_TYPO_EXCEPTIONS.split(" ")))
+    .then(([w, e]) => buildTypoDictionary(w.PT_WORDS.split(" "), e.PT_TYPO_EXCEPTIONS.split(" ")))
     .catch(() => {
       loading = null; // sem rede agora: tenta de novo na próxima vez
     });

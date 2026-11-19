@@ -102,25 +102,40 @@ export function findUnknownWords(text: string, caret: number, ignored: ReadonlyS
 }
 
 // --- sugestões ---
-const ALPHA = "abcdefghijklmnopqrstuvwxyz";
-
-function edits1(f: string): Set<string> {
-  const out = new Set<string>();
-  for (let i = 0; i <= f.length; i++) {
-    if (i < f.length) out.add(f.slice(0, i) + f.slice(i + 1));
-    if (i < f.length - 1) out.add(f.slice(0, i) + f[i + 1] + f[i] + f.slice(i + 2));
-    for (const c of ALPHA) {
-      if (i < f.length) out.add(f.slice(0, i) + c + f.slice(i + 1));
-      out.add(f.slice(0, i) + c + f.slice(i));
+/**
+ * Distância de edição (inserir, apagar, trocar uma letra ou duas vizinhas de lugar) entre `a` e `b`, parando assim que passa de `max`.
+ * Devolve max+1 quando passa. Rápida: palavras de comprimento muito diferente nem entram e cada linha da tabela corta cedo.
+ */
+export function editDistance(a: string, b: string, max: number): number {
+  const n = a.length;
+  const m = b.length;
+  if (Math.abs(n - m) > max) return max + 1;
+  let prev2: number[] = [];
+  let prev = Array.from({ length: m + 1 }, (_, j) => j);
+  for (let i = 1; i <= n; i++) {
+    const cur = [i];
+    let rowMin = i;
+    for (let j = 1; j <= m; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      let v = Math.min(prev[j]! + 1, cur[j - 1]! + 1, prev[j - 1]! + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) v = Math.min(v, prev2[j - 2]! + 1);
+      cur.push(v);
+      if (v < rowMin) rowMin = v;
     }
+    if (rowMin > max) return max + 1;
+    prev2 = prev;
+    prev = cur;
   }
-  out.delete(f);
-  return out;
+  return Math.min(prev[m]!, max + 1);
 }
 
 const withCase = (like: string, w: string) => (like !== like.toLowerCase() && like === like.charAt(0).toUpperCase() + like.slice(1).toLowerCase() ? w.charAt(0).toUpperCase() + w.slice(1) : w);
 
-/** Até `limit` sugestões para uma palavra que não existe: primeiro a correção que o corretor faria sozinho; depois as palavras frequentes a 1 e a 2 enganos. */
+/**
+ * Até `limit` sugestões para uma palavra que não existe: primeiro a correção que o corretor faria sozinho; depois as palavras frequentes a 1 e a 2
+ * enganos (a 2 só para palavras de 4+ letras), das mais próximas e mais comuns para as menos. Uma varredura só pela lista de ~30 mil palavras
+ * (milissegundos, qualquer que seja o tamanho da palavra).
+ */
 export function suggest(word: string, limit = 5, opts: CorrectOptions = {}): string[] {
   const out: string[] = [];
   const push = (w: string | undefined) => {
@@ -131,24 +146,19 @@ export function suggest(word: string, limit = 5, opts: CorrectOptions = {}): str
   const vocab = getTypoVocabulary();
   if (vocab && out.length < limit) {
     const f = fold(word.toLowerCase());
-    const rankOf = (w: string) => vocab.rank.get(w) ?? Infinity;
-    const near = (set: Iterable<string>) => {
-      const found: string[] = [];
-      for (const e of set) for (const w of vocab.variants.get(e) ?? []) found.push(w);
-      return found.sort((a, b) => rankOf(a) - rankOf(b));
-    };
-    const one = edits1(f);
-    for (const w of near(one)) {
+    const max = f.length >= 4 ? 2 : 1;
+    const near: { w: string; d: number; r: number }[] = [];
+    for (const key of vocab.keys) {
+      if (Math.abs(key.length - f.length) > max || key === f) continue;
+      const d = editDistance(f, key, max);
+      if (d > max) continue;
+      const w = vocab.variants.get(key)![0]!;
+      near.push({ w, d, r: vocab.rank.get(w) ?? Infinity });
+    }
+    near.sort((x, y) => x.d - y.d || x.r - y.r);
+    for (const { w } of near) {
       if (out.length >= limit) break;
       push(withCase(word, w));
-    }
-    if (out.length < limit && f.length >= 4) {
-      const two = new Set<string>();
-      for (const e of one) for (const e2 of edits1(e)) if (vocab.variants.has(e2) && !one.has(e2)) two.add(e2);
-      for (const w of near(two)) {
-        if (out.length >= limit) break;
-        push(withCase(word, w));
-      }
     }
   }
   return out.slice(0, limit);

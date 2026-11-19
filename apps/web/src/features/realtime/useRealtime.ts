@@ -9,6 +9,7 @@ import { applyInternalEvent } from "@/features/internal/api";
 import { pushNotice } from "@/lib/notices";
 import { applyTyping, clearTyping, type TypingUpdate } from "@/features/conversations/typing";
 import { playIncomingSound } from "@/lib/sounds";
+import { applyPresence, presenceKey, type Presence } from "@/features/team/presence";
 
 type ServerEvent =
   | { type: "conversation.updated"; data: Conversation }
@@ -19,7 +20,8 @@ type ServerEvent =
   | { type: "message.created"; data: Message }
   | { type: "message.updated"; data: Message }
   | { type: "whatsapp.status"; data: Omit<Connection, "qr" | "simulator"> }
-  | { type: "whatsapp.qr"; data: Connection["qr"] };
+  | { type: "whatsapp.qr"; data: Connection["qr"] }
+  | { type: "presence"; data: { userId: string; online: boolean } };
 // History import progresses independently from the live connection.
 type HistoryEvent = { type: "whatsapp.sync"; data: HistoryProgress } | { type: "contact.avatar"; data: { contactId: string } }
   | { type: "ai.suggestion"; data: { conversationId: string; id: string } }
@@ -77,6 +79,9 @@ export function applyRealtimeEvent(qc: QueryClient, ev: ServerEvent | HistoryEve
       });
       break;
     }
+    case "presence":
+      qc.setQueryData<Presence>(presenceKey, (old) => applyPresence(old, ev.data));
+      break;
     case "whatsapp.status":
       if (ev.data.state !== "connected") clearTyping();
       qc.setQueryData<Connection>(connectionKey, (old) => ({
@@ -155,6 +160,7 @@ export function useRealtime(enabled: boolean) {
           void qc.invalidateQueries({ queryKey: conversationKeys.list });
           void qc.invalidateQueries({ queryKey: connectionKey });
           void qc.invalidateQueries({ queryKey: reminderKey });
+          void qc.invalidateQueries({ queryKey: presenceKey }); // ficou um tempo sem receber entradas e saídas
         }
         attempt = 0;
         stopPolling();

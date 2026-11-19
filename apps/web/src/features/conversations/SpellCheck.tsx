@@ -2,18 +2,22 @@ import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "re
 import { createPortal } from "react-dom";
 import type { Unknown } from "./spell";
 
+// O sublinhado ondulado vermelho é uma imagem repetida (e não text-decoration: wavy): custo de pintura constante e o mesmo desenho em qualquer navegador.
+const SQUIGGLE = `url("data:image/svg+xml,${encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' width='6' height='4'><path d='M0 2 Q1.5 0 3 2 T6 2' fill='none' stroke='#ef4444' stroke-width='0.9'/></svg>")}")`;
+const SQUIGGLE_STYLE = { backgroundImage: SQUIGGLE, backgroundRepeat: "repeat-x", backgroundPosition: "0 100%", backgroundSize: "6px 4px" } as const;
+
 /** A camada por trás do texto: o mesmo texto, transparente, com as palavras que não existem sublinhadas. */
 export function SpellBackdrop({ text, unknown, backdrop, className }: { text: string; unknown: Unknown[]; backdrop: RefObject<HTMLDivElement | null>; className: string }) {
   const parts: React.ReactNode[] = [];
   let at = 0;
   unknown.forEach((u, i) => {
     parts.push(text.slice(at, u.start));
-    parts.push(<span key={u.start} data-spell={i} className="underline decoration-red-500 decoration-wavy decoration-1 underline-offset-[3px]">{text.slice(u.start, u.end)}</span>);
+    parts.push(<span key={u.start} data-spell={i} style={SQUIGGLE_STYLE} className="pb-px">{text.slice(u.start, u.end)}</span>);
     at = u.end;
   });
   parts.push(text.slice(at));
   return (
-    <div ref={backdrop} aria-hidden="true" className={`pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words text-transparent ${className}`}>
+    <div ref={backdrop} aria-hidden="true" className={`pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words text-transparent [contain:layout_paint_style] ${className}`}>
       {parts}
       {" "}
     </div>

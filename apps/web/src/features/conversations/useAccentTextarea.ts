@@ -1,8 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, type ChangeEvent, type KeyboardEvent, type RefObject } from "react";
 import { AccentController } from "./accentController";
-import { loadExtendedDictionary } from "./autocorrect";
 import { startStatsReporter } from "./autocorrectStats";
-import { loadTypoDictionary } from "./typos";
+import { warmUpSpelling } from "./warmup";
 import { ignoredWords, recordUndo } from "./writingPrefs";
 
 /**
@@ -15,10 +14,9 @@ export function useAccentTextarea(o: { ref: RefObject<HTMLTextAreaElement | null
   const controller = useMemo(() => new AccentController(() => ({ ignored: ignoredWords() }), (w) => void recordUndo(w)), []);
   const pending = useRef<number | null>(null);
 
-  // O dicionário estendido carrega uma vez, em segundo plano, na primeira vez que um campo de texto aparece.
+  // Os dicionários carregam uma vez, quando o navegador está ocioso, na primeira vez que um campo de texto aparece.
   useLayoutEffect(() => {
-    void loadExtendedDictionary();
-    void loadTypoDictionary();
+    void warmUpSpelling();
     startStatsReporter();
   }, []);
 

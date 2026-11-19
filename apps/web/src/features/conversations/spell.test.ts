@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { bloomHas, findUnknownWords, hashes, isKnownWord, isSpellDictionaryLoaded, setBloom, suggest } from "./spell";
+import { bloomHas, editDistance, findUnknownWords, hashes, isKnownWord, isSpellDictionaryLoaded, setBloom, suggest } from "./spell";
 import { setTypoDictionary } from "./typos";
 import { setExtendedDictionary, setSuffixRules } from "./autocorrect";
 import fixture from "./spell.fixture.json";
@@ -93,5 +93,38 @@ describe("sugestões", () => {
   });
   it("mantém a capitalização", () => {
     for (const w of suggest("Pessao")) expect(w[0]).toBe(w[0]!.toUpperCase());
+  });
+});
+
+describe("distância de edição", () => {
+  it("conta inserir, apagar, trocar uma letra e trocar duas vizinhas de lugar como 1", () => {
+    expect(editDistance("casa", "casa", 2)).toBe(0);
+    expect(editDistance("tmepo", "tempo", 2)).toBe(1); // vizinhas trocadas
+    expect(editDistance("obrigdo", "obrigado", 2)).toBe(1); // faltou
+    expect(editDistance("obrigaddo", "obrigado", 2)).toBe(1); // sobrou
+    expect(editDistance("obrigafo", "obrigado", 2)).toBe(1); // trocada
+    expect(editDistance("pessao", "pessoa", 2)).toBe(1);
+    expect(editDistance("tmpeo", "tempo", 2)).toBe(2);
+  });
+  it("devolve max+1 quando passa do limite, sem calcular tudo", () => {
+    expect(editDistance("casa", "tempo", 1)).toBe(2);
+    expect(editDistance("abc", "abcdefgh", 2)).toBe(3); // tamanhos muito diferentes
+    expect(editDistance("qzxwvk", "tempo", 2)).toBe(3);
+  });
+});
+
+describe("desempenho (a tela não pode travar)", () => {
+  it("sugestões saem em milissegundos mesmo para palavras longas", () => {
+    for (const w of ["asdfgh", "qzxwvkpd", "internacionalizacao", "anticonstitucionalissimamente", "xyzzyqrstuvwxyz"]) {
+      const t0 = performance.now();
+      suggest(w);
+      expect(performance.now() - t0, w).toBeLessThan(120);
+    }
+  });
+  it("achar as palavras inexistentes de uma mensagem grande é rápido", () => {
+    const text = Array.from({ length: 80 }, (_, i) => `Mensagem de teste ${i} com qzxwvk e asdfgh no meio do texto digitado aqui. `).join("");
+    const t0 = performance.now();
+    for (let i = 0; i < 10; i++) findUnknownWords(text, 0);
+    expect((performance.now() - t0) / 10).toBeLessThan(30);
   });
 });

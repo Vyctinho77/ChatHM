@@ -156,6 +156,7 @@ func NewRouter(d Deps) http.Handler {
 			autoH.Routes(r)
 			chatH.Routes(r)
 			writingH.Routes(r)
+			r.Get("/presence", d.Hub.PresenceHandler())
 			r.Get("/ws", d.Hub.Handler(validateWS))
 
 			r.Group(func(r chi.Router) {

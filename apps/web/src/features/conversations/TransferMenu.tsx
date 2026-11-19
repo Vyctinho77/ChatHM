@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Check } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { usePeople, type Person } from "@/features/team/api";
+import { useOnline } from "@/features/team/presence";
 import { Spinner } from "@/components/ui";
 import type { Conversation } from "./types";
 
@@ -32,6 +33,7 @@ export function TransferMenu({
 }) {
   const participants = variant === "participants";
   const { data: people, isPending } = usePeople();
+  const online = useOnline();
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y });
 
@@ -68,7 +70,10 @@ export function TransferMenu({
       style={pos}
       className="fixed z-50 max-h-[70vh] w-64 overflow-y-auto rounded-xl border border-line bg-panel py-1 shadow-xl"
     >
-      <p className="px-3 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wide text-muted">{participants ? "Pessoas neste atendimento" : "Transferir para"}</p>
+      <p className="flex items-center justify-between gap-2 px-3 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wide text-muted">
+        <span>{participants ? "Pessoas neste atendimento" : "Transferir para"}</span>
+        <span className="flex items-center gap-1 text-[10.5px] font-normal normal-case tracking-normal"><span aria-hidden className="size-2 rounded-full bg-emerald-500" />{people ? people.filter((p) => online.has(p.id)).length : 0} online</span>
+      </p>
       {participants && canTransfer && <p className="px-3 pb-1.5 text-[12px] text-muted">Quem for incluída vê a conversa e responde, sem tirar {c.assignee ? c.assignee.name : "o responsável"}. Clique de novo para tirar.</p>}
       {!canTransfer && (
         <p className="px-3 pb-2 text-[12px] text-muted">
@@ -96,11 +101,15 @@ export function TransferMenu({
             }}
             className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Avatar name={p.name} size="sm" />
+            <span className="relative shrink-0">
+              <Avatar name={p.name} size="sm" />
+              {online.has(p.id) && <span aria-hidden data-testid={`online-${p.id}`} className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full bg-emerald-500 ring-2 ring-panel" />}
+            </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[13px]">
                 {p.name}
                 {p.id === myId && <span className="text-muted"> (você)</span>}
+                {online.has(p.id) && <span className="sr-only"> (online)</span>}
               </span>
               {p.teams.length > 0 && <span className="block truncate text-[11px] text-muted">{p.teams.join(", ")}</span>}
             </span>
