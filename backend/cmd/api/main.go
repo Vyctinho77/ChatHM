@@ -52,6 +52,8 @@ func run() error {
 		return err
 	}
 	defer pool.Close()
+	// Se a ligação com o banco morrer em silêncio, recria as conexões; se não voltar, reinicia o app (o Docker o sobe de novo).
+	go database.Watch(ctx, pool, database.WatchOptions{Logger: logger, OnGiveUp: func() { os.Exit(1) }})
 
 	if cfg.AutoMigrate {
 		if err := migrations.Up(ctx, cfg.DatabaseURL); err != nil {
