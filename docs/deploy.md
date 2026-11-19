@@ -96,3 +96,5 @@ Há alguns segundos de indisponibilidade enquanto o app reinicia.
 - **Troca**: o `HEALTHCHECK` confere a cada 2 s na partida (`--start-interval`) e o script confere a cada 2 s: o app fica "healthy" em poucos segundos (antes, o Docker só olhava depois de 30 s inteiros, e a troca levava ~33 s).
 - **Dica de quem acompanha**: consulte o estado do projeto auxiliar (`Exited`) a cada 15–20 s em vez de esperar um tempo fixo, e leia os logs só no fim. Dormir 4 minutos por garantia somava 1 a 3 minutos à toa em cada publicação.
 - O cache de build ocupa espaço (hoje ~6 GB de 47 GB). Se precisar liberar, `docker builder prune` apaga o cache (a próxima construção volta a ~2 min).
+
+> **Para o Claude:** o passo a passo exato de publicação (ferramentas, regras, verificações, rollback) está em [`deploy-claude.md`](deploy-claude.md).
