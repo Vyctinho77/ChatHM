@@ -357,7 +357,7 @@ export function ChatPanel({
         >
           <span className="min-w-0">
             <span className="flex min-w-0 items-center gap-2">
-              <span className="truncate text-[13.5px] font-semibold">{contactTitle}</span>
+              <span className="truncate text-[14.2px] font-semibold">{contactTitle}</span>
               <span
                 title={
                   c.classification === "conflict"

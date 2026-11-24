@@ -234,7 +234,7 @@ function Simulator() {
   }
   return (
     <section className="border-t border-line px-5 py-6">
-      <h2 className="flex items-center gap-2 text-[13.5px] font-semibold">
+      <h2 className="flex items-center gap-2 text-[14.2px] font-semibold">
         <MessageSquarePlus className="size-4 text-muted" /> Testar uma conversa
       </h2>
       <p className="mt-1 text-xs text-muted">Envie uma mensagem fictícia para ver como ela aparece em Conversas.</p>

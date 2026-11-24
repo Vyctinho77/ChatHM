@@ -387,7 +387,7 @@ export function Composer({
           <input ref={hdInput} type="file" multiple accept="image/jpeg,image/png,image/webp" hidden onChange={onFile("image", true)} />
 
           <div className="relative mx-1 min-w-0 flex-1">
-          <SpellBackdrop text={text} unknown={spell.unknown} backdrop={spell.backdrop} className="px-2 py-2 text-[13.5px] leading-5" />
+          <SpellBackdrop text={text} unknown={spell.unknown} backdrop={spell.backdrop} className="px-2 py-2 text-[14.2px] leading-[19px]" />
           <textarea
             ref={ta}
             rows={1}
@@ -404,7 +404,7 @@ export function Composer({
             onContextMenu={spell.onContextMenu}
             {...accent.attrs}
             spellCheck={false} // o sublinhado e o cartão de sugestões são do ChatHM (useSpellcheck); o do navegador ficaria duplicado
-            className="relative z-10 block max-h-40 min-h-9 w-full min-w-0 resize-none bg-transparent px-2 py-2 text-[13.5px] leading-5 outline-none placeholder:text-muted focus-visible:outline-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="relative z-10 block max-h-40 min-h-9 w-full min-w-0 resize-none bg-transparent px-2 py-2 text-[14.2px] leading-[19px] outline-none placeholder:text-muted focus-visible:outline-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           />
           {spell.card}
           </div>

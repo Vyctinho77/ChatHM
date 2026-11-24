@@ -66,7 +66,7 @@ export function AiSuggestions({
             <Bot className="size-4" /> {s.intent === "send" ? "A IA pediu para enviar esta mensagem" : "Rascunho da IA"}
             <span className="font-normal text-muted">· nada foi enviado ao cliente</span>
           </p>
-          <p className="mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-[13.5px]">{s.text}</p>
+          <p className="mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-[14.2px]">{s.text}</p>
           {error && <p role="alert" className="mt-1.5 text-xs text-danger">{error}</p>}
           <div className="mt-2 flex flex-wrap items-center justify-end gap-1.5">
             <Button type="button" variant="ghost" disabled={busy} onClick={() => (setError(""), discard.mutate(s.id))}>

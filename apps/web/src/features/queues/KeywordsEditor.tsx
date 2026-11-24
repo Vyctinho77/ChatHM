@@ -90,7 +90,7 @@ export function KeywordsSections({ segment: s, isAdmin }: { segment: Segment; is
 function ResultSummary({ result, onClose }: { result: BulkResult; onClose: () => void }) {
   const shared = result.added.filter((k) => k.sharedWith?.length);
   return (
-    <div className="flex flex-col gap-3 text-[13.5px]">
+    <div className="flex flex-col gap-3 text-[14.2px]">
       <p>
         {result.added.length === 0
           ? "Nenhuma palavra nova foi adicionada."
@@ -276,7 +276,7 @@ function TestModal({ open, onClose }: { open: boolean; onClose: () => void }) {
         </label>
         {test.isError && <Alert>{errorMessage(test.error)}</Alert>}
         {r && (
-          <div className={cn("rounded-lg border border-line p-3 text-[13.5px]")} role="status">
+          <div className={cn("rounded-lg border border-line p-3 text-[14.2px]")} role="status">
             {r.reason === "keyword" && (
               <p>
                 Iria para a fila <strong className="font-medium">{nameOf(r.segmentKey)}</strong>.
@@ -348,7 +348,7 @@ function KeywordModal({ segmentId, k, isAdmin, onClose }: { segmentId: string; k
             type="button"
             disabled={remove.isPending}
             onClick={() => remove.mutate({ segmentId, id: k.id }, { onSuccess: onClose })}
-            className="rounded-lg px-2 py-1.5 text-[13.5px] text-danger hover:bg-hover disabled:opacity-60"
+            className="rounded-lg px-2 py-1.5 text-[14.2px] text-danger hover:bg-hover disabled:opacity-60"
           >
             Remover
           </button>

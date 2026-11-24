@@ -93,7 +93,7 @@ export function MessageMenu({ message: m, x, y, onReply, onForward, onEdit, onDe
       type="button"
       role="menuitem"
       onClick={onClick}
-      className={cn("flex w-full items-center gap-3 px-3.5 py-2 text-left text-[13.5px] hover:bg-hover [&>svg]:size-[18px] [&>svg]:shrink-0", opts?.danger ? "text-danger" : "[&>svg]:text-muted")}
+      className={cn("flex w-full items-center gap-3 px-3.5 py-2 text-left text-[14.2px] hover:bg-hover [&>svg]:size-[18px] [&>svg]:shrink-0", opts?.danger ? "text-danger" : "[&>svg]:text-muted")}
     >
       {icon}
       {label}

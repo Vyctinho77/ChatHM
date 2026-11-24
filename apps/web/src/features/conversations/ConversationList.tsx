@@ -349,7 +349,7 @@ const ConversationRow = memo(function ConversationRow({
         <div className="relative min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <div className="flex min-w-0 flex-1 items-center gap-1.5">
-              <span className="truncate text-[13.5px] font-medium">{c.contact.name}</span>
+              <span className="truncate text-[14.2px] font-medium">{c.contact.name}</span>
               {c.tags[0] && <span title={c.tags[0]} className="max-w-[45%] shrink-0 truncate rounded-full border border-line px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wide text-fg/75">{c.tags[0]}</span>}
               {c.tags.length > 1 && <span title={c.tags.slice(1).join(", ")} aria-label={`Outras etiquetas: ${c.tags.slice(1).join(", ")}`} className="shrink-0 text-[10px] font-medium text-muted">+{c.tags.length - 1}</span>}
             </div>

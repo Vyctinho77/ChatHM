@@ -181,7 +181,7 @@ function DeleteModal({
   const remove = useDeleteSegment();
   return (
     <Modal open={open} onClose={onClose} title="Excluir segmento">
-      <p className="text-[13.5px]">
+      <p className="text-[14.2px]">
         Excluir <strong className="font-medium">{segment.name}</strong>? As conversas dele voltam para a fila Não atribuídos e
         passam a ser visíveis a todos os usuários.
       </p>

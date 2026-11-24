@@ -249,7 +249,7 @@ export function InternalChatPanel({ onBack }: { onBack?: () => void }) {
             <MessagesSquare className="size-5" aria-hidden />
           </span>
           <span className="min-w-0">
-            <span className="block truncate text-[13.5px] font-semibold">Chat interno</span>
+            <span className="block truncate text-[14.2px] font-semibold">Chat interno</span>
             <span className="block truncate text-[11.5px] text-muted">{subtitle}</span>
           </span>
         </button>

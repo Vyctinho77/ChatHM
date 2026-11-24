@@ -118,12 +118,12 @@ function Tester({ segments }: { segments: Segment[] }) {
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Ex.: quero emitir uma nota"
-          className="h-9 min-w-0 flex-1 rounded-lg bg-elevated px-3 text-[13.5px] outline-none placeholder:text-muted"
+          className="h-9 min-w-0 flex-1 rounded-lg bg-elevated px-3 text-[14.2px] outline-none placeholder:text-muted"
         />
         <button
           type="submit"
           disabled={!text.trim() || classify.isPending}
-          className="h-9 shrink-0 rounded-lg px-3 text-[13.5px] font-medium text-brand-ink hover:bg-hover disabled:opacity-50"
+          className="h-9 shrink-0 rounded-lg px-3 text-[14.2px] font-medium text-brand-ink hover:bg-hover disabled:opacity-50"
         >
           Testar
         </button>
@@ -168,7 +168,7 @@ function NewSegmentModal({ open, onClose, onCreated }: { open: boolean; onClose:
           <button
             type="button"
             onClick={() => setPicking(true)}
-            className="flex items-center justify-between rounded-lg border border-line px-3 py-2.5 text-left text-[13.5px] hover:bg-hover"
+            className="flex items-center justify-between rounded-lg border border-line px-3 py-2.5 text-left text-[14.2px] hover:bg-hover"
           >
             <span>Equipe</span>
             <span className="text-muted">{teamName ?? "Ninguém (visível a todos)"}</span>

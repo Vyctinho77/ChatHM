@@ -37,7 +37,7 @@ export function SearchResults({
                 >
                   <Avatar name={c.name} src={c.avatarUrl} group={c.kind === "group"} size="list" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13.5px] font-medium">
+                    <span className="block truncate text-[14.2px] font-medium">
                       <Highlight text={c.name} term={term} />
                     </span>
                     <span className="block truncate text-xs text-muted">
@@ -64,7 +64,7 @@ export function SearchResults({
                 className="flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left hover:bg-hover"
               >
                 <span className="flex items-baseline gap-2">
-                  <span className="truncate text-[13.5px] font-medium">{h.contactName}</span>
+                  <span className="truncate text-[14.2px] font-medium">{h.contactName}</span>
                   <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted">{formatListTime(h.sentAt)}</span>
                 </span>
                 <span className="line-clamp-2 break-words text-[12.5px] text-muted">

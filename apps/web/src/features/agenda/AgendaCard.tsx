@@ -154,7 +154,7 @@ function DayView({ date, items, teamNames, onView, onClose }: Props & { date: st
             >
               <span className={cn("size-2 shrink-0 rounded-full", kindDot(i.kind))} />
               <span className="w-11 shrink-0 text-[12px] tabular-nums text-muted">{i.time ?? "dia todo"}</span>
-              <span className={cn("min-w-0 flex-1 truncate text-[13.5px]", i.done && "text-muted line-through")}>{i.title}</span>
+              <span className={cn("min-w-0 flex-1 truncate text-[14.2px]", i.done && "text-muted line-through")}>{i.title}</span>
             </button>
           </li>
         ))}
@@ -164,7 +164,7 @@ function DayView({ date, items, teamNames, onView, onClose }: Props & { date: st
           type="button"
           disabled={teamNames.length === 0}
           onClick={() => onView({ type: "form", date })}
-          className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[13.5px] font-medium text-brand-ink hover:bg-hover"
+          className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[14.2px] font-medium text-brand-ink hover:bg-hover"
         >
           <Plus className="size-4" /> Novo neste dia
         </button>

@@ -83,7 +83,7 @@ export function EditableName({
             if (e.key === "Enter") void save();
             if (e.key === "Escape") cancel();
           }}
-          className="h-8 min-w-0 flex-1 rounded-lg border border-line bg-elevated px-2.5 text-[13.5px] font-normal outline-none focus:border-accent"
+          className="h-8 min-w-0 flex-1 rounded-lg border border-line bg-elevated px-2.5 text-[14.2px] font-normal outline-none focus:border-accent"
         />
         <IconButton label="Salvar nome" onClick={() => void save()} disabled={saving} className="size-7 shrink-0">
           <Check className="size-4" />

@@ -459,7 +459,7 @@ export function MessageBubble({
       >
       <div
         className={cn(
-          "group/msg relative rounded-lg text-[13.5px] leading-[1.4] transition-shadow duration-300",
+          "group/msg relative rounded-lg text-[14.2px] leading-[19px] transition-shadow duration-300",
           sticker ? "p-0" : m.kind === "image" ? "p-[3px]" : "px-2.5 py-[5px]",
           !sticker && (startsGroup ? "bubble-with-tail" : out ? "bg-out" : "bg-in"),
           !sticker && startsGroup && (out ? "bubble-with-tail-out" : "bubble-with-tail-in"),

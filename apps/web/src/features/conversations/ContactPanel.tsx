@@ -32,7 +32,7 @@ export function ContactPanel({ conversation: c, onClose }: { conversation: Conve
         <IconButton label="Fechar dados do contato" onClick={onClose}>
           <X className="size-5" />
         </IconButton>
-        <h2 className="text-[13.5px] font-semibold">Dados do contato</h2>
+        <h2 className="text-[14.2px] font-semibold">Dados do contato</h2>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
