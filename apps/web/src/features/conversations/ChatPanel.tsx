@@ -550,7 +550,9 @@ export function ChatPanel({
       )}
 
       <div className="relative min-h-0 flex-1">
-      <div ref={scroller} onScroll={onScroll} className="h-full overflow-y-auto px-3 py-3 sm:px-4">
+      {/* overflow-anchor: none — a posição ao carregar o histórico antigo é corrigida à mão (anchorHeight); com a âncora automática
+          do navegador ligada as duas correções se somavam e a lista pulava para o fim antes de voltar. */}
+      <div ref={scroller} onScroll={onScroll} className="h-full overflow-y-auto px-3 py-3 sm:px-4 [overflow-anchor:none]">
         {isPending && <ChatSkeleton />}
         <motion.div
           className="flex flex-col gap-2"

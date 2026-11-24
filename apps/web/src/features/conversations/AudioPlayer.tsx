@@ -4,27 +4,10 @@ import { Avatar } from "@/components/Avatar";
 import { cn } from "@/lib/cn";
 import { formatDuration, formatTime } from "@/lib/format";
 import { markHeard, useHeard } from "./audioHeard";
+import { playableUrl, seekTrack, toggleTrack, useAudioView } from "./audioEngine";
 import { decodeWave, shapeWave, speechWave } from "./waveform";
 
 const DEMO = import.meta.env.VITE_DEMO === "1";
-
-/** Aparelhos antigos (sobretudo iPhones) não tocam Ogg/Opus, o formato guardado. Eles recebem o mesmo áudio em AAC (.m4a), convertido pelo servidor. */
-let oggOpusUnsupported: boolean | undefined;
-function cannotPlayOggOpus(): boolean {
-  if (oggOpusUnsupported === undefined) {
-    try {
-      oggOpusUnsupported = typeof document !== "undefined" && document.createElement("audio").canPlayType('audio/ogg; codecs="opus"') === "";
-    } catch {
-      oggOpusUnsupported = false;
-    }
-  }
-  return oggOpusUnsupported;
-}
-
-/** Endereço da versão em AAC do áudio (só para anexos do servidor). */
-function m4aUrl(url: string): string {
-  return url.startsWith("/api/") ? `${url}${url.includes("?") ? "&" : "?"}format=m4a` : url;
-}
 
 /**
  * Player de mensagem de voz: foto de quem enviou com o ícone de microfone, play e barras finas, tudo
@@ -35,6 +18,8 @@ function m4aUrl(url: string): string {
  */
 export function AudioPlayer({
   id,
+  conversationId,
+  label,
   durationSec,
   waveform,
   url,
@@ -47,6 +32,9 @@ export function AudioPlayer({
 }: {
   /** Id da mensagem: é por ele que o ChatHM lembra que o áudio já foi ouvido. */
   id: string;
+  /** Conversa e nome do contato: o controle em segundo plano (AudioBar) mostra de quem é o áudio e volta para ele. */
+  conversationId: string;
+  label: string;
   durationSec: number;
   waveform?: number[];
   url?: string;
@@ -59,16 +47,12 @@ export function AudioPlayer({
   avatarSrc?: string;
   group?: boolean;
 }) {
-  const audio = useRef<HTMLAudioElement>(null);
   const waveBox = useRef<HTMLDivElement>(null);
   const heard = useHeard(id);
 
-  // Ogg/Opus primeiro; se o aparelho não toca (ou falha), tenta o AAC; se também falhar, avisa e oferece baixar.
-  const [useM4a, setUseM4a] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const retryPlay = useRef(false);
-  const m4a = !!url && (useM4a || cannotPlayOggOpus());
-  const src = url && m4a ? m4aUrl(url) : url;
+  // O <audio> não fica aqui (ver audioEngine.ts): o som segue ao sair da conversa. O balão só mostra e comanda.
+  const view = useAudioView(id);
+  const src = url ? playableUrl(url) : undefined;
 
   // Onda: a do provedor (realçada) → a decodificada do arquivo quando o áudio aparece na tela → uma parecida com fala.
   const [decoded, setDecoded] = useState<number[] | null>(null);
@@ -94,8 +78,12 @@ export function AudioPlayer({
   const bars = useMemo(() => (waveform?.length ? shapeWave(waveform) : (decoded ?? speechWave(id))), [waveform, decoded, id]);
 
   const unavailable = !url && !DEMO;
-  const [playing, setPlaying] = useState(false);
-  const [pos, setPos] = useState(0); // segundos
+  // Sem arquivo (só na demonstração) a reprodução é simulada aqui; com arquivo, vem do audioEngine.
+  const [simPlaying, setSimPlaying] = useState(false);
+  const [simPos, setSimPos] = useState(0); // segundos
+  const playing = url ? view.playing : simPlaying;
+  const pos = url ? view.pos : simPos;
+  const failed = url ? view.failed : false;
 
   // Enviado: branco até o cliente ouvir; depois azul claro. Recebido: verde até eu ouvir; depois azul.
   const tone = outgoing
@@ -107,70 +95,37 @@ export function AudioPlayer({
       : { text: "text-audio-new", on: "bg-audio-new", off: "bg-audio-new/35", ring: "ring-in" };
 
   useEffect(() => {
-    if (!playing || url) return;
-    const started = performance.now() - pos * 1000;
+    if (!simPlaying || url) return;
+    const started = performance.now() - simPos * 1000;
     let raf = 0;
     const tick = () => {
       const t = (performance.now() - started) / 1000;
       if (t >= durationSec) {
-        setPos(0);
-        setPlaying(false);
+        setSimPos(0);
+        setSimPlaying(false);
         return;
       }
-      setPos(t);
+      setSimPos(t);
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reinicia só ao tocar/pausar
-  }, [playing, url, durationSec]);
-
-  /** O aparelho não conseguiu tocar: tenta a versão em AAC (uma vez) e, se também não der, avisa. */
-  function fail() {
-    setPlaying(false);
-    if (m4a || !url || !url.startsWith("/api/")) {
-      setFailed(true);
-      return;
-    }
-    if (retryPlay.current) return; // erro e rejeição do play() chegam juntos: conta uma vez só
-    retryPlay.current = true;
-    setUseM4a(true);
-  }
-
-  // Depois de trocar para o AAC, continua de onde a pessoa pediu: tocar.
-  useEffect(() => {
-    if (!retryPlay.current || !useM4a) return;
-    retryPlay.current = false;
-    const el = audio.current;
-    if (!el) return;
-    el.load();
-    el.play().catch(() => {
-      setPlaying(false);
-      setFailed(true);
-    });
-  }, [useM4a]);
+  }, [simPlaying, url, durationSec]);
 
   function toggle() {
     if (!outgoing) markHeard(id);
-    const el = audio.current;
-    if (url && el) {
-      if (el.paused) {
-        // Só um áudio toca por vez.
-        document.querySelectorAll("audio").forEach((a) => a !== el && a.pause());
-        setFailed(false);
-        el.play().catch(() => fail());
-      } else {
-        el.pause();
-      }
-      return; // o estado "tocando" vem dos eventos do <audio> (onPlay/onPause)
+    if (url) {
+      toggleTrack({ id, conversationId, url, label, durationSec, outgoing: !!outgoing });
+      return; // o estado "tocando" vem do audioEngine
     }
-    setPlaying((p) => !p);
+    setSimPlaying((p) => !p);
   }
 
   function seek(fraction: number) {
     const t = fraction * durationSec;
-    setPos(t);
-    if (audio.current) audio.current.currentTime = t;
+    if (url) seekTrack({ id }, t);
+    else setSimPos(t);
   }
 
   const progress = durationSec ? pos / durationSec : 0;
@@ -197,24 +152,6 @@ export function AudioPlayer({
   return (
     <div className="flex w-60 min-w-0 max-w-full items-start gap-2 py-0.5">
       {!outgoing && avatar}
-      {url && (
-        <audio
-          ref={audio}
-          src={src}
-          preload="metadata"
-          onPlay={() => {
-            setPlaying(true);
-            if (!outgoing) markHeard(id);
-          }}
-          onPause={() => setPlaying(false)}
-          onError={fail}
-          onTimeUpdate={(e) => setPos(e.currentTarget.currentTime)}
-          onEnded={() => {
-            setPlaying(false);
-            setPos(0);
-          }}
-        />
-      )}
       <div className="flex h-10 shrink-0 items-center">
         <button
           type="button"

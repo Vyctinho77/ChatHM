@@ -8,6 +8,7 @@ import { DEMO } from "@/lib/env";
 import { useRealtime } from "@/features/realtime/useRealtime";
 import { useAppSounds } from "@/lib/sounds";
 import { NoticeHost } from "@/components/NoticeHost";
+import { AudioBar } from "@/features/conversations/AudioBar";
 import { Sidebar } from "./Sidebar";
 import { useVersionCheck } from "./useVersionCheck";
 import { TopBar } from "./TopBar";
@@ -31,6 +32,7 @@ export function AppShell({ me }: { me: Me }) {
   return (
     <div className="flex h-full flex-col bg-app">
       <NoticeHost />
+      <AudioBar />
       {!desktop && <TopBar onOpenMenu={() => setDrawer(true)} />}
 
       <div className="min-h-0 flex-1">

@@ -1,5 +1,6 @@
 import { silenceSoundsForRecording } from "@/lib/sounds";
 import { getVoicePrefs, type VoicePrefs } from "./voicePrefs";
+import { pause } from "./audioEngine";
 
 /** Restrições do microfone. Redução de ruído e eco seguem a preferência da pessoa (Configurações → Microfone); o ganho automático fica desligado. */
 export function voiceConstraints(prefs: VoicePrefs = getVoicePrefs()): MediaTrackConstraints {
@@ -19,6 +20,7 @@ export async function openVoiceCapture(): Promise<VoiceCapture> {
   const input = await navigator.mediaDevices.getUserMedia({ audio: voiceConstraints() });
   const releaseSounds = silenceSoundsForRecording();
   document.querySelectorAll("audio").forEach(audio => audio.pause());
+  pause(); // o áudio das conversas toca fora das telas (audioEngine): também para, para não entrar na gravação
   let context: AudioContext | undefined;
   let output: MediaStream | undefined;
   let disposed = false;

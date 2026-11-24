@@ -15,6 +15,7 @@ import { RichText } from "@/components/RichText";
 import { FormattedText } from "@/components/FormattedText";
 import { Ticks } from "./Ticks";
 import type { Message, Quoted } from "./types";
+import { ownsGesture } from "./menuGesture";
 
 /** Os tipos que esta versão sabe desenhar; os outros (de uma versão mais nova do servidor) ganham um aviso em vez de um balão vazio. */
 const KNOWN_KINDS = new Set(["text", "audio", "document", "image", "sticker", "unsupported", "location", "conversation"]);
@@ -174,6 +175,7 @@ function ImageBody({
             type="button"
             onClick={() => (onOpen ? onOpen(m.id) : window.open(m.url, "_blank", "noopener"))}
             aria-label="Abrir imagem"
+            data-menu-surface
             className="block w-full cursor-zoom-in"
           >
             <ProgressiveImage m={m} alt={caption ?? "Imagem"} />
@@ -407,7 +409,7 @@ export function MessageBubble({
     <div
       className={cn("msg-row flex", out ? "justify-end" : "justify-start")}
       onPointerDown={onMenu ? (e) => {
-        if (e.pointerType === "mouse" || (e.target as HTMLElement).closest("a, button, input, textarea, audio")) return;
+        if (e.pointerType === "mouse" || ownsGesture(e.target as HTMLElement, "a, button, input, textarea, audio")) return;
         cancelPress();
         longPressed.current = false;
         const { clientX: x, clientY: y } = e;
@@ -436,8 +438,9 @@ export function MessageBubble({
           longPressed.current = false;
           return;
         }
-        // Links, textos selecionados e imagens mantêm o menu do navegador.
-        if ((e.target as HTMLElement).closest("a, button, input, textarea") || window.getSelection()?.toString()) return;
+        // Links, botões, campos e textos selecionados mantêm o menu do navegador. A imagem é um botão (abre o visualizador), mas
+        // também é a mensagem: clicar com o botão direito nela abre o nosso menu, como no resto do balão.
+        if (ownsGesture(e.target as HTMLElement, "a, button, input, textarea") || window.getSelection()?.toString()) return;
         e.preventDefault();
         onMenu(m, e.clientX, e.clientY);
       } : undefined}
@@ -504,6 +507,8 @@ export function MessageBubble({
           <div className="flex flex-col">
             <AudioPlayer
               id={m.id}
+              conversationId={m.conversationId}
+              label={contact?.name ?? m.authorName ?? "contato"}
               durationSec={m.durationSec}
               waveform={m.waveform}
               url={m.url}
