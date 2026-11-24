@@ -26,7 +26,7 @@ export function QuickReactions({ current, onPick, onMore }: { current?: string; 
           onClick={() => onPick(e)}
           aria-label={`Reagir com ${e}`}
           aria-pressed={current === e}
-          className={cn("flex size-9 items-center justify-center rounded-full text-[22px] leading-none transition-transform hover:scale-125 hover:bg-hover", current === e && "bg-brand/15")}
+          className={cn("flex size-9 items-center justify-center rounded-full text-[22px] leading-none transition-transform hover:scale-125 hover:bg-hover", current === e && "bg-hover")}
         >
           <Emoji char={e} />
         </button>
@@ -61,7 +61,7 @@ const Cell = memo(function Cell({ char, label, onPick }: { char: string; label: 
  * Cartela completa de emojis (a que abre no "+"): abas por assunto, busca em português ("coração", "sorrindo"), recentes primeiro.
  * Os nomes vêm da emojibase (Unicode CLDR) e carregam só ao abrir; a arte é a Noto Color Emoji.
  */
-export function EmojiPicker({ onPick, className }: { onPick: (emoji: string) => void; className?: string }) {
+export function EmojiPicker({ onPick, className, searchLabel = "Pesquisar reação" }: { onPick: (emoji: string) => void; className?: string; searchLabel?: string }) {
   ensureEmojiFont();
   const [cats, setCats] = useState<EmojiCategory[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -130,13 +130,13 @@ export function EmojiPicker({ onPick, className }: { onPick: (emoji: string) => 
         })}
       </div>
       <div className="shrink-0 px-3 pt-2.5">
-        <label className="flex items-center gap-2 rounded-full border border-line bg-app px-3 py-1.5 focus-within:border-brand focus-within:ring-1 focus-within:ring-brand">
+        <label className="flex items-center gap-2 rounded-full border border-line bg-app px-3 py-1.5 focus-within:border-muted">
           <Search className="size-4 shrink-0 text-muted" aria-hidden />
           <input
             ref={search}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Pesquisar reação"
+            placeholder={searchLabel}
             aria-label="Pesquisar emoji"
             className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
           />
@@ -185,8 +185,9 @@ export function ReactionChips({ reactions, onToggle, className }: { reactions: R
           aria-label={`${r.emoji} ${r.count > 1 ? `${r.count} reações` : "1 reação"}${r.mine ? " (sua)" : ""}`}
           aria-pressed={r.mine}
           className={cn(
-            "inline-flex h-[22px] items-center gap-0.5 rounded-full border bg-panel px-1.5 text-[13px] leading-none text-fg shadow-sm",
-            r.mine ? "border-brand" : "border-line",
+            // Sem contorno (nem verde): a pílula é só o fundo do tema (claro ou escuro) com uma sombra leve; a minha fica um tom mais forte.
+            "inline-flex h-[22px] items-center gap-0.5 rounded-full px-1.5 text-[13px] leading-none text-fg shadow-sm shadow-black/15",
+            r.mine ? "bg-hover" : "bg-panel",
             onToggle ? "cursor-pointer hover:bg-hover" : "cursor-default",
           )}
         >

@@ -25,7 +25,9 @@ Como no WhatsApp: botão direito numa mensagem → barra com 👍 ❤️ 😂 �
   Se atualizar o pacote, repita a conferência (renderizar todos e contar os vazios).
 - **Nomes e busca:** `emojibase-data` em português (MIT; dados do Unicode CLDR), carregados só ao abrir a cartela (`emojiData.ts`). A busca ignora acento e caixa e entende
   apelidos ("kkk" acha 😂, "dedão" acha 👍, "valeu" também). Sem tons de pele (um emoji por conceito). Recentes ficam só neste navegador.
-- O texto das mensagens e o campo de escrever continuam usando o emoji do sistema (não mudou).
+- **Campo de mensagem:** o botão de emoji abre a mesma cartela (busca "Pesquisar emoji"). O emoji entra onde está o cursor (ou no lugar do trecho selecionado) e a cartela fica aberta para escolher mais; fecha com Esc ou clique fora.
+  O texto digitado e os balões continuam com o emoji do sistema.
+- **Visual das reações:** sem contorno verde nos chips, na barra e na busca; o chip é só o fundo do tema (claro ou escuro) com sombra leve, e o seu fica um tom mais forte.
 
 ## 3. O que o cliente vê
 Reação e emoji são caracteres Unicode: o WhatsApp do cliente desenha com a arte dele. A arte escolhida aqui muda só o que a equipe vê.
@@ -33,5 +35,4 @@ Para o cliente ver uma arte própria, só como **figurinha** (imagem WebP 512×5
 
 ## 4. Próximos passos
 1. Aba **Figurinhas** com os ícones próprios (recortar cada um em WebP 512×512 transparente; só os que não existem no Unicode precisam ser figurinha).
-2. Usar a mesma cartela no campo de mensagem (inserir emoji no texto).
-3. Tons de pele (pressionar e segurar) e quem reagiu (lista no clique do chip).
+2. Tons de pele (pressionar e segurar) e quem reagiu (lista no clique do chip).

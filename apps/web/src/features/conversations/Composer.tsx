@@ -5,6 +5,7 @@ import { Menu, MenuItem } from "@/components/Menu";
 import { IconButton } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { formatDuration } from "@/lib/format";
+import { EmojiPicker } from "./Reactions";
 import { useVoiceRecorder } from "./useVoiceRecorder";
 import { recordingError } from "./voiceCapture";
 import { getDraft, setDraft } from "./drafts";
@@ -16,7 +17,6 @@ import { SpellBackdrop } from "./SpellCheck";
 import { useSpellcheck } from "./useSpellcheck";
 import { applyMention, extractMentions, filterPeople, findMentionQuery, mentionListId, mentionOptionId, type MentionPerson, type MentionRef } from "./mentions";
 
-const quickEmojis = ["😀", "😉", "🙏", "👍", "👏", "✅", "📄", "📎", "⏰", "💰", "🎉", "❤️"];
 
 const MAX_FILE = 25 * 1024 * 1024; // padrão do servidor (MAX_ATTACHMENT_MB); a validação real é do backend
 
@@ -138,6 +138,17 @@ export function Composer({
       ta.current?.focus();
       ta.current?.setSelectionRange(next.caret, next.caret);
     });
+  }
+
+  /** Coloca o emoji onde está o cursor (ou no lugar do trecho selecionado) e deixa o cursor depois dele. A cartela continua aberta para escolher mais. */
+  function insertEmoji(emoji: string) {
+    const el = ta.current;
+    const start = el?.selectionStart ?? text.length;
+    const end = el?.selectionEnd ?? start;
+    update(text.slice(0, start) + emoji + text.slice(end));
+    const at = start + emoji.length;
+    setCaret(at);
+    requestAnimationFrame(() => ta.current?.setSelectionRange(at, at));
   }
 
   function update(v: string) {
@@ -326,29 +337,15 @@ export function Composer({
           <Menu
             align="left"
             placement="top"
-            className="grid w-64 grid-cols-6 gap-1 p-2"
+            // A cartela traz a própria moldura: sem a borda, o fundo e a sombra padrão do menu.
+            className="min-w-0 overflow-visible rounded-2xl border-0 bg-transparent p-0 shadow-none"
             trigger={({ toggle }) => (
               <IconButton label="Emojis" onClick={toggle}>
                 <Smile className="size-5" />
               </IconButton>
             )}
           >
-            {(close) =>
-              quickEmojis.map((e) => (
-                <button
-                  key={e}
-                  type="button"
-                  className="rounded-md p-1 text-xl hover:bg-hover"
-                  onClick={() => {
-                    update(text + e);
-                    close();
-                    ta.current?.focus();
-                  }}
-                >
-                  {e}
-                </button>
-              ))
-            }
+            {() => <EmojiPicker searchLabel="Pesquisar emoji" onPick={insertEmoji} />}
           </Menu>
           <Menu
             align="left"
