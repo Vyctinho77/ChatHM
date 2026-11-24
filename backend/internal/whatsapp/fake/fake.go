@@ -37,6 +37,7 @@ type Sent struct {
 	Location                 *whatsapp.Location
 	Quote                    *whatsapp.Quote
 	EditOf, RevokeOf         string
+	ReactTo, Reaction        string
 }
 
 func New(h whatsapp.Handler) *Provider {
@@ -176,6 +177,11 @@ func (p *Provider) EditText(_ context.Context, chatJID, targetID, text string) e
 // Revoke registra o "apagar para todos".
 func (p *Provider) Revoke(_ context.Context, chatJID, targetID string) error {
 	return p.record(Sent{ChatJID: chatJID, MessageID: "REVOKE-" + targetID, RevokeOf: targetID})
+}
+
+// SendReaction registra a reação (ReactTo = mensagem reagida; Reaction vazio = removida).
+func (p *Provider) SendReaction(_ context.Context, chatJID, targetID string, _ bool, _ string, emoji string) error {
+	return p.record(Sent{ChatJID: chatJID, MessageID: "REACT-" + targetID + "-" + uuid.NewString(), ReactTo: targetID, Reaction: emoji})
 }
 
 func (p *Provider) SendMedia(_ context.Context, chatJID, messageID string, m whatsapp.MediaSend) error {

@@ -50,6 +50,7 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Get("/attachments/{id}", h.attachment)
 	r.Patch("/messages/{id}", h.editMessage)
 	r.Delete("/messages/{id}", h.deleteMessage)
+	r.Put("/messages/{id}/reaction", h.reactMessage)
 	r.Post("/messages/{id}/forward", h.forwardMessage)
 	r.Post("/conversations/{id}/close", h.close)
 	r.Post("/conversations/{id}/snooze", h.snooze)
@@ -530,6 +531,22 @@ func (h *Handler) editMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m, err := h.svc.EditMessage(r.Context(), viewer(r), chi.URLParam(r, "id"), body.Text)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, m)
+}
+
+// reactMessage: PUT /messages/{id}/reaction {emoji} — reage à mensagem (emoji vazio remove a reação do escritório).
+func (h *Handler) reactMessage(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Emoji string `json:"emoji"`
+	}
+	if !httpx.Decode(w, r, &body) {
+		return
+	}
+	m, err := h.svc.React(r.Context(), viewer(r), chi.URLParam(r, "id"), body.Emoji)
 	if err != nil {
 		writeError(w, r, err)
 		return

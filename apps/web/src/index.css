@@ -319,3 +319,9 @@ body {
     user-select: none;
   }
 }
+
+/* Emojis das reações e da cartela: a fonte Noto Color Emoji do ChatHM (registrada por ensureEmojiFont), igual em qualquer computador. */
+.emoji-font {
+  font-family: "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+  font-variant-emoji: emoji;
+}

@@ -57,6 +57,9 @@ type InboundMessage struct {
 	// Edição/apagar vindos do WhatsApp: o evento não é uma mensagem nova, altera a original (EditOf/RevokeOf = ID externo).
 	EditOf   string
 	RevokeOf string
+	// Reação a uma mensagem: ReactTo = ID externo da mensagem reagida; Reaction = o emoji (vazio remove a reação).
+	ReactTo  string
+	Reaction string
 	// Resposta a outra mensagem.
 	Quote      *InboundQuote
 	SenderID   string
@@ -182,6 +185,9 @@ type Provider interface {
 	EditText(ctx context.Context, chatJID, targetID, text string) error
 	// Revoke apaga para todos uma mensagem enviada pelo escritório.
 	Revoke(ctx context.Context, chatJID, targetID string) error
+	// SendReaction reage a uma mensagem (emoji vazio remove a reação). fromMe: a mensagem é do escritório; senderJID: em grupo, quem
+	// escreveu a mensagem de um integrante.
+	SendReaction(ctx context.Context, chatJID, targetID string, fromMe bool, senderJID, emoji string) error
 	// ProfilePicture baixa a foto de perfil: miniatura (preview) ou tamanho grande. nil, nil quando não há foto ou ela é privada.
 	ProfilePicture(ctx context.Context, jid string, preview bool) ([]byte, error)
 }

@@ -112,6 +112,28 @@ func TestConvertMessage(t *testing.T) {
 	}
 }
 
+func TestConvertReaction(t *testing.T) {
+	ctx := context.Background()
+	pn := types.NewJID("5592999990000", types.DefaultUserServer)
+	key := &waCommon.MessageKey{ID: proto.String("TARGET-1"), RemoteJID: proto.String(pn.String())}
+	ev := msgEvent(pn, &waE2E.Message{ReactionMessage: &waE2E.ReactionMessage{Key: key, Text: proto.String("👍")}})
+	got, ok := convertMessage(ctx, nil, ev)
+	if !ok || got.ReactTo != "TARGET-1" || got.Reaction != "👍" || got.Kind != whatsapp.KindText || got.Body != "" {
+		t.Fatalf("reação = %+v ok=%v", got, ok)
+	}
+	// Texto vazio = remoção da reação.
+	ev = msgEvent(pn, &waE2E.Message{ReactionMessage: &waE2E.ReactionMessage{Key: key, Text: proto.String("")}})
+	if got, ok = convertMessage(ctx, nil, ev); !ok || got.ReactTo != "TARGET-1" || got.Reaction != "" {
+		t.Fatalf("remoção = %+v ok=%v", got, ok)
+	}
+	// Feita pelo celular do escritório.
+	ev = msgEvent(pn, &waE2E.Message{ReactionMessage: &waE2E.ReactionMessage{Key: key, Text: proto.String("❤️")}})
+	ev.Info.IsFromMe = true
+	if got, ok = convertMessage(ctx, nil, ev); !ok || !got.FromMe || got.Reaction != "❤️" {
+		t.Fatalf("pelo celular = %+v ok=%v", got, ok)
+	}
+}
+
 func TestConvertSticker(t *testing.T) {
 	pn := types.NewJID("5592998112040", types.DefaultUserServer)
 	for _, animated := range []bool{false, true} {

@@ -2,6 +2,7 @@
 import { useMemo } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { del, get, isRejection, post, put, patch } from "@/lib/api";
+import { withMyReaction } from "./reactions";
 import { useMe } from "@/features/auth/api";
 import { pendingFiles, type Capabilities } from "./store.types";
 import { tagsKey } from "@/features/tags/api";
@@ -162,6 +163,19 @@ export function useConversationActions() {
         const updated = await patch<Message>(`/messages/${messageId}`, { text });
         qc.setQueryData<Message[]>(conversationKeys.messages(conversationId), (old) => old?.map((m) => (m.id === messageId ? updated : m)));
         void qc.invalidateQueries({ queryKey: conversationKeys.list });
+      },
+      /** Reage à mensagem com um emoji ("" remove a reação). A tela muda na hora; o servidor confirma (e, se falhar, volta ao que era). */
+      async reactToMessage(conversationId: string, messageId: string, emoji: string) {
+        const key = conversationKeys.messages(conversationId);
+        const before = qc.getQueryData<Message[]>(key);
+        qc.setQueryData<Message[]>(key, (old) => old?.map((m) => (m.id === messageId ? { ...m, reactions: withMyReaction(m.reactions, emoji) } : m)));
+        try {
+          const updated = await put<Message>(`/messages/${messageId}/reaction`, { emoji });
+          qc.setQueryData<Message[]>(key, (old) => old?.map((m) => (m.id === messageId ? updated : m)));
+        } catch (e) {
+          qc.setQueryData<Message[]>(key, before);
+          throw e;
+        }
       },
       /** "me" esconde só para você; "everyone" apaga no WhatsApp (mensagens do escritório, até 2 dias). */
       async deleteMessage(conversationId: string, messageId: string, scope: "me" | "everyone") {

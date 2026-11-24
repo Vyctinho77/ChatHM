@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { ProviderLogo } from "@/components/ProviderLogo";
 import { providerLabel } from "@/lib/providers";
 import { motion } from "motion/react";
-import { Ban, Download, FileText, Image as ImageIcon, LoaderCircle, MapPin, Mic, Sticker } from "lucide-react";
+import { Ban, Download, FileText, Image as ImageIcon, LoaderCircle, MapPin, Mic, SmilePlus, Sticker } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { previewUrl } from "@/lib/media";
 import { formatBytes, formatTime } from "@/lib/format";
@@ -16,6 +16,8 @@ import { FormattedText } from "@/components/FormattedText";
 import { Ticks } from "./Ticks";
 import type { Message, Quoted } from "./types";
 import { ownsGesture } from "./menuGesture";
+import { ReactionChips } from "./Reactions";
+import { nextReaction } from "./reactions";
 
 /** Os tipos que esta versão sabe desenhar; os outros (de uma versão mais nova do servidor) ganham um aviso em vez de um balão vazio. */
 const KNOWN_KINDS = new Set(["text", "audio", "document", "image", "sticker", "unsupported", "location", "conversation"]);
@@ -361,6 +363,7 @@ export function MessageBubble({
   term,
   emphasis,
   onMenu,
+  onReact,
   onJump,
   contact,
   me,
@@ -384,8 +387,10 @@ export function MessageBubble({
   hideCaption?: boolean;
   /** A primeira mensagem de cada sequência ganha uma cauda no lado do remetente. */
   startsGroup?: boolean;
-  /** Abre o menu de ações com o botão direito. */
-  onMenu?: (m: Message, x: number, y: number) => void;
+  /** Abre o menu de ações com o botão direito (ou, com "react", só a barra de reações, pelo botão ao lado do balão). */
+  onMenu?: (m: Message, x: number, y: number, mode?: "react") => void;
+  /** Reage à mensagem ("" remove a reação). Sem isto não há reações (chat interno). */
+  onReact?: (m: Message, emoji: string) => void;
   /** Vai até a mensagem original de uma resposta. */
   onJump?: (id: string) => void;
   animateIn?: boolean;
@@ -407,7 +412,7 @@ export function MessageBubble({
   };
   return (
     <div
-      className={cn("msg-row flex", out ? "justify-end" : "justify-start")}
+      className={cn("msg-row group/row flex", out ? "justify-end" : "justify-start")}
       onPointerDown={onMenu ? (e) => {
         if (e.pointerType === "mouse" || ownsGesture(e.target as HTMLElement, "a, button, input, textarea, audio")) return;
         cancelPress();
@@ -562,6 +567,32 @@ export function MessageBubble({
           </>
         )}
       </div>
+      {!m.deleted && !!m.reactions?.length && (
+        <ReactionChips
+          reactions={m.reactions}
+          onToggle={onReact ? (emoji) => onReact(m, nextReaction(m, emoji)) : undefined}
+          // Metade por cima do balão, como no WhatsApp.
+          className={cn("relative z-[1] -mt-2 px-2", out ? "justify-end" : "justify-start")}
+        />
+      )}
+      {onMenu && onReact && !m.deleted && m.status !== "pending" && m.status !== "failed" && (
+        // Ao passar o mouse: botão ao lado do balão que abre as reações (no toque, o toque longo faz o mesmo).
+        <button
+          type="button"
+          data-menu-surface
+          aria-label="Reagir"
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            onMenu(m, out ? r.left : r.right, r.top, "react");
+          }}
+          className={cn(
+            "absolute top-1.5 hidden size-7 items-center justify-center rounded-full border border-line bg-panel text-muted shadow-sm hover:text-fg focus-visible:flex [@media(hover:hover)]:group-hover/row:flex",
+            out ? "-left-6" : "-right-6",
+          )}
+        >
+          <SmilePlus className="size-4" />
+        </button>
+      )}
       </Pop>
     </div>
   );

@@ -8,6 +8,8 @@ import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
 import { matches } from "@/lib/search";
 import { messageCapabilities, copyText } from "./messageCaps";
+import { EmojiPicker, QuickReactions } from "./Reactions";
+import { myReaction } from "./reactions";
 import { statusLabel } from "./receipts";
 import { useConversationActions, useConversations } from "./store";
 import type { Message } from "./types";
@@ -23,18 +25,24 @@ type MenuProps = {
   onInfo: () => void;
   onClose: () => void;
   /** O que dá para fazer com a mensagem, quando não é a regra do WhatsApp (chat interno). */
-  caps?: ReturnType<typeof messageCapabilities>;
+  caps?: Omit<ReturnType<typeof messageCapabilities>, "react"> & { react?: boolean };
   /** Mostra "Apagar" (padrão: sim). */
   canDelete?: boolean;
+  /** Reagir com um emoji ("" remove a reação). Sem isto o menu não mostra reações (chat interno). */
+  onReact?: (emoji: string) => void;
+  /** Só a barra de reações (o botão ao lado do balão), sem a lista de ações. */
+  reactOnly?: boolean;
 };
 
 /** Menu de botão direito de uma mensagem. Posição fixa limitada à tela; fecha com Esc, clique fora ou rolagem. */
-export function MessageMenu({ message: m, x, y, onReply, onForward, onEdit, onDelete, onInfo, onClose, caps: capsOverride, canDelete = true }: MenuProps) {
+export function MessageMenu({ message: m, x, y, onReply, onForward, onEdit, onDelete, onInfo, onClose, caps: capsOverride, canDelete = true, onReact, reactOnly }: MenuProps) {
   const caps = capsOverride ?? messageCapabilities(m);
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y });
   const [copied, setCopied] = useState(false);
+  const [picker, setPicker] = useState(false); // "+" da barra: troca a lista de ações pela cartela de emojis
   const openedAt = useRef(0);
+  const reactions = !!onReact && (caps.react ?? true);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -44,7 +52,7 @@ export function MessageMenu({ message: m, x, y, onReply, onForward, onEdit, onDe
       left: Math.max(margin, Math.min(x, window.innerWidth - el.offsetWidth - margin)),
       top: Math.max(margin, Math.min(y, window.innerHeight - el.offsetHeight - margin)),
     });
-  }, [x, y]);
+  }, [x, y, picker]);
 
   useEffect(() => {
     openedAt.current = performance.now();
@@ -92,8 +100,12 @@ export function MessageMenu({ message: m, x, y, onReply, onForward, onEdit, onDe
     </button>
   );
 
-  return createPortal(
-    <div ref={ref} role="menu" aria-label="Ações da mensagem" style={pos} className="fixed z-50 w-60 overflow-hidden rounded-2xl border border-line bg-panel py-1.5 shadow-xl">
+  const react = (emoji: string) => {
+    onReact?.(emoji);
+    onClose();
+  };
+  const actions = (
+    <div role="menu" aria-label="Ações da mensagem" className="w-60 overflow-hidden rounded-2xl border border-line bg-panel py-1.5 shadow-xl">
       {caps.info && item(<Info />, "Dados da mensagem", () => (onInfo(), onClose()))}
       {caps.reply && item(<Reply />, "Responder", () => (onReply(), onClose()))}
       {caps.copy && item(copied ? <Check /> : <Copy />, copied ? "Copiado" : "Copiar", () => void copy())}
@@ -108,6 +120,14 @@ export function MessageMenu({ message: m, x, y, onReply, onForward, onEdit, onDe
       {caps.edit && item(<Pencil />, "Editar", () => (onEdit(), onClose()))}
       {canDelete && <div className="my-1 border-t border-line" />}
       {canDelete && item(<Trash2 />, "Apagar", () => (onDelete(), onClose()), { danger: true })}
+    </div>
+  );
+
+  return createPortal(
+    // Como no WhatsApp: a barra de reações em cima, e embaixo a lista de ações (ou, no "+", a cartela de emojis).
+    <div ref={ref} style={pos} className={cn("fixed z-50 flex flex-col gap-2", m.direction === "out" ? "items-end" : "items-start")}>
+      {reactions && <QuickReactions current={myReaction(m)} onPick={react} onMore={() => setPicker(true)} />}
+      {reactions && picker ? <EmojiPicker onPick={react} /> : reactOnly && reactions ? null : actions}
     </div>,
     document.body,
   );

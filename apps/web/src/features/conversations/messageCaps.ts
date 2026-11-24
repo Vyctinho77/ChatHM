@@ -17,6 +17,7 @@ export function messageCapabilities(m: Message, now = Date.now()) {
     edit: live && out && m.kind === "text" && delivered && age <= EDIT_WINDOW_MS,
     deleteEveryone: live && out && delivered && age <= REVOKE_WINDOW_MS,
     info: live,
+    react: live && m.status !== "pending" && m.status !== "failed",
   };
 }
 

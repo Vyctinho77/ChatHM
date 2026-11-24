@@ -249,6 +249,30 @@ func (p *Provider) Revoke(ctx context.Context, chatJID, targetID string) error {
 	return err
 }
 
+// SendReaction reage a uma mensagem (emoji vazio remove a reação). Em conversa individual o autor da mensagem reagida é o próprio
+// contato (ou o escritório, fromMe); em grupo é preciso dizer quem escreveu.
+func (p *Provider) SendReaction(ctx context.Context, chatJID, targetID string, fromMe bool, senderJID, emoji string) error {
+	cli, err := p.client()
+	if err != nil {
+		return err
+	}
+	to, err := types.ParseJID(chatJID)
+	if err != nil {
+		return fmt.Errorf("conversa inválida: %w", err)
+	}
+	sender := types.EmptyJID // mensagem do escritório
+	if !fromMe {
+		sender = to
+		if senderJID != "" {
+			if sj, err := types.ParseJID(senderJID); err == nil {
+				sender = sj
+			}
+		}
+	}
+	_, err = cli.SendMessage(ctx, to, cli.BuildReaction(to, sender, types.MessageID(targetID), emoji))
+	return err
+}
+
 func (p *Provider) client() (*whatsmeow.Client, error) {
 	p.mu.Lock()
 	cli := p.cli

@@ -49,6 +49,7 @@ type Base = {
   group?: boolean; // mensagem de grupo: mostra o autor também nas recebidas
   quoted?: Quoted; // esta mensagem responde a outra
   editedAt?: string; // texto editado depois de enviado
+  reactions?: { emoji: string; count: number; mine: boolean }[]; // reações à mensagem; mine = a do escritório
   deleted?: boolean; // apagada para todos: o conteúdo some, a marca fica
   historical?: boolean;
   /** Mídia recebida sem arquivo: o download falhou ou foi bloqueado pela verificação de segurança. */

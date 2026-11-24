@@ -31,6 +31,8 @@ import { useTransferFlow } from "./transferFlow";
 import { DEMO } from "@/lib/env";
 import { AiSuggestions } from "./AiSuggestions";
 import { DeleteDialog, ForwardDialog, MessageInfoDialog, MessageMenu } from "./MessageActions";
+import { nextReaction } from "./reactions";
+import { pushNotice } from "@/lib/notices";
 import { buildOutgoing, capabilities, useConversationActions, useMessages, useSendMessage, type OutgoingDraft } from "./store";
 import { statusLabel } from "./receipts";
 import { segmentClass, segmentLabel, type Conversation, type Message, type Quoted } from "./types";
@@ -185,14 +187,14 @@ export function ChatPanel({
   const currentMatch = matchIds.length ? matchIds[matchIdx] : undefined;
 
   // Menu de botão direito e ações das mensagens.
-  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number; react?: boolean } | null>(null);
   const [reply, setReply] = useState<Message | null>(null);
   const [editing, setEditing] = useState<Message | null>(null);
   const [deleting, setDeleting] = useState<Message | null>(null);
   const [forwarding, setForwarding] = useState<Message | null>(null);
   const [infoFor, setInfoFor] = useState<Message | null>(null);
   const menuMsg = menu ? messages?.find((m) => m.id === menu.id) : undefined;
-  const openMenu = useCallback((m: Message, x: number, y: number) => setMenu({ id: m.id, x, y }), []);
+  const openMenu = useCallback((m: Message, x: number, y: number, mode?: "react") => setMenu({ id: m.id, x, y, react: mode === "react" }), []);
   const closeMenu = useCallback(() => setMenu(null), []);
 
   const scrollToMessage = useCallback((id: string) => {
@@ -231,6 +233,11 @@ export function ChatPanel({
   // Outra pessoa já assumiu: só ela responde (o servidor também garante isso).
   const participating = !!c.participants?.some((p) => p.id === actions.me.id); // incluída no atendimento: responde sem assumir
   const lockedByOther = !!c.assignee && !mine && !participating && !closed;
+  // Reagir segue a mesma regra de responder (o servidor confere de novo).
+  const canReact = capabilities.send && !closed && !lockedByOther;
+  function reactTo(m: Message, emoji: string) {
+    actions.reactToMessage(c.id, m.id, emoji).catch((e) => pushNotice({ id: "react-failed", text: errorMessage(e) }));
+  }
   // O responsável encerra; administradores e gestores também encerram qualquer atendimento que enxergam.
   const canClose = capabilities.close && !closed && (mine || isAdmin);
   // Encerrar: para todos ou só a própria parte (ver closeOptions e useEndFlow).
@@ -604,6 +611,7 @@ export function ChatPanel({
                     onOpenImage={setViewerId}
                     onOpenPdf={setPdfId}
                     onMenu={openMenu}
+                    onReact={canReact ? reactTo : undefined}
                     onJump={(id) => void jumpTo(id)}
                   />
                 </div>
@@ -722,6 +730,8 @@ export function ChatPanel({
           onEdit={() => (setReply(null), setEditing(menuMsg))}
           onDelete={() => setDeleting(menuMsg)}
           onInfo={() => setInfoFor(menuMsg)}
+          onReact={canReact ? (emoji) => reactTo(menuMsg, nextReaction(menuMsg, emoji)) : undefined}
+          reactOnly={menu.react}
           onClose={closeMenu}
         />
       )}

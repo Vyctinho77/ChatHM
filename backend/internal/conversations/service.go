@@ -92,6 +92,7 @@ type Sender interface {
 	SendTextQuoted(ctx context.Context, chatJID, messageID, text string, q whatsapp.Quote) error
 	EditText(ctx context.Context, chatJID, targetID, text string) error
 	Revoke(ctx context.Context, chatJID, targetID string) error
+	SendReaction(ctx context.Context, chatJID, targetID string, fromMe bool, senderJID, emoji string) error
 	ProfilePicture(ctx context.Context, jid string, preview bool) ([]byte, error)
 }
 
@@ -256,6 +257,9 @@ func (s *Service) Ingest(ctx context.Context, m whatsapp.InboundMessage) (bool, 
 	m = s.resolveLIDContact(ctx, m)
 	if m.EditOf != "" || m.RevokeOf != "" {
 		return false, s.ingestChange(ctx, m) // altera uma mensagem existente; não cria nenhuma
+	}
+	if m.ReactTo != "" {
+		return false, s.ingestReaction(ctx, m) // reação a uma mensagem existente; não cria nenhuma
 	}
 	payload := m.Payload
 	if payload == nil {
@@ -566,7 +570,10 @@ type Conversation struct {
 
 const messageCols = `m.id, m.conversation_id, m.direction, m.kind, m.body, m.payload, m.status,
 	m.sent_at, m.sender_name, m.delivered_at, m.read_at, m.played_at,
-	(SELECT a.id::text FROM attachments a WHERE a.message_id = m.id), m.edited_at, m.deleted_at, m.sender_user_id::text`
+	(SELECT a.id::text FROM attachments a WHERE a.message_id = m.id), m.edited_at, m.deleted_at, m.sender_user_id::text,
+	(SELECT jsonb_agg(jsonb_build_object('emoji', q.emoji, 'count', q.n, 'mine', q.mine) ORDER BY q.first_at, q.emoji)
+	   FROM (SELECT emoji, count(*) AS n, bool_or(reactor = 'office') AS mine, min(created_at) AS first_at
+	           FROM message_reactions r WHERE r.message_id = m.id GROUP BY emoji) q)`
 
 type msgRow struct {
 	id, convID, dir, kind, body, sender string
@@ -577,10 +584,11 @@ type msgRow struct {
 	attachmentID                        *string
 	editedAt, deletedAt                 *time.Time
 	senderID                            *string // quem enviou (pessoa do escritório); vazio em mensagens do cliente e da IA
+	reactions                           []byte  // [{emoji, count, mine}] (nulo sem reações)
 }
 
 func (r *msgRow) dest() []any {
-	return []any{&r.id, &r.convID, &r.dir, &r.kind, &r.body, &r.payload, &r.status, &r.sentAt, &r.sender, &r.deliveredAt, &r.readAt, &r.playedAt, &r.attachmentID, &r.editedAt, &r.deletedAt, &r.senderID}
+	return []any{&r.id, &r.convID, &r.dir, &r.kind, &r.body, &r.payload, &r.status, &r.sentAt, &r.sender, &r.deliveredAt, &r.readAt, &r.playedAt, &r.attachmentID, &r.editedAt, &r.deletedAt, &r.senderID, &r.reactions}
 }
 
 func (r msgRow) message() Message {
@@ -618,6 +626,9 @@ func (r msgRow) message() Message {
 	}
 	if r.editedAt != nil {
 		m["editedAt"] = r.editedAt.UTC().Format(time.RFC3339Nano)
+	}
+	if len(r.reactions) > 2 { // "null" ou "[]" = sem reações
+		m["reactions"] = json.RawMessage(r.reactions)
 	}
 	if r.deletedAt != nil {
 		// Apagada para todos: o conteúdo some, a marca fica.

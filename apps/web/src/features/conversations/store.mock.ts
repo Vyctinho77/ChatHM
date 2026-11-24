@@ -7,6 +7,7 @@ import type { Capabilities } from "./store.types";
 import type { Conversation, Message, SearchResult, SnoozeScope } from "./types";
 import { fold, matches } from "@/lib/search";
 import { playSentSound } from "@/lib/sounds";
+import { withMyReaction } from "./reactions";
 
 export const capabilities: Capabilities = { send: true, tags: true, close: true, media: true };
 
@@ -186,6 +187,10 @@ export function useConversationActions() {
     },
     async editMessage(conversationId: string, messageId: string, text: string) {
       patchMessage(qc, conversationId, messageId, { text, editedAt: new Date().toISOString() } as Partial<Message>);
+    },
+    async reactToMessage(conversationId: string, messageId: string, emoji: string) {
+      const current = (db?.messages[conversationId] ?? []).find((m) => m.id === messageId)?.reactions;
+      patchMessage(qc, conversationId, messageId, { reactions: withMyReaction(current, emoji) } as Partial<Message>);
     },
     async deleteMessage(conversationId: string, messageId: string, scope: "me" | "everyone") {
       if (scope === "everyone") {

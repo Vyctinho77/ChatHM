@@ -96,6 +96,10 @@ func convertMessage(ctx context.Context, cli *whatsmeow.Client, e *events.Messag
 		// "Apagar para todos" feito no WhatsApp.
 		out.Kind, out.RevokeOf = whatsapp.KindText, m.GetProtocolMessage().GetKey().GetID()
 		return out, true
+	case m.GetReactionMessage().GetKey().GetID() != "":
+		// Reação (ou remoção, com texto vazio) a uma mensagem: não é uma mensagem nova, muda as reações da original.
+		out.Kind, out.ReactTo, out.Reaction = whatsapp.KindText, m.GetReactionMessage().GetKey().GetID(), m.GetReactionMessage().GetText()
+		return out, true
 	case m.GetConversation() != "":
 		out.Kind, out.Body = whatsapp.KindText, m.GetConversation()
 	case m.GetExtendedTextMessage() != nil:

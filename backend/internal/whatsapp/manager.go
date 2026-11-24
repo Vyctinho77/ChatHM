@@ -338,6 +338,10 @@ func (m *Manager) Revoke(ctx context.Context, chatJID, targetID string) error {
 	return m.p.Revoke(ctx, chatJID, targetID)
 }
 
+func (m *Manager) SendReaction(ctx context.Context, chatJID, targetID string, fromMe bool, senderJID, emoji string) error {
+	return m.p.SendReaction(ctx, chatJID, targetID, fromMe, senderJID, emoji)
+}
+
 func (m *Manager) SendMedia(ctx context.Context, chatJID, messageID string, md MediaSend) error {
 	return m.p.SendMedia(ctx, chatJID, messageID, md)
 }

@@ -17,12 +17,18 @@ importers:
       '@fontsource-variable/inter':
         specifier: 5.3.0
         version: 5.3.0
+      '@fontsource/noto-color-emoji':
+        specifier: ^5.3.2
+        version: 5.3.2
       '@tanstack/react-query':
         specifier: ^5.106.1
         version: 5.106.1(@types/react@19.3.0)(react@19.3.1)
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
+      emojibase-data:
+        specifier: ^18.0.0
+        version: 18.0.0(emojibase@18.0.0)
       lucide-react:
         specifier: ^1.69.0
         version: 1.69.0(@types/react@19.3.0)(react@19.3.1)
@@ -210,6 +216,9 @@ packages:
 
   '@fontsource-variable/inter@5.3.0':
     resolution: {integrity: sha512-OupL48va4JNofb97w6NYeF9S7W/kHNKM0Er8Dem5nqi4jeOLrVJDoE8tZEpnMJmtkvNbB1EIPPwHcdkF6b1oUA==}
+
+  '@fontsource/noto-color-emoji@5.3.2':
+    resolution: {integrity: sha512-rO15sQ45Dc28hMAMz1X1oSOWxcbqNL+CiHHJ7JPn1gmfiGIuR/QyLuHqBrXivSYHsHVTXGT/m6/DuQ42s5xQkw==}
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -745,6 +754,15 @@ packages:
 
   emoji-regex@10.6.0:
     resolution: {integrity: sha512-toUI84YS5YmxW219erniWD0CIVOo46xGKColeNQRgOzDorgBi1v4D71/OFzgD9GO2UGKIv1C3Sp8DAn0+j5w7A==}
+
+  emojibase-data@18.0.0:
+    resolution: {integrity: sha512-TPPRRYv2zPd0jKI+pTpMquwWNZXYAsC3IVsCMeg2X8y8fEzKwOks4/5bz0YavF5r6d71aGPpb6oDnUEwSLLMoA==}
+    peerDependencies:
+      emojibase: '*'
+
+  emojibase@18.0.0:
+    resolution: {integrity: sha512-5PG+EEt5zQ9qvqdHZw61+T9iz96g+r621QS/w8jEzPg+3mjzAdjl8LPLc+e9ABv/yboNfMwEair7aK9qKnwAbQ==}
+    engines: {node: '>=20.0.0'}
 
   enhanced-resolve@5.26.1:
     resolution: {integrity: sha512-PPnnSJq3azKOIewXR/uppBV/6h98dprBJ/WaQ9Qgj10xX1lJLNfg+XShpbsrSqcDSy2yYYyhfXM1wWhftqgyzw==}
@@ -1584,6 +1602,8 @@ snapshots:
 
   '@fontsource-variable/inter@5.3.0': {}
 
+  '@fontsource/noto-color-emoji@5.3.2': {}
+
   '@humanfs/core@0.19.2':
     dependencies:
       '@humanfs/types': 0.15.0
@@ -2024,6 +2044,12 @@ snapshots:
   electron-to-chromium@1.5.477: {}
 
   emoji-regex@10.6.0: {}
+
+  emojibase-data@18.0.0(emojibase@18.0.0):
+    dependencies:
+      emojibase: 18.0.0
+
+  emojibase@18.0.0: {}
 
   enhanced-resolve@5.26.1:
     dependencies:

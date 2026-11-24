@@ -79,7 +79,7 @@ export async function api<T>(method: Method, path: string, body?: unknown): Prom
 export const get = <T>(path: string) => api<T>("GET", path);
 export const post = <T>(path: string, body?: unknown) => api<T>("POST", path, body ?? {});
 export const patch = <T>(path: string, body: unknown) => api<T>("PATCH", path, body);
-export const put = <T>(path: string) => api<T>("PUT", path);
+export const put = <T>(path: string, body?: unknown) => api<T>("PUT", path, body);
 export const del = <T>(path: string) => api<T>("DELETE", path);
 
 /** O servidor recusou a ação (permissão, conflito, validação ou indisponibilidade): nada foi feito. */
