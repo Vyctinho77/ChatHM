@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { __resetAudioEngine, pause, seekTrack, stopAudio, toggleTrack, type Track } from "./audioEngine";
+import { __resetAudioEngine, pause, seekTrack, setNextTrackResolver, stopAudio, toggleTrack, type Track } from "./audioEngine";
 
 // <audio> falso: play/pause/eventos à mão.
 class FakeAudio {
@@ -104,5 +104,49 @@ describe("áudio em segundo plano", () => {
     toggleTrack(track("a"));
     expect(a.plays[0]).toBe("/api/v1/attachments/a");
     expect(a.plays[1]).toBe("/api/v1/attachments/a?format=m4a");
+  });
+});
+
+describe("acabou o áudio", () => {
+  it("sem próximo, o controle some sozinho e o áudio não fica guardado no fim", async () => {
+    toggleTrack(track("a"));
+    a.currentTime = 30;
+    a.pause(); // o navegador pausa ao chegar ao fim e depois avisa que acabou
+    a.emit("ended");
+    expect(a.src).toBe("");
+    expect(a.paused).toBe(true);
+    toggleTrack(track("a")); // tocar de novo começa do início, não do fim
+    expect(a.currentTime).toBe(0);
+  });
+
+  it("com próximo, passa a tocar o próximo sozinho", () => {
+    setNextTrackResolver((t) => (t.id === "a" ? track("b") : null));
+    toggleTrack(track("a"));
+    a.pause();
+    a.emit("ended");
+    expect(a.src).toContain("/b");
+    expect(a.paused).toBe(false);
+    // acabou o b e não há mais: some
+    a.pause();
+    a.emit("ended");
+    expect(a.src).toBe("");
+  });
+
+  it("áudio enviado pela equipe não puxa o próximo", () => {
+    setNextTrackResolver(() => track("b"));
+    toggleTrack(track("a", { outgoing: true }));
+    a.pause();
+    a.emit("ended");
+    expect(a.src).toBe("");
+  });
+
+  it("um erro ao escolher o próximo não trava: o controle some", () => {
+    setNextTrackResolver(() => {
+      throw new Error("falhou");
+    });
+    toggleTrack(track("a"));
+    a.pause();
+    a.emit("ended");
+    expect(a.src).toBe("");
   });
 });

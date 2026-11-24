@@ -63,6 +63,8 @@ const versions = new Map<string, number>();
 let globalVersion = 0;
 const listeners = new Set<() => void>();
 let el: HTMLAudioElement | undefined;
+/** Quem diz qual é o próximo áudio da sequência (o AudioBar liga isto ao cache das mensagens). Sem resolvedor, nada toca sozinho. */
+let resolveNext: ((finished: Track) => Track | null) | undefined;
 let make = (): HTMLAudioElement => new Audio();
 
 function emit(...ids: (string | undefined)[]) {
@@ -90,8 +92,21 @@ function audio(): HTMLAudioElement {
   });
   a.addEventListener("timeupdate", () => set({ pos: a.currentTime }));
   a.addEventListener("ended", () => {
-    if (state.track) positions.delete(state.track.id);
-    set({ playing: false, pos: 0 });
+    const t = state.track;
+    if (!t) return;
+    positions.delete(t.id);
+    // Como no WhatsApp: acabou, toca o próximo áudio recebido ainda não ouvido da mesma conversa (na tela ou em segundo plano);
+    // se não há, o controle some sozinho.
+    let next: Track | null = null;
+    if (!t.outgoing) {
+      try {
+        next = resolveNext?.(t) ?? null;
+      } catch {
+        next = null;
+      }
+    }
+    if (next) begin(next, false);
+    else finish();
   });
   a.addEventListener("error", () => fail());
   el = a;
@@ -145,16 +160,11 @@ function mediaSession(t: Track) {
   }
 }
 
-/** Toca o áudio; se já é o atual, alterna entre tocar e pausar; se é outro, o que tocava pausa (e lembra onde parou). */
-export function toggleTrack(t: Track) {
-  if (state.track?.id === t.id) {
-    if (audio().paused) play();
-    else audio().pause();
-    return;
-  }
+/** Passa a tocar `t`. `remember`: guarda onde o áudio anterior parou (não vale quando ele acabou). */
+function begin(t: Track, remember: boolean) {
   const previous = state.track;
   if (previous) {
-    positions.set(previous.id, audio().currentTime);
+    if (remember) positions.set(previous.id, audio().currentTime);
     audio().pause();
   }
   state = { track: t, playing: false, pos: positions.get(t.id) ?? 0, failed: false };
@@ -162,6 +172,33 @@ export function toggleTrack(t: Track) {
   mediaSession(t);
   emit(previous?.id, t.id);
   play();
+}
+
+/** Acabou o áudio e não há próximo: esquece o atual (o controle em segundo plano some). */
+function finish() {
+  const previous = state.track;
+  if (el) {
+    el.pause();
+    el.removeAttribute("src");
+    el.load();
+  }
+  state = IDLE;
+  emit(previous?.id);
+}
+
+/** Toca o áudio; se já é o atual, alterna entre tocar e pausar; se é outro, o que tocava pausa (e lembra onde parou). */
+export function toggleTrack(t: Track) {
+  if (state.track?.id === t.id) {
+    if (audio().paused) play();
+    else audio().pause();
+    return;
+  }
+  begin(t, true);
+}
+
+/** Liga (ou, sem argumento, desliga) a escolha do próximo áudio a tocar quando um termina. */
+export function setNextTrackResolver(fn: ((finished: Track) => Track | null) | undefined) {
+  resolveNext = fn;
 }
 
 export function pause() {
@@ -221,6 +258,7 @@ export function __resetAudioEngine(factory?: () => HTMLAudioElement) {
   retried = false;
   positions.clear();
   versions.clear();
+  resolveNext = undefined;
   globalVersion = 0;
   el = undefined;
   make = factory ?? (() => new Audio());

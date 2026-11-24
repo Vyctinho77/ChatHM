@@ -4,8 +4,11 @@ import { CornerUpRight, Mic, Pause, Play, X } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { cn } from "@/lib/cn";
 import { formatDuration } from "@/lib/format";
-import { useHeard } from "./audioHeard";
-import { seekTrack, stopAudio, toggleTrack, useCurrentAudio, type Track } from "./audioEngine";
+import { useQueryClient } from "@tanstack/react-query";
+import { isHeard, useHeard } from "./audioHeard";
+import { messagesKey, nextUnheardTrack } from "./audioQueue";
+import { seekTrack, setNextTrackResolver, stopAudio, toggleTrack, useCurrentAudio, type Track } from "./audioEngine";
+import type { Message } from "./types";
 
 const BARS = 26;
 
@@ -19,15 +22,23 @@ function miniWave(wave: number[] | undefined): number[] {
  * Controle do áudio em segundo plano: uma pílula discreta no alto, no meio, quando há um áudio tocando (ou pausado) de uma
  * conversa que não está aberta — para ouvir até o fim enquanto se atende outra pessoa. Segue o visual do balão de voz: foto de
  * quem enviou com o microfone, play e as mesmas ondas (verde enquanto não ouvido, azul depois). Dentro da própria conversa
- * quem comanda é o balão.
+ * quem comanda é o balão. Some sozinha quando o áudio acaba sem outro para tocar.
  */
 export function AudioBar() {
   const current = useCurrentAudio();
   const open = useMatch("/conversas/:id");
   const navigate = useNavigate();
 
+  const qc = useQueryClient();
+
   // Ao sair do app (sair da conta) o áudio não fica tocando sozinho.
   useEffect(() => () => stopAudio(), []);
+
+  // Quando um áudio acaba, toca o próximo recebido e ainda não ouvido da mesma conversa, estando ela aberta ou não.
+  useEffect(() => {
+    setNextTrackResolver((finished) => nextUnheardTrack(qc.getQueryData<Message[]>(messagesKey(finished.conversationId)), finished, isHeard));
+    return () => setNextTrackResolver(undefined);
+  }, [qc]);
 
   if (!current || open?.params.id === current.track.conversationId) return null;
   return <Pill {...current} onOpen={(t) => void navigate(`/conversas/${t.conversationId}?msg=${encodeURIComponent(t.id)}`)} />;
