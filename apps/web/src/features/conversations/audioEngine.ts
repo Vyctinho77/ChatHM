@@ -199,13 +199,13 @@ function subscribe(fn: () => void) {
 
 /** Estado de um áudio (o balão se atualiza só quando o dele muda). */
 export function useAudioView(id: string): AudioView {
-  useSyncExternalStore(subscribe, () => versions.get(id) ?? 0);
+  useSyncExternalStore(subscribe, () => versions.get(id) ?? 0, () => 0);
   return viewOf(id);
 }
 
 /** O áudio atual (ou null) e como ele está; o controle em segundo plano se atualiza a cada mudança. */
 export function useCurrentAudio(): { track: Track; playing: boolean; pos: number; failed: boolean } | null {
-  useSyncExternalStore(subscribe, () => globalVersion);
+  useSyncExternalStore(subscribe, () => globalVersion, () => 0);
   return state.track ? { track: state.track, playing: state.playing, pos: state.pos, failed: state.failed } : null;
 }
 
