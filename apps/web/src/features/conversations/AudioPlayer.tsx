@@ -116,7 +116,7 @@ export function AudioPlayer({
   function toggle() {
     if (!outgoing) markHeard(id);
     if (url) {
-      toggleTrack({ id, conversationId, url, label, durationSec, outgoing: !!outgoing });
+      toggleTrack({ id, conversationId, url, label, durationSec, outgoing: !!outgoing, avatarName, avatarSrc, group, wave: bars });
       return; // o estado "tocando" vem do audioEngine
     }
     setSimPlaying((p) => !p);

@@ -17,6 +17,11 @@ export type Track = {
   url: string;
   /** Quem aparece no controle em segundo plano (nome do contato). */
   label: string;
+  /** Foto (ou iniciais) de quem enviou e as barras da onda, iguais às do balão, para o controle em segundo plano. */
+  avatarName?: string;
+  avatarSrc?: string;
+  group?: boolean;
+  wave?: number[];
   durationSec: number;
   /** Enviado por nós: não conta como "ouvido". */
   outgoing: boolean;
