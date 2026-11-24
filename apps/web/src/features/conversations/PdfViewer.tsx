@@ -9,6 +9,7 @@ import { formatBytes } from "@/lib/format";
 import type { Message } from "./types";
 import { applyReadingOrder } from "./pdfReadingOrder";
 import { installTextLayerSelection } from "./pdfSelection";
+import { SelectionCopyButton } from "./PdfSelectionCopy";
 import { extractLines, type Lines } from "./pdfCells";
 import { findMatches, type Match } from "./pdfSearch";
 import { findAccessKeys, formatAccessKey } from "./pdfAccessKey";
@@ -639,6 +640,7 @@ export function PdfViewer({ pdf, onClose }: { pdf: ViewablePdf; onClose: () => v
           </div>
         )}
       </div>
+      <SelectionCopyButton root={box} copy={copyText} />
     </motion.div>,
     document.body,
   );
