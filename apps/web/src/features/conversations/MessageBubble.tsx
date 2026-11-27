@@ -234,6 +234,35 @@ function Pop({ animate, children, ...rest }: { animate?: boolean; children: Reac
   );
 }
 
+/** Prévia de um PDF no alto do cartão (o alto da primeira página, feito pelo servidor). Some se o servidor não conseguiu desenhá-la (PDF com senha, quebrado). */
+function PdfPreview({ url }: { url: string }) {
+  const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
+  if (state === "failed") return null;
+  return (
+    <div className="relative h-[7.25rem] w-full overflow-hidden bg-black/10 dark:bg-white/5">
+      <img
+        ref={(el) => { if (el?.complete && el.naturalWidth > 0) setState("ready"); }}
+        src={previewUrl(url)}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        draggable={false}
+        onLoad={() => setState("ready")}
+        onError={() => setState("failed")}
+        className={cn("size-full object-cover object-top transition-opacity duration-200", state === "ready" ? "opacity-100" : "opacity-0")}
+      />
+    </div>
+  );
+}
+
+function pagesLabel(pages?: number) {
+  return pages && pages > 0 ? `${pages} ${pages === 1 ? "página" : "páginas"} • ` : "";
+}
+
+/**
+ * Documento como no WhatsApp: o cartão ocupa o balão quase de ponta a ponta (a borda do balão é fina) e, nos PDFs, a prévia da primeira
+ * página fica em cima. Abaixo, o ícone do tipo, o nome (até duas linhas), "N páginas • PDF • tamanho" e o botão de baixar.
+ */
 function DocumentCard({ m, onOpen, term }: { m: Extract<Message, { kind: "document" }>; onOpen?: (id: string) => void; term?: string }) {
   const fileName = m.fileName || "Documento";
   const kind = docKind(m.fileName, m.mimeType, m.docType);
@@ -243,46 +272,53 @@ function DocumentCard({ m, onOpen, term }: { m: Extract<Message, { kind: "docume
   // PDF abre no visualizador do app; Word/Excel/PowerPoint baixam e abrem no próprio Office do computador.
   const isCert = kind === "certificate" || kind === "xml"; // sem aplicativo que abra: baixa
   const action = m.url ? (isPdf && onOpen ? () => onOpen(m.id) : app || isCert ? () => saveFile(m.url!, fileName) : null) : null;
+  const preview = isPdf && !!m.url && m.url.startsWith("/api/v1/attachments/");
   return (
-    <div
-      className={cn(
-        "flex min-w-60 max-w-80 items-start gap-3 rounded-lg bg-black/10 p-2.5 dark:bg-black/20",
-        action && "cursor-pointer hover:bg-black/15 dark:hover:bg-black/30",
-      )}
-      {...(action && {
-        role: "button",
-        tabIndex: 0,
-        title: isPdf ? "Abrir PDF" : isCert ? "Baixar arquivo" : `Abrir no ${app}`,
-        onClick: action,
-        onKeyDown: (e: React.KeyboardEvent) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            action();
-          }
-        },
-      })}
-    >
-      <DocBadge kind={kind} />
-      <div className="min-w-0 flex-1">
-        <p className="break-all text-[13px] font-medium leading-snug">
-          <Highlight text={fileName} term={term} />
-        </p>
-        <p className="text-[11px] opacity-70">
-          {(m.docType && invoiceLabel[m.docType]) || (kind === "xml" && isInvoiceXml(m.fileName) ? "Nota fiscal (XML)" : docKindLabel(kind, ext))}{m.sizeBytes ? ` • ${formatBytes(m.sizeBytes)}` : ""}
-          {!m.url && ` • ${historicalDocLabel(m)}`}
-        </p>
+    <div className="w-72 max-w-full">
+      <div
+        className={cn(
+          "overflow-hidden rounded-[5px] bg-black/10 dark:bg-black/20",
+          action && "cursor-pointer hover:bg-black/15 dark:hover:bg-black/30",
+        )}
+        {...(action && {
+          role: "button",
+          tabIndex: 0,
+          title: isPdf ? "Abrir PDF" : isCert ? "Baixar arquivo" : `Abrir no ${app}`,
+          onClick: action,
+          onKeyDown: (e: React.KeyboardEvent) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              action();
+            }
+          },
+        })}
+      >
+        {preview && <PdfPreview url={m.url!} />}
+        <div className="flex items-start gap-3 p-2.5">
+          <DocBadge kind={kind} />
+          <div className="min-w-0 flex-1">
+            <p className="line-clamp-2 break-all text-[13px] font-medium leading-snug" title={fileName}>
+              <Highlight text={fileName} term={term} />
+            </p>
+            <p className="text-[11px] opacity-70">
+              {pagesLabel(m.pages)}
+              {(m.docType && invoiceLabel[m.docType]) || (kind === "xml" && isInvoiceXml(m.fileName) ? "Nota fiscal (XML)" : docKindLabel(kind, ext))}{m.sizeBytes ? ` • ${formatBytes(m.sizeBytes)}` : ""}
+              {!m.url && ` • ${historicalDocLabel(m)}`}
+            </p>
+          </div>
+          {m.url && (
+            <a
+              href={m.url}
+              download={fileName}
+              onClick={(e) => e.stopPropagation()}
+              aria-label={`Baixar ${fileName}`}
+              className="rounded-md p-1 opacity-70 hover:opacity-100"
+            >
+              <Download className="size-4" />
+            </a>
+          )}
+        </div>
       </div>
-      {m.url && (
-        <a
-          href={m.url}
-          download={fileName}
-          onClick={(e) => e.stopPropagation()}
-          aria-label={`Baixar ${fileName}`}
-          className="rounded-md p-1 opacity-70 hover:opacity-100"
-        >
-          <Download className="size-4" />
-        </a>
-      )}
     </div>
   );
 }
@@ -460,7 +496,7 @@ export function MessageBubble({
       <div
         className={cn(
           "group/msg relative rounded-lg text-[14.2px] leading-[19px] transition-shadow duration-300",
-          sticker ? "p-0" : m.kind === "image" ? "p-[3px]" : "px-2.5 py-[5px]",
+          sticker ? "p-0" : (m.kind === "image" || m.kind === "document") && !m.deleted ? "p-[3px]" : "px-2.5 py-[5px]",
           !sticker && (startsGroup ? "bubble-with-tail" : out ? "bg-out" : "bg-in"),
           !sticker && startsGroup && (out ? "bubble-with-tail-out" : "bubble-with-tail-in"),
           startsGroup && (out ? "rounded-tr-none" : "rounded-tl-none"),
@@ -480,16 +516,16 @@ export function MessageBubble({
         ) : (
           <>
         {out && m.automated && (
-          <p className="mb-0.5 flex items-center gap-1.5 text-[12.5px] font-semibold">
+          <p className={cn("mb-0.5 flex items-center gap-1.5 text-[12.5px] font-semibold", m.kind === "document" && "px-1.5 pt-1")}>
             <ProviderLogo provider={m.aiProvider} title={`Enviado por ${m.aiAgent ? `${m.aiAgent} (${m.aiApp || providerLabel(m.aiProvider)})` : m.aiApp || providerLabel(m.aiProvider)}`} />
             {m.aiAgent || m.aiApp || providerLabel(m.aiProvider)}
             <span className="font-normal opacity-70">{m.aiMode === "attend" ? "· atendimento por IA" : "· envio automático"}</span>
           </p>
         )}
         {m.kind !== "image" && !out && m.group && showAuthor && (renderAuthor ? renderAuthor(m) : m.authorName && (
-          <p className="text-[12.5px] font-semibold">{m.authorName}</p>
+          <p className={cn("text-[12.5px] font-semibold", m.kind === "document" && "px-1.5 pt-1")}>{m.authorName}</p>
         ))}
-        {m.quoted && <div className={m.kind === "image" ? "px-1.5 pt-1.5" : ""}><QuotedBlock q={m.quoted} onJump={onJump} /></div>}
+        {m.quoted && <div className={m.kind === "image" ? "px-1.5 pt-1.5" : m.kind === "document" ? "px-1 pt-1" : ""}><QuotedBlock q={m.quoted} onJump={onJump} /></div>}
 
         {m.kind === "text" && (
           <div className="flex flex-wrap items-end">
@@ -529,10 +565,13 @@ export function MessageBubble({
         )}
 
         {m.kind === "document" && (
-          <div className="flex flex-col gap-1 pt-1">
+          <div className="flex flex-col">
             <DocumentCard m={m} onOpen={onOpenPdf} term={term} />
-            {m.caption && !hideCaption && <p className="whitespace-pre-wrap break-words pt-1"><RichText text={m.caption} term={term} /></p>}
-            <Meta m={m} />
+            {/* w-0 min-w-full: a legenda quebra na largura do cartão em vez de alargar o balão. */}
+            {m.caption && !hideCaption && <p className="w-0 min-w-full whitespace-pre-wrap break-words px-2 pt-1.5"><RichText text={m.caption} term={term} /></p>}
+            <div className="flex px-1.5 pb-0.5 pt-1">
+              <Meta m={m} />
+            </div>
           </div>
         )}
 

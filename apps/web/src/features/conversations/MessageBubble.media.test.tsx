@@ -46,3 +46,30 @@ describe("legenda repetida em arquivos enviados juntos", () => {
     expect(i).not.toContain("segue em anexo as guias");
   });
 });
+
+describe("documentos: prévia do PDF e bordas finas", () => {
+  const pdf = { kind: "document", fileName: "edital.pdf", mimeType: "application/pdf", sizeBytes: 874_000, url: "/api/v1/attachments/abc" };
+
+  it("PDF do servidor mostra a prévia em cima e o número de páginas", () => {
+    const html = bubble({ ...pdf, pages: 23 });
+    expect(html).toContain('src="/api/v1/attachments/abc?size=preview"');
+    expect(html).toContain("23 páginas");
+    expect(html).toContain("PDF");
+  });
+
+  it("uma página fica no singular e sem número de páginas nada é inventado", () => {
+    expect(bubble({ ...pdf, pages: 1 })).toContain("1 página •");
+    expect(bubble(pdf)).not.toContain("página");
+  });
+
+  it("outros arquivos e PDFs sem endereço do servidor não pedem prévia", () => {
+    expect(bubble({ kind: "document", fileName: "ficha.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", url: "/api/v1/attachments/xyz" })).not.toContain("size=preview");
+    expect(bubble({ ...pdf, url: "blob:https://x/1" })).not.toContain("size=preview");
+    expect(bubble({ kind: "document", fileName: "edital.pdf", mimeType: "application/pdf" })).not.toContain("size=preview");
+  });
+
+  it("o balão do documento tem a borda fina (3 px), como o da foto", () => {
+    expect(bubble({ ...pdf })).toContain("p-[3px]");
+    expect(bubble({ kind: "text", text: "oi" })).not.toContain("p-[3px]");
+  });
+});

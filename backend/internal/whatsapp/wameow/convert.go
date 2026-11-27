@@ -137,6 +137,9 @@ func convertMessage(ctx context.Context, cli *whatsmeow.Client, e *events.Messag
 			name = d.GetTitle()
 		}
 		out.Payload["fileName"] = name
+		if n := d.GetPageCount(); n > 0 {
+			out.Payload["pages"] = n // o WhatsApp já informa as páginas do documento
+		}
 		out.Payload["mimeType"] = d.GetMimetype()
 		out.Payload["sizeBytes"] = d.GetFileLength()
 		out.Download = func(ctx context.Context) ([]byte, error) { return cli.Download(ctx, d) }

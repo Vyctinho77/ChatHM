@@ -35,7 +35,8 @@ RUN curl -fsSL -o /model.bin "https://huggingface.co/ggerganov/whisper.cpp/resol
 
 FROM alpine:3.21
 # ffmpeg: conversão de áudio para mensagem de voz e para a transcrição. libstdc++/libgomp: o whisper-cli precisa deles.
-RUN apk add --no-cache ffmpeg ca-certificates tzdata libstdc++ libgomp \
+# poppler-utils: prévia (alto da primeira página) e número de páginas dos PDFs no balão da conversa (pdftoppm/pdfinfo). Sem ele o app segue, só sem prévia.
+RUN apk add --no-cache ffmpeg poppler-utils ca-certificates tzdata libstdc++ libgomp \
  && adduser -D -u 10001 app \
  && mkdir -p /data/attachments && chown -R app /data
 COPY --from=api /out/api /app/api

@@ -1006,6 +1006,11 @@ func (s *Service) Send(ctx context.Context, v Viewer, convID string, in SendInpu
 		if in.Att.DocType != "" {
 			payload["docType"] = in.Att.DocType
 		}
+		if in.Att.MimeType == "application/pdf" {
+			if n := media.PDFPages(ctx, in.Att.Data); n > 0 {
+				payload["pages"] = n
+			}
+		}
 		switch kind {
 		case "image", "sticker":
 			payload["width"], payload["height"], payload["hd"] = in.Att.Width, in.Att.Height, in.HD
@@ -1654,6 +1659,9 @@ func (s *Service) AttachmentPreview(ctx context.Context, v Viewer, id string) (A
 	if err != nil {
 		return AttachmentFile{}, err
 	}
+	if m.mimeType == "application/pdf" {
+		return s.pdfPreview(ctx, m, id)
+	}
 	if !strings.HasPrefix(m.mimeType, "image/") || m.mimeType == "image/gif" {
 		return s.Attachment(ctx, v, id)
 	}
@@ -1780,6 +1788,9 @@ func (s *Service) storeFetched(ctx context.Context, msgID, convID string, kind w
 	}
 	if p.DocType != "" {
 		_, _ = s.db.Exec(ctx, `UPDATE messages SET payload = payload || jsonb_build_object('docType', $2::text) WHERE id = $1`, msgID, p.DocType)
+	}
+	if kind == whatsapp.KindDocument && p.MimeType == "application/pdf" {
+		s.recordPDFPages(ctx, msgID, p.Data) // o número de páginas que o balão mostra (o WhatsApp já manda, mas nem sempre)
 	}
 	if kind == whatsapp.KindAudio {
 		s.startTranscription(msgID, convID, p.Data, p.DurationSec)

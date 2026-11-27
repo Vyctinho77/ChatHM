@@ -68,6 +68,7 @@ func run() error {
 	go svcs.Auth.RunJanitor(ctx, time.Hour)
 	go svcs.Conversations.RunSnoozeWorker(ctx)
 	go svcs.Conversations.BackfillThumbs(ctx)      // miniaturas das fotos antigas (uma vez)
+	go svcs.Conversations.BackfillPDFPages(ctx)    // número de páginas dos PDFs antigos (uma vez, devagar)
 	go svcs.Conversations.RunMediaImporter(ctx)    // baixa, devagar, a mídia do histórico guardada por referência
 	go svcs.Conversations.BackfillTranscripts(ctx) // texto dos áudios dos últimos 7 dias, um por vez (só com a transcrição ligada)
 	go svcs.AI.RunWebhooks(ctx)                    // aviso automático (webhook) quando o cliente responde, com reenvio
